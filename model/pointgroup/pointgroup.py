@@ -10,10 +10,13 @@ from spconv.modules import SparseModule
 import functools
 from collections import OrderedDict
 import sys
+
 sys.path.append('../../')
 
 from lib.pointgroup_ops.functions import pointgroup_ops
 from util import utils
+from model.encoder import PointNetPlusPlus
+
 
 class ResidualBlock(SparseModule):
     def __init__(self, in_channels, out_channels, norm_fn, indice_key=None):
@@ -67,7 +70,8 @@ class UBlock(nn.Module):
 
         self.nPlanes = nPlanes
 
-        blocks = {'block{}'.format(i): block(nPlanes[0], nPlanes[0], norm_fn, indice_key='subm{}'.format(indice_key_id)) for i in range(block_reps)}
+        blocks = {'block{}'.format(i): block(nPlanes[0], nPlanes[0], norm_fn, indice_key='subm{}'.format(indice_key_id))
+                  for i in range(block_reps)}
         blocks = OrderedDict(blocks)
         self.blocks = spconv.SparseSequential(blocks)
 
@@ -75,20 +79,23 @@ class UBlock(nn.Module):
             self.conv = spconv.SparseSequential(
                 norm_fn(nPlanes[0]),
                 nn.ReLU(),
-                spconv.SparseConv3d(nPlanes[0], nPlanes[1], kernel_size=2, stride=2, bias=False, indice_key='spconv{}'.format(indice_key_id))
+                spconv.SparseConv3d(nPlanes[0], nPlanes[1], kernel_size=2, stride=2, bias=False,
+                                    indice_key='spconv{}'.format(indice_key_id))
             )
 
-            self.u = UBlock(nPlanes[1:], norm_fn, block_reps, block, indice_key_id=indice_key_id+1)
+            self.u = UBlock(nPlanes[1:], norm_fn, block_reps, block, indice_key_id=indice_key_id + 1)
 
             self.deconv = spconv.SparseSequential(
                 norm_fn(nPlanes[1]),
                 nn.ReLU(),
-                spconv.SparseInverseConv3d(nPlanes[1], nPlanes[0], kernel_size=2, bias=False, indice_key='spconv{}'.format(indice_key_id))
+                spconv.SparseInverseConv3d(nPlanes[1], nPlanes[0], kernel_size=2, bias=False,
+                                           indice_key='spconv{}'.format(indice_key_id))
             )
 
             blocks_tail = {}
             for i in range(block_reps):
-                blocks_tail['block{}'.format(i)] = block(nPlanes[0] * (2 - i), nPlanes[0], norm_fn, indice_key='subm{}'.format(indice_key_id))
+                blocks_tail['block{}'.format(i)] = block(nPlanes[0] * (2 - i), nPlanes[0], norm_fn,
+                                                         indice_key='subm{}'.format(indice_key_id))
             blocks_tail = OrderedDict(blocks_tail)
             self.blocks_tail = spconv.SparseSequential(blocks_tail)
 
@@ -148,7 +155,7 @@ class PointGroup(nn.Module):
             spconv.SubMConv3d(input_c, m, kernel_size=3, padding=1, bias=False, indice_key='subm1')
         )
 
-        self.unet = UBlock([m, 2*m, 3*m, 4*m, 5*m, 6*m, 7*m], norm_fn, block_reps, block, indice_key_id=1)
+        self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block, indice_key_id=1)
 
         self.output_layer = spconv.SparseSequential(
             norm_fn(m),
@@ -156,7 +163,7 @@ class PointGroup(nn.Module):
         )
 
         #### semantic segmentation
-        self.linear = nn.Linear(m, classes) # bias(default): True
+        self.linear = nn.Linear(m, classes)  # bias(default): True
 
         #### offset
         self.offset = nn.Sequential(
@@ -167,7 +174,7 @@ class PointGroup(nn.Module):
         self.offset_linear = nn.Linear(m, 3, bias=True)
 
         #### score branch
-        self.score_unet = UBlock([m, 2*m], norm_fn, 2, block, indice_key_id=1)
+        self.score_unet = UBlock([m, 2 * m], norm_fn, 2, block, indice_key_id=1)
         self.score_outputlayer = spconv.SparseSequential(
             norm_fn(m),
             nn.ReLU()
@@ -179,7 +186,8 @@ class PointGroup(nn.Module):
         #### fix parameter
         module_map = {'input_conv': self.input_conv, 'unet': self.unet, 'output_layer': self.output_layer,
                       'linear': self.linear, 'offset': self.offset, 'offset_linear': self.offset_linear,
-                      'score_unet': self.score_unet, 'score_outputlayer': self.score_outputlayer, 'score_linear': self.score_linear}
+                      'score_unet': self.score_unet, 'score_outputlayer': self.score_outputlayer,
+                      'score_linear': self.score_linear}
 
         for m in self.fix_module:
             mod = module_map[m]
@@ -190,8 +198,12 @@ class PointGroup(nn.Module):
         if self.pretrain_path is not None:
             pretrain_dict = torch.load(self.pretrain_path)
             for m in self.pretrain_module:
-                print("Load pretrained " + m + ": %d/%d" % utils.load_model_param(module_map[m], pretrain_dict, prefix=m))
+                print(
+                    "Load pretrained " + m + ": %d/%d" % utils.load_model_param(module_map[m], pretrain_dict, prefix=m))
 
+        #### pointnet++ encoder
+        # TODO: add parameters of PointNet++
+        self.encoder = PointNetPlusPlus()
 
     @staticmethod
     def set_bn_init(m):
@@ -199,7 +211,6 @@ class PointGroup(nn.Module):
         if classname.find('BatchNorm') != -1:
             m.weight.data.fill_(1.0)
             m.bias.data.fill_(0.0)
-
 
     def clusters_voxelization(self, clusters_idx, clusters_offset, feats, coords, fullscale, scale, mode):
         '''
@@ -214,13 +225,15 @@ class PointGroup(nn.Module):
         clusters_coords = coords[c_idxs.long()]
 
         clusters_coords_mean = pointgroup_ops.sec_mean(clusters_coords, clusters_offset.cuda())  # (nCluster, 3), float
-        clusters_coords_mean = torch.index_select(clusters_coords_mean, 0, clusters_idx[:, 0].cuda().long())  # (sumNPoint, 3), float
+        clusters_coords_mean = torch.index_select(clusters_coords_mean, 0,
+                                                  clusters_idx[:, 0].cuda().long())  # (sumNPoint, 3), float
         clusters_coords -= clusters_coords_mean
 
         clusters_coords_min = pointgroup_ops.sec_min(clusters_coords, clusters_offset.cuda())  # (nCluster, 3), float
         clusters_coords_max = pointgroup_ops.sec_max(clusters_coords, clusters_offset.cuda())  # (nCluster, 3), float
 
-        clusters_scale = 1 / ((clusters_coords_max - clusters_coords_min) / fullscale).max(1)[0] - 0.01  # (nCluster), float
+        clusters_scale = 1 / ((clusters_coords_max - clusters_coords_min) / fullscale).max(1)[
+            0] - 0.01  # (nCluster), float
         clusters_scale = torch.clamp(clusters_scale, min=None, max=scale)
 
         min_xyz = clusters_coords_min * clusters_scale.unsqueeze(-1)  # (nCluster, 3), float
@@ -231,15 +244,18 @@ class PointGroup(nn.Module):
         clusters_coords = clusters_coords * clusters_scale.unsqueeze(-1)
 
         range = max_xyz - min_xyz
-        offset = - min_xyz + torch.clamp(fullscale - range - 0.001, min=0) * torch.rand(3).cuda() + torch.clamp(fullscale - range + 0.001, max=0) * torch.rand(3).cuda()
+        offset = - min_xyz + torch.clamp(fullscale - range - 0.001, min=0) * torch.rand(3).cuda() + torch.clamp(
+            fullscale - range + 0.001, max=0) * torch.rand(3).cuda()
         offset = torch.index_select(offset, 0, clusters_idx[:, 0].cuda().long())
         clusters_coords += offset
         assert clusters_coords.shape.numel() == ((clusters_coords >= 0) * (clusters_coords < fullscale)).sum()
 
         clusters_coords = clusters_coords.long()
-        clusters_coords = torch.cat([clusters_idx[:, 0].view(-1, 1).long(), clusters_coords.cpu()], 1)  # (sumNPoint, 1 + 3)
+        clusters_coords = torch.cat([clusters_idx[:, 0].view(-1, 1).long(), clusters_coords.cpu()],
+                                    1)  # (sumNPoint, 1 + 3)
 
-        out_coords, inp_map, out_map = pointgroup_ops.voxelization_idx(clusters_coords, int(clusters_idx[-1, 0]) + 1, mode)
+        out_coords, inp_map, out_map = pointgroup_ops.voxelization_idx(clusters_coords, int(clusters_idx[-1, 0]) + 1,
+                                                                       mode)
         # output_coords: M * (1 + 3) long
         # input_map: sumNPoint int
         # output_map: M * (maxActive + 1) int
@@ -247,10 +263,10 @@ class PointGroup(nn.Module):
         out_feats = pointgroup_ops.voxelization(clusters_feats, out_map.cuda(), mode)  # (M, C), float, cuda
 
         spatial_shape = [fullscale] * 3
-        voxelization_feats = spconv.SparseConvTensor(out_feats, out_coords.int().cuda(), spatial_shape, int(clusters_idx[-1, 0]) + 1)
+        voxelization_feats = spconv.SparseConvTensor(out_feats, out_coords.int().cuda(), spatial_shape,
+                                                     int(clusters_idx[-1, 0]) + 1)
 
         return voxelization_feats, inp_map
-
 
     def forward(self, input, input_map, coords, batch_idxs, batch_offsets, epoch):
         '''
@@ -261,24 +277,27 @@ class PointGroup(nn.Module):
         '''
         ret = {}
 
+        input = spconv.SparseConvTensor(input['voxel_feats'], input['voxel_coords'], input['spatial_shape'],
+                                        input['batch_size'])
+
         output = self.input_conv(input)
         output = self.unet(output)
         output = self.output_layer(output)
         output_feats = output.features[input_map.long()]
 
         #### semantic segmentation
-        semantic_scores = self.linear(output_feats)   # (N, nClass), float
-        semantic_preds = semantic_scores.max(1)[1]    # (N), long
+        semantic_scores = self.linear(output_feats)  # (N, nClass), float
+        semantic_preds = semantic_scores.max(1)[1]  # (N), long
 
         ret['semantic_scores'] = semantic_scores
 
         #### offset
         pt_offsets_feats = self.offset(output_feats)
-        pt_offsets = self.offset_linear(pt_offsets_feats)   # (N, 3), float32
+        pt_offsets = self.offset_linear(pt_offsets_feats)  # (N, 3), float32
 
         ret['pt_offsets'] = pt_offsets
 
-        if(epoch > self.prepare_epochs):
+        if (epoch > self.prepare_epochs):
             #### get prooposal clusters
             object_idxs = torch.nonzero(semantic_preds > 1).view(-1)
 
@@ -289,14 +308,21 @@ class PointGroup(nn.Module):
 
             semantic_preds_cpu = semantic_preds[object_idxs].int().cpu()
 
-            idx_shift, start_len_shift = pointgroup_ops.ballquery_batch_p(coords_ + pt_offsets_, batch_idxs_, batch_offsets_, self.cluster_radius, self.cluster_shift_meanActive)
-            proposals_idx_shift, proposals_offset_shift = pointgroup_ops.bfs_cluster(semantic_preds_cpu, idx_shift.cpu(), start_len_shift.cpu(), self.cluster_npoint_thre)
+            idx_shift, start_len_shift = pointgroup_ops.ballquery_batch_p(coords_ + pt_offsets_, batch_idxs_,
+                                                                          batch_offsets_, self.cluster_radius,
+                                                                          self.cluster_shift_meanActive)
+            proposals_idx_shift, proposals_offset_shift = pointgroup_ops.bfs_cluster(semantic_preds_cpu,
+                                                                                     idx_shift.cpu(),
+                                                                                     start_len_shift.cpu(),
+                                                                                     self.cluster_npoint_thre)
             proposals_idx_shift[:, 1] = object_idxs[proposals_idx_shift[:, 1].long()].int()
             # proposals_idx_shift: (sumNPoint, 2), int, dim 0 for cluster_id, dim 1 for corresponding point idxs in N
             # proposals_offset_shift: (nProposal + 1), int
 
-            idx, start_len = pointgroup_ops.ballquery_batch_p(coords_, batch_idxs_, batch_offsets_, self.cluster_radius, self.cluster_meanActive)
-            proposals_idx, proposals_offset = pointgroup_ops.bfs_cluster(semantic_preds_cpu, idx.cpu(), start_len.cpu(), self.cluster_npoint_thre)
+            idx, start_len = pointgroup_ops.ballquery_batch_p(coords_, batch_idxs_, batch_offsets_, self.cluster_radius,
+                                                              self.cluster_meanActive)
+            proposals_idx, proposals_offset = pointgroup_ops.bfs_cluster(semantic_preds_cpu, idx.cpu(), start_len.cpu(),
+                                                                         self.cluster_npoint_thre)
             proposals_idx[:, 1] = object_idxs[proposals_idx[:, 1].long()].int()
             # proposals_idx: (sumNPoint, 2), int, dim 0 for cluster_id, dim 1 for corresponding point idxs in N
             # proposals_offset: (nProposal + 1), int
@@ -307,12 +333,13 @@ class PointGroup(nn.Module):
             proposals_offset = torch.cat((proposals_offset, proposals_offset_shift[1:]))
 
             #### proposals voxelization again
-            input_feats, inp_map = self.clusters_voxelization(proposals_idx, proposals_offset, output_feats, coords, self.score_fullscale, self.score_scale, self.mode)
+            input_feats, inp_map = self.clusters_voxelization(proposals_idx, proposals_offset, output_feats, coords,
+                                                              self.score_fullscale, self.score_scale, self.mode)
 
             #### score
             score = self.score_unet(input_feats)
             score = self.score_outputlayer(score)
-            score_feats = score.features[inp_map.long()] # (sumNPoint, C)
+            score_feats = score.features[inp_map.long()]  # (sumNPoint, C)
             score_feats = pointgroup_ops.roipool(score_feats, proposals_offset.cuda())  # (nProposal, C)
             scores = self.score_linear(score_feats)  # (nProposal, 1)
 
@@ -330,15 +357,15 @@ def model_fn_decorator(test=False):
     score_criterion = nn.BCELoss(reduction='none').cuda()
 
     def test_model_fn(batch, model, epoch):
-        coords = batch['locs'].cuda()              # (N, 1 + 3), long, cuda, dimension 0 for batch_idx
+        coords = batch['locs'].cuda()  # (N, 1 + 3), long, cuda, dimension 0 for batch_idx
         voxel_coords = batch['voxel_locs'].cuda()  # (M, 1 + 3), long, cuda
-        p2v_map = batch['p2v_map'].cuda()          # (N), int, cuda
-        v2p_map = batch['v2p_map'].cuda()          # (M, 1 + maxActive), int, cuda
+        p2v_map = batch['p2v_map'].cuda()  # (N), int, cuda
+        v2p_map = batch['v2p_map'].cuda()  # (M, 1 + maxActive), int, cuda
 
         coords_float = batch['locs_float'].cuda()  # (N, 3), float32, cuda
-        feats = batch['feats'].cuda()              # (N, C), float32, cuda
+        feats = batch['feats'].cuda()  # (N, C), float32, cuda
 
-        batch_offsets = batch['offsets'].cuda()    # (B + 1), int, cuda
+        batch_offsets = batch['offsets'].cuda()  # (B + 1), int, cuda
 
         spatial_shape = batch['spatial_shape']
 
@@ -350,7 +377,7 @@ def model_fn_decorator(test=False):
 
         ret = model(input_, p2v_map, coords_float, coords[:, 0].int(), batch_offsets, epoch)
         semantic_scores = ret['semantic_scores']  # (N, nClass) float32, cuda
-        pt_offsets = ret['pt_offsets']            # (N, 3), float32, cuda
+        pt_offsets = ret['pt_offsets']  # (N, 3), float32, cuda
         if (epoch > cfg.prepare_epochs):
             scores, proposals_idx, proposals_offset = ret['proposal_scores']
 
@@ -365,27 +392,26 @@ def model_fn_decorator(test=False):
 
         return preds
 
-
     def model_fn(batch, model, epoch):
         ##### prepare input and forward
         # batch {'locs': locs, 'voxel_locs': voxel_locs, 'p2v_map': p2v_map, 'v2p_map': v2p_map,
         # 'locs_float': locs_float, 'feats': feats, 'labels': labels, 'instance_labels': instance_labels,
         # 'instance_info': instance_infos, 'instance_pointnum': instance_pointnum,
         # 'id': tbl, 'offsets': batch_offsets, 'spatial_shape': spatial_shape}
-        coords = batch['locs'].cuda()                          # (N, 1 + 3), long, cuda, dimension 0 for batch_idx
-        voxel_coords = batch['voxel_locs'].cuda()              # (M, 1 + 3), long, cuda
-        p2v_map = batch['p2v_map'].cuda()                      # (N), int, cuda
-        v2p_map = batch['v2p_map'].cuda()                      # (M, 1 + maxActive), int, cuda
+        coords = batch['locs'].cuda()  # (N, 1 + 3), long, cuda, dimension 0 for batch_idx
+        voxel_coords = batch['voxel_locs'].cuda()  # (M, 1 + 3), long, cuda
+        p2v_map = batch['p2v_map'].cuda()  # (N), int, cuda
+        v2p_map = batch['v2p_map'].cuda()  # (M, 1 + maxActive), int, cuda
 
-        coords_float = batch['locs_float'].cuda()              # (N, 3), float32, cuda
-        feats = batch['feats'].cuda()                          # (N, C), float32, cuda
-        labels = batch['labels'].cuda()                        # (N), long, cuda
-        instance_labels = batch['instance_labels'].cuda()      # (N), long, cuda, 0~total_nInst, -100
+        coords_float = batch['locs_float'].cuda()  # (N, 3), float32, cuda
+        feats = batch['feats'].cuda()  # (N, C), float32, cuda
+        labels = batch['labels'].cuda()  # (N), long, cuda
+        instance_labels = batch['instance_labels'].cuda()  # (N), long, cuda, 0~total_nInst, -100
 
-        instance_info = batch['instance_info'].cuda()          # (N, 9), float32, cuda, (meanxyz, minxyz, maxxyz)
+        instance_info = batch['instance_info'].cuda()  # (N, 9), float32, cuda, (meanxyz, minxyz, maxxyz)
         instance_pointnum = batch['instance_pointnum'].cuda()  # (total_nInst), int, cuda
 
-        batch_offsets = batch['offsets'].cuda()                # (B + 1), int, cuda
+        batch_offsets = batch['offsets'].cuda()  # (B + 1), int, cuda
 
         spatial_shape = batch['spatial_shape']
 
@@ -393,12 +419,18 @@ def model_fn_decorator(test=False):
             feats = torch.cat((feats, coords_float), 1)
         voxel_feats = pointgroup_ops.voxelization(feats, v2p_map, cfg.mode)  # (M, C), float, cuda
 
-        input_ = spconv.SparseConvTensor(voxel_feats, voxel_coords.int(), spatial_shape, cfg.batch_size)
+        # input_ = spconv.SparseConvTensor(voxel_feats, voxel_coords.int(), spatial_shape, cfg.batch_size)
+        input_ = {
+            'voxel_feats': voxel_feats,
+            'voxel_coords': voxel_coords.int(),
+            'spatial_shape': spatial_shape,
+            'batch_size': cfg.batch_size,
+        }
 
         ret = model(input_, p2v_map, coords_float, coords[:, 0].int(), batch_offsets, epoch)
-        semantic_scores = ret['semantic_scores'] # (N, nClass) float32, cuda
-        pt_offsets = ret['pt_offsets']           # (N, 3), float32, cuda
-        if(epoch > cfg.prepare_epochs):
+        semantic_scores = ret['semantic_scores']  # (N, nClass) float32, cuda
+        pt_offsets = ret['pt_offsets']  # (N, 3), float32, cuda
+        if (epoch > cfg.prepare_epochs):
             scores, proposals_idx, proposals_offset = ret['proposal_scores']
             # scores: (nProposal, 1) float, cuda
             # proposals_idx: (sumNPoint, 2), int, cpu, dim 0 for cluster_id, dim 1 for corresponding point idxs in N
@@ -407,7 +439,7 @@ def model_fn_decorator(test=False):
         loss_inp = {}
         loss_inp['semantic_scores'] = (semantic_scores, labels)
         loss_inp['pt_offsets'] = (pt_offsets, coords_float, instance_info, instance_labels)
-        if(epoch > cfg.prepare_epochs):
+        if (epoch > cfg.prepare_epochs):
             loss_inp['proposal_scores'] = (scores, proposals_idx, proposals_offset, instance_pointnum)
 
         loss, loss_out, infos = loss_fn(loss_inp, epoch)
@@ -417,7 +449,7 @@ def model_fn_decorator(test=False):
             preds = {}
             preds['semantic'] = semantic_scores
             preds['pt_offsets'] = pt_offsets
-            if(epoch > cfg.prepare_epochs):
+            if (epoch > cfg.prepare_epochs):
                 preds['score'] = scores
                 preds['proposals'] = (proposals_idx, proposals_offset)
 
@@ -432,7 +464,6 @@ def model_fn_decorator(test=False):
                 meter_dict[k] = (float(v[0]), v[1])
 
         return loss, preds, visual_dict, meter_dict
-
 
     def loss_fn(loss_inp, epoch):
 
@@ -454,17 +485,17 @@ def model_fn_decorator(test=False):
         # instance_info: (N, 9), float32 tensor (meanxyz, minxyz, maxxyz)
         # instance_labels: (N), long
 
-        gt_offsets = instance_info[:, 0:3] - coords   # (N, 3)
-        pt_diff = pt_offsets - gt_offsets   # (N, 3)
-        pt_dist = torch.sum(torch.abs(pt_diff), dim=-1)   # (N)
+        gt_offsets = instance_info[:, 0:3] - coords  # (N, 3)
+        pt_diff = pt_offsets - gt_offsets  # (N, 3)
+        pt_dist = torch.sum(torch.abs(pt_diff), dim=-1)  # (N)
         valid = (instance_labels != cfg.ignore_label).float()
         offset_norm_loss = torch.sum(pt_dist * valid) / (torch.sum(valid) + 1e-6)
 
-        gt_offsets_norm = torch.norm(gt_offsets, p=2, dim=1)   # (N), float
+        gt_offsets_norm = torch.norm(gt_offsets, p=2, dim=1)  # (N), float
         gt_offsets_ = gt_offsets / (gt_offsets_norm.unsqueeze(-1) + 1e-8)
         pt_offsets_norm = torch.norm(pt_offsets, p=2, dim=1)
         pt_offsets_ = pt_offsets / (pt_offsets_norm.unsqueeze(-1) + 1e-8)
-        direction_diff = - (gt_offsets_ * pt_offsets_).sum(-1)   # (N)
+        direction_diff = - (gt_offsets_ * pt_offsets_).sum(-1)  # (N)
         offset_dir_loss = torch.sum(direction_diff * valid) / (torch.sum(valid) + 1e-6)
 
         loss_out['offset_norm_loss'] = (offset_norm_loss, valid.sum())
@@ -478,7 +509,8 @@ def model_fn_decorator(test=False):
             # proposals_offset: (nProposal + 1), int, cpu
             # instance_pointnum: (total_nInst), int
 
-            ious = pointgroup_ops.get_iou(proposals_idx[:, 1].cuda(), proposals_offset.cuda(), instance_labels, instance_pointnum) # (nProposal, nInstance), float
+            ious = pointgroup_ops.get_iou(proposals_idx[:, 1].cuda(), proposals_offset.cuda(), instance_labels,
+                                          instance_pointnum)  # (nProposal, nInstance), float
             gt_ious, gt_instance_idxs = ious.max(1)  # (nProposal) float, long
             gt_scores = get_segmented_scores(gt_ious, cfg.fg_thresh, cfg.bg_thresh)
 
@@ -488,12 +520,12 @@ def model_fn_decorator(test=False):
             loss_out['score_loss'] = (score_loss, gt_ious.shape[0])
 
         '''total loss'''
-        loss = cfg.loss_weight[0] * semantic_loss + cfg.loss_weight[1] * offset_norm_loss + cfg.loss_weight[2] * offset_dir_loss
-        if(epoch > cfg.prepare_epochs):
+        loss = cfg.loss_weight[0] * semantic_loss + cfg.loss_weight[1] * offset_norm_loss + cfg.loss_weight[
+            2] * offset_dir_loss
+        if (epoch > cfg.prepare_epochs):
             loss += (cfg.loss_weight[3] * score_loss)
 
         return loss, loss_out, infos
-
 
     def get_segmented_scores(scores, fg_thresh=1.0, bg_thresh=0.0):
         '''
@@ -510,7 +542,6 @@ def model_fn_decorator(test=False):
         segmented_scores[interval_mask] = scores[interval_mask] * k + b
 
         return segmented_scores
-
 
     if test:
         fn = test_model_fn
