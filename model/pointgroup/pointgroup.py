@@ -277,6 +277,8 @@ class PointGroup(nn.Module):
         '''
         ret = {}
 
+        _, _ = self.encoder(coords.unsqueeze(dim=0))
+
         input = spconv.SparseConvTensor(input['voxel_feats'], input['voxel_coords'], input['spatial_shape'],
                                         input['batch_size'])
 
