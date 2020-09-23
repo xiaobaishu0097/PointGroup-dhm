@@ -1,1 +1,0 @@
-from .pointnetpp import PointNetPlusPlus

@@ -74,3 +74,16 @@ TEST:
   save_pt_offsets: False
   save_instance: False
 
+model:
+  encoder: pointnet_local_pool
+  encoder_kwargs:
+    hidden_dim: 32
+    plane_type: 'grid'
+    grid_resolution: 32
+    unet3d: True
+    unet3d_kwargs:
+      num_levels: 3
+      f_maps: 32
+      in_channels: 32
+      out_channels: 32
+  c_dim: 32

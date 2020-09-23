@@ -15,7 +15,10 @@ sys.path.append('../../')
 
 from lib.pointgroup_ops.functions import pointgroup_ops
 from util import utils
-from model.encoder import PointNetPlusPlus
+from model.encoder import pointnet
+
+
+# from model.encoder import PointNetPlusPlus
 
 
 class ResidualBlock(SparseModule):
@@ -203,7 +206,14 @@ class PointGroup(nn.Module):
 
         #### pointnet++ encoder
         # TODO: add parameters of PointNet++
-        self.encoder = PointNetPlusPlus()
+        self.encoder = pointnet.LocalPoolPointnet(c_dim=32, dim=3, hidden_dim=32, scatter_type='max',
+                                                  unet=False, unet_kwargs=None, unet3d=True,
+                                                  unet3d_kwargs={'num_levels': 3,
+                                                                 'f_maps': 32,
+                                                                 'in_channels': 32,
+                                                                 'out_channels': 32},
+                                                  plane_resolution=None, grid_resolution=32, plane_type='grid',
+                                                  padding=0.1, n_blocks=5)
 
     @staticmethod
     def set_bn_init(m):
@@ -277,7 +287,7 @@ class PointGroup(nn.Module):
         '''
         ret = {}
 
-        _, _ = self.encoder(coords.unsqueeze(dim=0))
+        encoded_feats = self.encoder(coords.unsqueeze(dim=0))['grid']
 
         input = spconv.SparseConvTensor(input['voxel_feats'], input['voxel_coords'], input['spatial_shape'],
                                         input['batch_size'])
