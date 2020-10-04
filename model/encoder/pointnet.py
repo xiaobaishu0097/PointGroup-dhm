@@ -146,6 +146,9 @@ class LocalPoolPointnet(nn.Module):
         c = self.fc_c(net)
 
         fea = {}
+        fea['coord'] = p
+        fea['index'] = index['grid']
+        fea['point'] = c
         if 'grid' in self.plane_type:
             fea['grid'] = self.generate_grid_features(p, c)
         if 'xz' in self.plane_type:
