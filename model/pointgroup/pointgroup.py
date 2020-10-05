@@ -397,6 +397,8 @@ def model_fn_decorator(test=False):
         coords_float = batch['locs_float'].cuda()  # (N, 3), float32, cuda
         feats = batch['feats'].cuda()  # (N, C), float32, cuda
 
+        instance_centers = batch['instance_centers'].cuda()
+
         batch_offsets = batch['offsets'].cuda()  # (B + 1), int, cuda
 
         spatial_shape = batch['spatial_shape']
@@ -405,22 +407,38 @@ def model_fn_decorator(test=False):
             feats = torch.cat((feats, coords_float), 1)
         voxel_feats = pointgroup_ops.voxelization(feats, v2p_map, cfg.mode)  # (M, C), float, cuda
 
-        input_ = spconv.SparseConvTensor(voxel_feats, voxel_coords.int(), spatial_shape, cfg.batch_size)
+        # input_ = spconv.SparseConvTensor(voxel_feats, voxel_coords.int(), spatial_shape, cfg.batch_size)
+        input_ = {
+            'voxel_feats': voxel_feats,
+            'voxel_coords': voxel_coords.int(),
+            'spatial_shape': spatial_shape,
+            'batch_size': cfg.batch_size,
+        }
 
         ret = model(input_, p2v_map, coords_float, coords[:, 0].int(), batch_offsets, epoch)
-        semantic_scores = ret['semantic_scores']  # (N, nClass) float32, cuda
-        pt_offsets = ret['pt_offsets']  # (N, 3), float32, cuda
-        if (epoch > cfg.prepare_epochs):
-            scores, proposals_idx, proposals_offset = ret['proposal_scores']
+        grid_centers = ret['grid_centers']
+        grid_centers = grid_centers.reshape(1, -1)
+
+        grid_coords = normalize_3d_coordinate(
+            torch.cat((coords_float, instance_centers), dim=0).unsqueeze(dim=0).clone(), padding=0.1)
+        center_indexs = coordinate2index(grid_coords, 32, coord_type='3d')[:, :, -instance_centers.shape[0]:]
+        ret['center_indexs'] = center_indexs
+
+        # semantic_scores = ret['semantic_scores']  # (N, nClass) float32, cuda
+        # pt_offsets = ret['pt_offsets']  # (N, 3), float32, cuda
+        # if (epoch > cfg.prepare_epochs):
+        #     scores, proposals_idx, proposals_offset = ret['proposal_scores']
 
         ##### preds
         with torch.no_grad():
             preds = {}
-            preds['semantic'] = semantic_scores
-            preds['pt_offsets'] = pt_offsets
-            if (epoch > cfg.prepare_epochs):
-                preds['score'] = scores
-                preds['proposals'] = (proposals_idx, proposals_offset)
+            preds['grid_centers'] = grid_centers
+            preds['center_indexs'] = center_indexs
+            # preds['semantic'] = semantic_scores
+            # preds['pt_offsets'] = pt_offsets
+            # if (epoch > cfg.prepare_epochs):
+            #     preds['score'] = scores
+            #     preds['proposals'] = (proposals_idx, proposals_offset)
 
         return preds
 

@@ -339,6 +339,7 @@ class Dataset:
         locs = []
         locs_float = []
         feats = []
+        instance_centers = []  # (totoal_nInst, 3)
 
         batch_offsets = [0]
 
@@ -360,12 +361,18 @@ class Dataset:
             ### offset
             xyz -= xyz.min(0)
 
+            _, valid_idxs = self.crop(xyz)
+            instance_label = self.getCroppedInstLabel(instance_label, valid_idxs)
+            _, inst_infos = self.getInstanceInfo(xyz_middle, instance_label.astype(np.int32))
+            inst_center = inst_infos['instance_center']
+
             ### merge the scene to the batch
             batch_offsets.append(batch_offsets[-1] + xyz.shape[0])
 
             locs.append(torch.cat([torch.LongTensor(xyz.shape[0], 1).fill_(i), torch.from_numpy(xyz).long()], 1))
             locs_float.append(torch.from_numpy(xyz_middle))
             feats.append(torch.from_numpy(rgb))
+            instance_centers.append(torch.from_numpy(np.asarray(inst_center)))
 
         ### merge all the scenes in the batch
         batch_offsets = torch.tensor(batch_offsets, dtype=torch.int)  # int (B+1)
@@ -374,11 +381,13 @@ class Dataset:
         locs_float = torch.cat(locs_float, 0).to(torch.float32)           # float (N, 3)
         feats = torch.cat(feats, 0)                                       # float (N, C)
 
+        instance_centers = torch.cat(instance_centers, 0).to(torch.float32)
+
         spatial_shape = np.clip((locs.max(0)[0][1:] + 1).numpy(), self.full_scale[0], None)  # long (3)
 
         ### voxelize
         voxel_locs, p2v_map, v2p_map = pointgroup_ops.voxelization_idx(locs, self.batch_size, self.mode)
 
         return {'locs': locs, 'voxel_locs': voxel_locs, 'p2v_map': p2v_map, 'v2p_map': v2p_map,
-                'locs_float': locs_float, 'feats': feats,
+                'locs_float': locs_float, 'feats': feats, 'instance_centers': instance_centers,
                 'id': id, 'offsets': batch_offsets, 'spatial_shape': spatial_shape}
