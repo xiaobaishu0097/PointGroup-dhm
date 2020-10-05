@@ -16,6 +16,7 @@ sys.path.append('../../')
 from lib.pointgroup_ops.functions import pointgroup_ops
 from util import utils
 from model.encoder import pointnet
+from model.common import coordinate2index, normalize_3d_coordinate
 
 
 # from model.encoder import PointNetPlusPlus
@@ -385,6 +386,7 @@ def model_fn_decorator(test=False):
     #### criterion
     semantic_criterion = nn.CrossEntropyLoss(ignore_index=cfg.ignore_label).cuda()
     score_criterion = nn.BCELoss(reduction='none').cuda()
+    center_criterion = nn.BCELoss(reduction='none').cuda()
 
     def test_model_fn(batch, model, epoch):
         coords = batch['locs'].cuda()  # (N, 1 + 3), long, cuda, dimension 0 for batch_idx
@@ -460,6 +462,14 @@ def model_fn_decorator(test=False):
 
         ret = model(input_, p2v_map, coords_float, coords[:, 0].int(), batch_offsets, epoch)
         grid_centers = ret['grid_centers'] # (1, 32**3)
+        grid_centers = grid_centers.reshape(1, -1)
+
+        grid_coords = normalize_3d_coordinate(
+            torch.cat((coords_float, instance_centers), dim=0).unsqueeze(dim=0).clone(), padding=0.1)
+        center_indexs = coordinate2index(grid_coords, 32, coord_type='3d')[:, :, -instance_centers.shape[0]:]
+        grid_gt_centers = torch.zeros_like(grid_centers).cuda()
+        grid_gt_centers[:, center_indexs] = 1
+
         # semantic_scores = ret['semantic_scores']  # (N, nClass) float32, cuda
         # pt_offsets = ret['pt_offsets']  # (N, 3), float32, cuda
         # if (epoch > cfg.prepare_epochs):
@@ -469,7 +479,7 @@ def model_fn_decorator(test=False):
             # proposals_offset: (nProposal + 1), int, cpu
 
         loss_inp = {}
-        loss_inp['grid_centers'] = (grid_centers, instance_centers)
+        loss_inp['grid_centers'] = (grid_centers, grid_gt_centers)
         # loss_inp['semantic_scores'] = (semantic_scores, labels)
         # loss_inp['pt_offsets'] = (pt_offsets, coords_float, instance_info, instance_labels)
         # if (epoch > cfg.prepare_epochs):
@@ -480,11 +490,12 @@ def model_fn_decorator(test=False):
         ##### accuracy / visual_dict / meter_dict
         with torch.no_grad():
             preds = {}
-            preds['semantic'] = semantic_scores
-            preds['pt_offsets'] = pt_offsets
-            if (epoch > cfg.prepare_epochs):
-                preds['score'] = scores
-                preds['proposals'] = (proposals_idx, proposals_offset)
+            preds['grid_centers'] = grid_centers
+            # preds['semantic'] = semantic_scores
+            # preds['pt_offsets'] = pt_offsets
+            # if (epoch > cfg.prepare_epochs):
+            #     preds['score'] = scores
+            #     preds['proposals'] = (proposals_idx, proposals_offset)
 
             visual_dict = {}
             visual_dict['loss'] = loss
@@ -504,10 +515,11 @@ def model_fn_decorator(test=False):
         infos = {}
 
         ### center loss
-        grid_centers, instance_centers = loss_inp['grid_centers']
+        grid_centers, grid_gt_centers = loss_inp['grid_centers']
 
-        center_loss = center_criterion(grid_centers, instance_centers)
-        loss_out['center_loss'] = (center_loss)
+        center_loss = center_criterion(torch.sigmoid(grid_centers), grid_gt_centers)
+        center_loss = center_loss.mean()
+        loss_out['center_loss'] = (center_loss, grid_gt_centers.shape[-1])
 
         # '''semantic loss'''
         # semantic_scores, semantic_labels = loss_inp['semantic_scores']
@@ -540,29 +552,30 @@ def model_fn_decorator(test=False):
         # loss_out['offset_norm_loss'] = (offset_norm_loss, valid.sum())
         # loss_out['offset_dir_loss'] = (offset_dir_loss, valid.sum())
 
-        if (epoch > cfg.prepare_epochs):
-            '''score loss'''
-            scores, proposals_idx, proposals_offset, instance_pointnum = loss_inp['proposal_scores']
-            # scores: (nProposal, 1), float32
-            # proposals_idx: (sumNPoint, 2), int, cpu, dim 0 for cluster_id, dim 1 for corresponding point idxs in N
-            # proposals_offset: (nProposal + 1), int, cpu
-            # instance_pointnum: (total_nInst), int
-
-            ious = pointgroup_ops.get_iou(proposals_idx[:, 1].cuda(), proposals_offset.cuda(), instance_labels,
-                                          instance_pointnum)  # (nProposal, nInstance), float
-            gt_ious, gt_instance_idxs = ious.max(1)  # (nProposal) float, long
-            gt_scores = get_segmented_scores(gt_ious, cfg.fg_thresh, cfg.bg_thresh)
-
-            score_loss = score_criterion(torch.sigmoid(scores.view(-1)), gt_scores)
-            score_loss = score_loss.mean()
-
-            loss_out['score_loss'] = (score_loss, gt_ious.shape[0])
+        # if (epoch > cfg.prepare_epochs):
+        #     '''score loss'''
+        #     scores, proposals_idx, proposals_offset, instance_pointnum = loss_inp['proposal_scores']
+        #     # scores: (nProposal, 1), float32
+        #     # proposals_idx: (sumNPoint, 2), int, cpu, dim 0 for cluster_id, dim 1 for corresponding point idxs in N
+        #     # proposals_offset: (nProposal + 1), int, cpu
+        #     # instance_pointnum: (total_nInst), int
+        #
+        #     ious = pointgroup_ops.get_iou(proposals_idx[:, 1].cuda(), proposals_offset.cuda(), instance_labels,
+        #                                   instance_pointnum)  # (nProposal, nInstance), float
+        #     gt_ious, gt_instance_idxs = ious.max(1)  # (nProposal) float, long
+        #     gt_scores = get_segmented_scores(gt_ious, cfg.fg_thresh, cfg.bg_thresh)
+        #
+        #     score_loss = score_criterion(torch.sigmoid(scores.view(-1)), gt_scores)
+        #     score_loss = score_loss.mean()
+        #
+        #     loss_out['score_loss'] = (score_loss, gt_ious.shape[0])
 
         '''total loss'''
-        loss = cfg.loss_weight[0] * semantic_loss + cfg.loss_weight[1] * offset_norm_loss + cfg.loss_weight[
-            2] * offset_dir_loss
-        if (epoch > cfg.prepare_epochs):
-            loss += (cfg.loss_weight[3] * score_loss)
+        # loss = cfg.loss_weight[0] * semantic_loss + cfg.loss_weight[1] * offset_norm_loss + cfg.loss_weight[
+        #     2] * offset_dir_loss
+        # if (epoch > cfg.prepare_epochs):
+        #     loss += (cfg.loss_weight[3] * score_loss)
+        loss = center_loss
 
         return loss, loss_out, infos
 

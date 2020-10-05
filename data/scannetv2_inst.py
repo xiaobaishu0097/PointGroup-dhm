@@ -262,6 +262,7 @@ class Dataset:
 
         instance_infos = []  # (N, 9)
         instance_pointnum = []  # (total_nInst), int
+        instance_centers = []  # (totoal_nInst, 3)
 
         batch_offsets = [0]
 
@@ -291,6 +292,7 @@ class Dataset:
             inst_num, inst_infos = self.getInstanceInfo(xyz_middle, instance_label.astype(np.int32))
             inst_info = inst_infos["instance_info"]  # (n, 9), (cx, cy, cz, minx, miny, minz, maxx, maxy, maxz)
             inst_pointnum = inst_infos["instance_pointnum"]  # (nInst), list
+            inst_center = inst_infos['instance_center']  # (nInst, 3) (cx, cy, cz)
 
             instance_label[np.where(instance_label != -100)] += total_inst_num
             total_inst_num += inst_num
@@ -306,6 +308,7 @@ class Dataset:
 
             instance_infos.append(torch.from_numpy(inst_info))
             instance_pointnum.extend(inst_pointnum)
+            instance_centers.append(torch.from_numpy(np.asarray(inst_center)))
 
         ### merge all the scenes in the batch
         batch_offsets = torch.tensor(batch_offsets, dtype=torch.int)  # int (B+1)
@@ -318,6 +321,7 @@ class Dataset:
 
         instance_infos = torch.cat(instance_infos, 0).to(torch.float32)               # float (N, 9) (meanxyz, minxyz, maxxyz)
         instance_pointnum = torch.tensor(instance_pointnum, dtype=torch.int)          # int (total_nInst)
+        instance_centers = torch.cat(instance_centers, 0).to(torch.float32)
 
         spatial_shape = np.clip((locs.max(0)[0][1:] + 1).numpy(), self.full_scale[0], None)  # long (3)
 
@@ -327,6 +331,7 @@ class Dataset:
         return {'locs': locs, 'voxel_locs': voxel_locs, 'p2v_map': p2v_map, 'v2p_map': v2p_map,
                 'locs_float': locs_float, 'feats': feats, 'labels': labels, 'instance_labels': instance_labels,
                 'instance_info': instance_infos, 'instance_pointnum': instance_pointnum,
+                'instance_centers': instance_centers,
                 'id': id, 'offsets': batch_offsets, 'spatial_shape': spatial_shape}
 
 
