@@ -5,6 +5,7 @@ Written by Li Jiang
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import spconv
 from spconv.modules import SparseModule
 import functools
@@ -386,7 +387,7 @@ def model_fn_decorator(test=False):
     #### criterion
     semantic_criterion = nn.CrossEntropyLoss(ignore_index=cfg.ignore_label).cuda()
     score_criterion = nn.BCELoss(reduction='none').cuda()
-    center_criterion = nn.BCELoss(reduction='none').cuda()
+    center_criterion = WeightedFocalLoss().cuda()
 
     def test_model_fn(batch, model, epoch):
         coords = batch['locs'].cuda()  # (N, 1 + 3), long, cuda, dimension 0 for batch_idx
@@ -536,7 +537,6 @@ def model_fn_decorator(test=False):
         grid_centers, grid_gt_centers = loss_inp['grid_centers']
 
         center_loss = center_criterion(torch.sigmoid(grid_centers), grid_gt_centers)
-        center_loss = center_loss.mean()
         loss_out['center_loss'] = (center_loss, grid_gt_centers.shape[-1])
 
         # '''semantic loss'''
@@ -618,3 +618,19 @@ def model_fn_decorator(test=False):
     else:
         fn = model_fn
     return fn
+
+
+class WeightedFocalLoss(nn.Module):
+    "Non weighted version of Focal Loss"
+    def __init__(self, alpha=.25, gamma=2):
+        super(WeightedFocalLoss, self).__init__()
+        self.alpha = torch.tensor([alpha, 1-alpha]).cuda()
+        self.gamma = gamma
+
+    def forward(self, inputs, targets):
+        BCE_loss = F.binary_cross_entropy_with_logits(inputs, targets, reduction='none')
+        targets = targets.type(torch.long)
+        at = self.alpha.gather(0, targets.data.view(-1))
+        pt = torch.exp(-BCE_loss)
+        F_loss = at*(1-pt)**self.gamma * BCE_loss
+        return F_loss.mean()
