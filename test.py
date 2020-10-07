@@ -4,6 +4,7 @@ Written by Li Jiang
 '''
 
 import torch
+import torch.nn as nn
 import time
 import numpy as np
 import random
@@ -50,6 +51,8 @@ def test(model, model_fn, data_name, epoch):
             exit(0)
     dataloader = dataset.test_data_loader
 
+    maxpool3d = nn.MaxPool3d(3, stride=1, padding=1)
+
     with torch.no_grad():
         model = model.eval()
         start = time.time()
@@ -60,6 +63,7 @@ def test(model, model_fn, data_name, epoch):
         fn = 0
 
         true_threshold = 0.5
+        candidate_num = 100
 
         matches = {}
         for i, batch in enumerate(dataloader):
@@ -70,9 +74,13 @@ def test(model, model_fn, data_name, epoch):
             preds = model_fn(batch, model, epoch)
             end1 = time.time() - start1
 
-            grid_centers = preds['grid_centers']
+            grid_centers = torch.sigmoid(preds['grid_centers'])
             center_indexs = preds['center_indexs']
 
+            grid_cent_max = maxpool3d(grid_centers.reshape(1, 1, 32, 32, 32)).reshape(1, 32**3)
+            cent_candidates_indexs = (grid_centers == grid_cent_max) & (grid_centers > true_threshold)
+
+            # if cent_candidates_indexs.sum() > 100:
 
 
             # ##### get predictions (#1 semantic_pred, pt_offsets; #2 scores, proposals_pred)
