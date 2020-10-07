@@ -78,9 +78,29 @@ def test(model, model_fn, data_name, epoch):
             center_indexs = preds['center_indexs']
 
             grid_cent_max = maxpool3d(grid_centers.reshape(1, 1, 32, 32, 32)).reshape(1, 32**3)
-            cent_candidates_indexs = (grid_centers == grid_cent_max) & (grid_centers > true_threshold)
+            cent_candidates_indexs = (grid_centers == grid_cent_max)
+            grid_centers[~cent_candidates_indexs] = 0
+            topk_value_, topk_index_ = torch.topk(grid_centers, 100, dim=1)
+            topk_index_ = topk_index_[topk_value_ > true_threshold]
 
-            # if cent_candidates_indexs.sum() > 100:
+            for grid_point in range(grid_centers.shape[1]):
+                if (grid_point in topk_index_) and (grid_point in center_indexs):
+                    tp += 1
+                elif (grid_point in topk_index_) and (grid_point not in center_indexs):
+                    fp += 1
+                elif (grid_point not in topk_index_) and (grid_point in center_indexs):
+                    fn += 1
+                elif (grid_point not in topk_index_) and (grid_point not in center_indexs):
+                    tn += 1
+
+            ##### print
+            logger.info("instance iter: {}/{} point_num: {}".format(batch['id'][0] + 1, len(dataset.test_files), N))
+
+        precision = tp / (tp + fp + 1)
+        recall = tp / (tp + fn + 1)
+        ##### print
+        logger.info("precision: {}, recall: {}".format(precision, recall))
+
 
 
             # ##### get predictions (#1 semantic_pred, pt_offsets; #2 scores, proposals_pred)
