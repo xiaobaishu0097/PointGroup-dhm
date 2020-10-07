@@ -54,6 +54,13 @@ def test(model, model_fn, data_name, epoch):
         model = model.eval()
         start = time.time()
 
+        tp = 0
+        tn = 0
+        fp = 0
+        fn = 0
+
+        true_threshold = 0.5
+
         matches = {}
         for i, batch in enumerate(dataloader):
             N = batch['feats'].shape[0]
@@ -65,6 +72,8 @@ def test(model, model_fn, data_name, epoch):
 
             grid_centers = preds['grid_centers']
             center_indexs = preds['center_indexs']
+
+
 
             # ##### get predictions (#1 semantic_pred, pt_offsets; #2 scores, proposals_pred)
             # semantic_scores = preds['semantic']  # (N, nClass=20) float32, cuda
