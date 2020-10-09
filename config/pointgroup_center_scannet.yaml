@@ -70,6 +70,7 @@ TEST:
   TEST_NPOINT_THRESH: 100
 
   eval: True
+  save_grid_points: False
   save_semantic: False
   save_pt_offsets: False
   save_instance: False

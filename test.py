@@ -93,8 +93,38 @@ def test(model, model_fn, data_name, epoch):
                 elif (grid_point not in topk_index_) and (grid_point not in center_indexs):
                     tn += 1
 
+            ##### save files
+            start3 = time.time()
+            # if cfg.save_semantic:
+            #     os.makedirs(os.path.join(result_dir, 'semantic'), exist_ok=True)
+            #     semantic_np = semantic_pred.cpu().numpy()
+            #     np.save(os.path.join(result_dir, 'semantic', test_scene_name + '.npy'), semantic_np)
+            #
+            # if cfg.save_pt_offsets:
+            #     os.makedirs(os.path.join(result_dir, 'coords_offsets'), exist_ok=True)
+            #     pt_offsets_np = pt_offsets.cpu().numpy()
+            #     coords_np = batch['locs_float'].numpy()
+            #     coords_offsets = np.concatenate((coords_np, pt_offsets_np), 1)   # (N, 6)
+            #     np.save(os.path.join(result_dir, 'coords_offsets', test_scene_name + '.npy'), coords_offsets)
+            #
+            #
+            # if(epoch > cfg.prepare_epochs and cfg.save_instance):
+            #     f = open(os.path.join(result_dir, test_scene_name + '.txt'), 'w')
+            #     for proposal_id in range(nclusters):
+            #         clusters_i = clusters[proposal_id].cpu().numpy()  # (N)
+            #         semantic_label = np.argmax(np.bincount(semantic_pred[np.where(clusters_i == 1)[0]].cpu()))
+            #         score = cluster_scores[proposal_id]
+            #         f.write('predicted_masks/{}_{:03d}.txt {} {:.4f}'.format(test_scene_name, proposal_id, semantic_label_idx[semantic_label], score))
+            #         if proposal_id < nclusters - 1:
+            #             f.write('\n')
+            #         np.savetxt(os.path.join(result_dir, 'predicted_masks', test_scene_name + '_%03d.txt' % (proposal_id)), clusters_i, fmt='%d')
+            #     f.close()
+            end3 = time.time() - start3
+            end = time.time() - start
+            start = time.time()
+
             ##### print
-            logger.info("instance iter: {}/{} point_num: {}".format(batch['id'][0] + 1, len(dataset.test_files), N))
+            logger.info("instance iter: {}/{} point_num: {} time: total {:.2f}s inference {:.2f}s save {:.2f}s".format(batch['id'][0] + 1, len(dataset.test_files), N, end, end1, end3))
 
         precision = tp / (tp + fp + 1)
         recall = tp / (tp + fn + 1)
