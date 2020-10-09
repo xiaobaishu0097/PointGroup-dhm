@@ -536,6 +536,8 @@ def model_fn_decorator(test=False):
         ### center loss
         grid_centers, grid_gt_centers = loss_inp['grid_centers']
 
+        ### adopt Gaussian
+
         center_loss = center_criterion(torch.sigmoid(grid_centers), grid_gt_centers)
         loss_out['center_loss'] = (center_loss, grid_gt_centers.shape[-1])
 
