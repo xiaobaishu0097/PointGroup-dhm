@@ -78,7 +78,21 @@ def get_coords_color(opt):
         xyz, rgb, label, inst_label = torch.load(input_file)
     rgb = (rgb + 1) * 127.5
 
-    if (opt.task == 'semantic_gt'):
+    if opt.task == 'grid_points':
+        assert opt.room_split != 'test'
+        label = label.astype(np.int)
+        print("Instance number: {}".format(inst_label.max() + 1))
+        inst_label_rgb = np.zeros(rgb.shape)
+        object_idx = (inst_label >= 0)
+        inst_label_rgb[object_idx] = COLOR20[inst_label[object_idx] % len(COLOR20)]
+        rgb = inst_label_rgb
+
+        grid_points_file = os.path.join(opt.result_root, opt.room_split, 'grid_points', opt.room_name + '.npy')
+        assert os.path.isfile(grid_points_file), 'No grid points result - {}.'.format(grid_points_file)
+        grid_centers = np.load(grid_points_file)
+
+
+    elif (opt.task == 'semantic_gt'):
         assert opt.room_split != 'test'
         label = label.astype(np.int)
         label_rgb = np.zeros(rgb.shape)

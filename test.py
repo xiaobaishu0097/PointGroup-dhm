@@ -95,6 +95,11 @@ def test(model, model_fn, data_name, epoch):
 
             ##### save files
             start3 = time.time()
+            if cfg.save_grid_points:
+                os.makedirs(os.path.join(result_dir, 'grid_points', exist_ok=True))
+                grid_points = grid_centers.cpu().numpy()
+                np.save(os.path.join(result_dir, 'grid_points', test_scene_name + '.npy'), grid_points)
+
             # if cfg.save_semantic:
             #     os.makedirs(os.path.join(result_dir, 'semantic'), exist_ok=True)
             #     semantic_np = semantic_pred.cpu().numpy()
