@@ -197,7 +197,10 @@ def normalize_3d_coordinate(p, padding=0.1):
         padding (float): conventional padding paramter of ONet for unit cube, so [-0.5, 0.5] -> [-0.55, 0.55]
     '''
 
-    p_nor = p / (1 + padding + 10e-4)  # (-0.5, 0.5)
+    p_nor = p - p.min(dim=1, keepdim=True)[0]
+    p_nor = p_nor / p_nor.max(dim=1, keepdim=True)[0]
+    p_nor -= 0.5
+    p_nor = p_nor / (1 + padding + 10e-4)  # (-0.5, 0.5)
     p_nor = p_nor + 0.5  # range (0, 1)
     # f there are outliers out of the range
     if p_nor.max() >= 1:

@@ -90,6 +90,17 @@ def get_coords_color(opt):
         grid_points_file = os.path.join(opt.result_root, opt.room_split, 'grid_points', opt.room_name + '.npy')
         assert os.path.isfile(grid_points_file), 'No grid points result - {}.'.format(grid_points_file)
         grid_centers = np.load(grid_points_file)
+        grid_rgb = np.zeros((grid_centers.shape[1], 3))
+        grid_xyz = np.zeros((grid_centers.shape[1], 3))
+        grid_xyz -= xyz.min(axis=0, keepdims=True)
+        grid_size = xyz.max(axis=0, keepdims=True) - xyz.min(axis=0, keepdims=True)
+        for i in range(grid_xyz.shape[0]):
+            grid_xyz[i, 0] = grid_xyz[i, 0] + grid_size[0, 0] * (i % 32)
+            grid_xyz[i, 1] = grid_xyz[i, 1] + grid_size[0, 1] * (i // 32)
+            grid_xyz[i, 2] = grid_xyz[i, 2] + grid_size[0, 2] * (i // 32**2)
+
+        xyz = np.concatenate((xyz, grid_xyz), axis=0)
+        rgb = np.concatenate((rgb, grid_rgb), axis=0)
 
 
     elif (opt.task == 'semantic_gt'):

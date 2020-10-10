@@ -74,7 +74,8 @@ def test(model, model_fn, data_name, epoch):
             preds = model_fn(batch, model, epoch)
             end1 = time.time() - start1
 
-            grid_centers = torch.sigmoid(preds['grid_centers'])
+            grid_preds = torch.sigmoid(preds['grid_centers'])
+            grid_centers = grid_preds
             center_indexs = preds['center_indexs']
 
             grid_cent_max = maxpool3d(grid_centers.reshape(1, 1, 32, 32, 32)).reshape(1, 32**3)
@@ -97,7 +98,7 @@ def test(model, model_fn, data_name, epoch):
             start3 = time.time()
             if cfg.save_grid_points:
                 os.makedirs(os.path.join(result_dir, 'grid_points', exist_ok=True))
-                grid_points = grid_centers.cpu().numpy()
+                grid_points = grid_preds.cpu().numpy()
                 np.save(os.path.join(result_dir, 'grid_points', test_scene_name + '.npy'), grid_points)
 
             # if cfg.save_semantic:
