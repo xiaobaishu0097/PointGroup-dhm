@@ -624,7 +624,7 @@ def model_fn_decorator(test=False):
 
 class WeightedFocalLoss(nn.Module):
     "Non weighted version of Focal Loss"
-    def __init__(self, alpha=.25, gamma=2):
+    def __init__(self, alpha=0.75, gamma=2):
         super(WeightedFocalLoss, self).__init__()
         self.alpha = torch.tensor([alpha, 1-alpha]).cuda()
         self.gamma = gamma

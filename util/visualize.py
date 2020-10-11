@@ -9,6 +9,8 @@ import os, glob, argparse
 import torch
 from operator import itemgetter
 
+from model.common import GaussianSmoothing
+
 COLOR20 = np.array(
         [[230, 25, 75], [60, 180, 75], [255, 225, 25], [0, 130, 200], [245, 130, 48],
         [145, 30, 180], [70, 240, 240], [240, 50, 230], [210, 245, 60], [250, 190, 190],
@@ -78,9 +80,44 @@ def get_coords_color(opt):
         xyz, rgb, label, inst_label = torch.load(input_file)
     rgb = (rgb + 1) * 127.5
 
-    if opt.task == 'grid_points':
+    if opt.task == 'grid_gt':
         assert opt.room_split != 'test'
-        label = label.astype(np.int)
+        inst_label = inst_label.astype(np.int)
+        print("Instance number: {}".format(inst_label.max() + 1))
+        inst_label_rgb = np.zeros(rgb.shape)
+        object_idx = (inst_label >= 0)
+        inst_label_rgb[object_idx] = COLOR20[inst_label[object_idx] % len(COLOR20)]
+        rgb = inst_label_rgb
+
+        smoothing = GaussianSmoothing(3, 1, 1, dim=3)
+        grid_indexs_file = os.path.join(opt.result_root, opt.room_split, 'grid_indexs', opt.room_name + '.npy')
+        assert os.path.isfile(grid_indexs_file), 'No grid indexs result - {}.'.format(grid_indexs_file)
+        grid_gt = np.load(grid_indexs_file)
+        instance_center = np.zeros((32 ** 3, 1))
+        instance_center[grid_gt] = 1
+        instance_center = instance_center.reshape((32, 32, 32, 1))
+
+        grid_rgb = np.ones((32**3, 3)) * 220
+        grid_xyz = np.zeros((32**3, 3), dtype=np.float32)
+        grid_xyz += xyz.min(axis=0, keepdims=True)
+        grid_size = (xyz.max(axis=0, keepdims=True) - xyz.min(axis=0, keepdims=True)) / 32
+        grid_xyz = grid_xyz.reshape(32, 32, 32, 3)
+        for i in range(32):
+            grid_xyz[i, :, :, 0] = grid_xyz[i, :, :, 0] + i * grid_size[0, 0]
+            grid_xyz[:, i, :, 1] = grid_xyz[:, i, :, 1] + i * grid_size[0, 1]
+            grid_xyz[:, :, i, 2] = grid_xyz[:, :, i, 2] + i * grid_size[0, 2]
+        grid_xyz = grid_xyz.reshape(-1, 3)
+        # for i in range(grid_xyz.shape[0]):
+        #     grid_xyz[i, 0] = grid_xyz[i, 0] + grid_size[0, 0] * (i % 32)
+        #     grid_xyz[i, 1] = grid_xyz[i, 1] + grid_size[0, 1] * ((i % 32**2) // 32)
+        #     grid_xyz[i, 2] = grid_xyz[i, 2] + grid_size[0, 2] * (i // 32**2)
+
+        xyz = np.concatenate((xyz, grid_xyz), axis=0)
+        rgb = np.concatenate((rgb, grid_rgb), axis=0)
+
+    elif opt.task == 'grid_pred':
+        assert opt.room_split != 'test'
+        inst_label = inst_label.astype(np.int)
         print("Instance number: {}".format(inst_label.max() + 1))
         inst_label_rgb = np.zeros(rgb.shape)
         object_idx = (inst_label >= 0)
@@ -90,18 +127,21 @@ def get_coords_color(opt):
         grid_points_file = os.path.join(opt.result_root, opt.room_split, 'grid_points', opt.room_name + '.npy')
         assert os.path.isfile(grid_points_file), 'No grid points result - {}.'.format(grid_points_file)
         grid_centers = np.load(grid_points_file)
-        grid_rgb = np.zeros((grid_centers.shape[1], 3))
-        grid_xyz = np.zeros((grid_centers.shape[1], 3))
-        grid_xyz -= xyz.min(axis=0, keepdims=True)
-        grid_size = xyz.max(axis=0, keepdims=True) - xyz.min(axis=0, keepdims=True)
-        for i in range(grid_xyz.shape[0]):
-            grid_xyz[i, 0] = grid_xyz[i, 0] + grid_size[0, 0] * (i % 32)
-            grid_xyz[i, 1] = grid_xyz[i, 1] + grid_size[0, 1] * (i // 32)
-            grid_xyz[i, 2] = grid_xyz[i, 2] + grid_size[0, 2] * (i // 32**2)
+        grid_rgb = np.ones((32**3, 3)) * 220
+        grid_xyz = np.zeros((32**3, 3), dtype=np.float32)
+        grid_xyz += xyz.min(axis=0, keepdims=True)
+        grid_size = (xyz.max(axis=0, keepdims=True) - xyz.min(axis=0, keepdims=True)) / 32
+        grid_xyz = grid_xyz.reshape(32, 32, 32, 3)
+        for i in range(32):
+            grid_xyz[i, :, :, 0] = grid_xyz[i, :, :, 0] + i * grid_size[0, 0]
+            grid_xyz[:, i, :, 1] = grid_xyz[:, i, :, 1] + i * grid_size[0, 1]
+            grid_xyz[:, :, i, 2] = grid_xyz[:, :, i, 2] + i * grid_size[0, 2]
+        grid_xyz = grid_xyz.reshape(-1, 3)
+
+        smoothing = GaussianSmoothing(4, 1, 1, dim=3)
 
         xyz = np.concatenate((xyz, grid_xyz), axis=0)
         rgb = np.concatenate((rgb, grid_rgb), axis=0)
-
 
     elif (opt.task == 'semantic_gt'):
         assert opt.room_split != 'test'
@@ -147,6 +187,8 @@ def get_coords_color(opt):
 
     if opt.room_split != 'test':
         sem_valid = (label != -100)
+        if opt.task == 'grid_gt' or opt.task == 'grid_pred':
+            sem_valid = np.concatenate((sem_valid, np.ones((32**3,), dtype=bool)))
         xyz = xyz[sem_valid]
         rgb = rgb[sem_valid]
 
