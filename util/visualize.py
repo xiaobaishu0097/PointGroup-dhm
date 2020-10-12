@@ -94,9 +94,6 @@ def get_coords_color(opt):
             inst_centers.append(xyz[inst_label == inst_id].mean(0))
 
         smoothing = GaussianSmoothing(1, 5, 1, dim=3)
-        # grid_indexs_file = os.path.join(opt.result_root, opt.room_split, 'grid_indexs', opt.room_name + '.npy')
-        # assert os.path.isfile(grid_indexs_file), 'No grid indexs result - {}.'.format(grid_indexs_file)
-        # grid_gt = np.load(grid_indexs_file)
 
         grid_xyz = np.zeros((32**3, 3), dtype=np.float32)
         grid_xyz += xyz.min(axis=0, keepdims=True)
@@ -113,10 +110,13 @@ def get_coords_color(opt):
             grid_xyz[i, 2] = grid_xyz[i, 2] + grid_size[0, 2] * (i // 32**2)
         grid_xyz = grid_xyz.reshape(-1, 3)
 
+        # grid_indexs_file = os.path.join(opt.result_root, opt.room_split, 'grid_indexs', opt.room_name + '.npy')
+        # assert os.path.isfile(grid_indexs_file), 'No grid indexs result - {}.'.format(grid_indexs_file)
+        # grid_centers = np.load(grid_indexs_file)
         grid_centers = []
         for inst_center in inst_centers:
             xyz_index = (inst_center - xyz.min(axis=0, keepdims=True)) / grid_size
-            grid_centers.append(int(xyz_index[0, 0])*32**0 + int(xyz_index[0, 1])*32 + int(xyz_index[0, 2])*32**2)
+            grid_centers.append(round(xyz_index[0, 0])*32**0 + round(xyz_index[0, 1])*32 + round(xyz_index[0, 2])*32**2)
         instance_center = torch.zeros((32 ** 3, 1))
         instance_center[grid_centers] = 10
         instance_center = instance_center.reshape((1, 1, 32, 32, 32))
@@ -129,6 +129,9 @@ def get_coords_color(opt):
 
         grid_xyz = grid_xyz[instance_center.reshape(32 ** 3, ) != 0, :]
         grid_rgb = grid_rgb[instance_center.reshape(32 ** 3, ) != 0, :]
+
+        # grid_xyz = np.array(inst_centers)
+        # grid_rgb = np.zeros_like(grid_xyz)
 
         # xyz = grid_xyz
         # rgb = grid_rgb
