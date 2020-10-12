@@ -7,6 +7,7 @@ import numpy as np
 import mayavi.mlab as mlab
 import os, glob, argparse
 import torch
+from torch.nn import functional as F
 from operator import itemgetter
 
 from model.common import GaussianSmoothing
@@ -88,30 +89,49 @@ def get_coords_color(opt):
         object_idx = (inst_label >= 0)
         inst_label_rgb[object_idx] = COLOR20[inst_label[object_idx] % len(COLOR20)]
         rgb = inst_label_rgb
+        inst_centers = []
+        for inst_id in np.unique(inst_label[object_idx]):
+            inst_centers.append(xyz[inst_label == inst_id].mean(0))
 
-        smoothing = GaussianSmoothing(3, 1, 1, dim=3)
-        grid_indexs_file = os.path.join(opt.result_root, opt.room_split, 'grid_indexs', opt.room_name + '.npy')
-        assert os.path.isfile(grid_indexs_file), 'No grid indexs result - {}.'.format(grid_indexs_file)
-        grid_gt = np.load(grid_indexs_file)
-        instance_center = np.zeros((32 ** 3, 1))
-        instance_center[grid_gt] = 1
-        instance_center = instance_center.reshape((32, 32, 32, 1))
+        smoothing = GaussianSmoothing(1, 5, 1, dim=3)
+        # grid_indexs_file = os.path.join(opt.result_root, opt.room_split, 'grid_indexs', opt.room_name + '.npy')
+        # assert os.path.isfile(grid_indexs_file), 'No grid indexs result - {}.'.format(grid_indexs_file)
+        # grid_gt = np.load(grid_indexs_file)
 
-        grid_rgb = np.ones((32**3, 3)) * 220
         grid_xyz = np.zeros((32**3, 3), dtype=np.float32)
         grid_xyz += xyz.min(axis=0, keepdims=True)
         grid_size = (xyz.max(axis=0, keepdims=True) - xyz.min(axis=0, keepdims=True)) / 32
-        grid_xyz = grid_xyz.reshape(32, 32, 32, 3)
-        for i in range(32):
-            grid_xyz[i, :, :, 0] = grid_xyz[i, :, :, 0] + i * grid_size[0, 0]
-            grid_xyz[:, i, :, 1] = grid_xyz[:, i, :, 1] + i * grid_size[0, 1]
-            grid_xyz[:, :, i, 2] = grid_xyz[:, :, i, 2] + i * grid_size[0, 2]
+        grid_xyz -= grid_size / 2
+        # grid_xyz = grid_xyz.reshape(32, 32, 32, 3)
+        # for i in range(32):
+        #     grid_xyz[i, :, :, 0] = grid_xyz[i, :, :, 0] + i * grid_size[0, 0]
+        #     grid_xyz[:, i, :, 1] = grid_xyz[:, i, :, 1] + i * grid_size[0, 1]
+        #     grid_xyz[:, :, i, 2] = grid_xyz[:, :, i, 2] + i * grid_size[0, 2]
+        for i in range(grid_xyz.shape[0]):
+            grid_xyz[i, 0] = grid_xyz[i, 0] + grid_size[0, 0] * (i % 32)
+            grid_xyz[i, 1] = grid_xyz[i, 1] + grid_size[0, 1] * ((i % 32**2) // 32)
+            grid_xyz[i, 2] = grid_xyz[i, 2] + grid_size[0, 2] * (i // 32**2)
         grid_xyz = grid_xyz.reshape(-1, 3)
-        # for i in range(grid_xyz.shape[0]):
-        #     grid_xyz[i, 0] = grid_xyz[i, 0] + grid_size[0, 0] * (i % 32)
-        #     grid_xyz[i, 1] = grid_xyz[i, 1] + grid_size[0, 1] * ((i % 32**2) // 32)
-        #     grid_xyz[i, 2] = grid_xyz[i, 2] + grid_size[0, 2] * (i // 32**2)
 
+        grid_centers = []
+        for inst_center in inst_centers:
+            xyz_index = (inst_center - xyz.min(axis=0, keepdims=True)) / grid_size
+            grid_centers.append(int(xyz_index[0, 0])*32**0 + int(xyz_index[0, 1])*32 + int(xyz_index[0, 2])*32**2)
+        instance_center = torch.zeros((32 ** 3, 1))
+        instance_center[grid_centers] = 10
+        instance_center = instance_center.reshape((1, 1, 32, 32, 32))
+        instance_center = F.pad(instance_center, (2, 2, 2, 2, 2, 2), mode='constant')
+        instance_center = smoothing(instance_center).reshape(32**3, 1)
+        grid_rgb = np.ones((32**3, 3)) * 255
+        grid_rgb[:, 1] *= (1 - instance_center).reshape(-1, ).numpy()
+        grid_rgb[:, 2] *= (1 - instance_center).reshape(-1, ).numpy()
+        grid_rgb = grid_rgb.clip(0, 255)
+
+        grid_xyz = grid_xyz[instance_center.reshape(32 ** 3, ) != 0, :]
+        grid_rgb = grid_rgb[instance_center.reshape(32 ** 3, ) != 0, :]
+
+        # xyz = grid_xyz
+        # rgb = grid_rgb
         xyz = np.concatenate((xyz, grid_xyz), axis=0)
         rgb = np.concatenate((rgb, grid_rgb), axis=0)
 
@@ -188,7 +208,7 @@ def get_coords_color(opt):
     if opt.room_split != 'test':
         sem_valid = (label != -100)
         if opt.task == 'grid_gt' or opt.task == 'grid_pred':
-            sem_valid = np.concatenate((sem_valid, np.ones((32**3,), dtype=bool)))
+            sem_valid = np.concatenate((sem_valid, np.ones((grid_xyz.shape[0],), dtype=bool)))
         xyz = xyz[sem_valid]
         rgb = rgb[sem_valid]
 

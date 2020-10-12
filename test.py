@@ -62,7 +62,7 @@ def test(model, model_fn, data_name, epoch):
         fp = 0
         fn = 0
 
-        true_threshold = 0.5
+        true_threshold = 0.0
         candidate_num = 100
 
         matches = {}
