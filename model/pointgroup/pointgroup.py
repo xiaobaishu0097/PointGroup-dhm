@@ -6,6 +6,7 @@ Written by Li Jiang
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import numpy as np
 import spconv
 from spconv.modules import SparseModule
 import functools
@@ -462,6 +463,7 @@ def model_fn_decorator(test=False):
         instance_info = batch['instance_info'].cuda()  # (N, 9), float32, cuda, (meanxyz, minxyz, maxxyz)
         instance_pointnum = batch['instance_pointnum'].cuda()  # (total_nInst), int, cuda
         instance_centers = batch['instance_centers'].cuda()
+        instance_heatmap = batch['instance_heatmap'].cuda()
 
         batch_offsets = batch['offsets'].cuda()  # (B + 1), int, cuda
 
@@ -483,11 +485,30 @@ def model_fn_decorator(test=False):
         grid_centers = ret['grid_centers'] # (1, 32**3)
         grid_centers = grid_centers.reshape(1, -1)
 
-        grid_coords = normalize_3d_coordinate(
-            torch.cat((coords_float, instance_centers), dim=0).unsqueeze(dim=0).clone(), padding=0.1)
-        center_indexs = coordinate2index(grid_coords, 32, coord_type='3d')[:, :, -instance_centers.shape[0]:]
-        grid_gt_centers = torch.zeros_like(grid_centers).cuda()
-        grid_gt_centers[:, center_indexs] = 1
+        # xyz = batch['locs_float'].numpy()
+        # grid_xyz = np.zeros((32**3, 3), dtype=np.float32)
+        # grid_xyz += xyz.min(axis=0, keepdims=True)
+        # grid_size = (xyz.max(axis=0, keepdims=True) - xyz.min(axis=0, keepdims=True)) / 32
+        # grid_xyz -= grid_size / 2
+        # # grid_xyz = grid_xyz.reshape(32, 32, 32, 3)
+        # # for i in range(32):
+        # #     grid_xyz[i, :, :, 0] = grid_xyz[i, :, :, 0] + i * grid_size[0, 0]
+        # #     grid_xyz[:, i, :, 1] = grid_xyz[:, i, :, 1] + i * grid_size[0, 1]
+        # #     grid_xyz[:, :, i, 2] = grid_xyz[:, :, i, 2] + i * grid_size[0, 2]
+        # for i in range(grid_xyz.shape[0]):
+        #     grid_xyz[i, 0] = grid_xyz[i, 0] + grid_size[0, 0] * (i % 32)
+        #     grid_xyz[i, 1] = grid_xyz[i, 1] + grid_size[0, 1] * ((i % 32**2) // 32)
+        #     grid_xyz[i, 2] = grid_xyz[i, 2] + grid_size[0, 2] * (i // 32**2)
+        # grid_xyz = grid_xyz.reshape(-1, 3)
+        #
+        # instance_heatmap = generate_heatmap(grid_xyz, instance_centers.cpu().numpy())
+        instance_heatmap = instance_heatmap.reshape((1, -1))
+
+        # grid_coords = normalize_3d_coordinate(
+        #     torch.cat((coords_float, instance_centers), dim=0).unsqueeze(dim=0).clone(), padding=0.1)
+        # center_indexs = coordinate2index(grid_coords, 32, coord_type='3d')[:, :, -instance_centers.shape[0]:]
+        # grid_gt_centers = torch.zeros_like(grid_centers).cuda()
+        # grid_gt_centers[:, center_indexs] = 1
 
         # semantic_scores = ret['semantic_scores']  # (N, nClass) float32, cuda
         # pt_offsets = ret['pt_offsets']  # (N, 3), float32, cuda
@@ -498,7 +519,7 @@ def model_fn_decorator(test=False):
             # proposals_offset: (nProposal + 1), int, cpu
 
         loss_inp = {}
-        loss_inp['grid_centers'] = (grid_centers, grid_gt_centers)
+        loss_inp['grid_centers'] = (grid_centers, instance_heatmap)
         # loss_inp['semantic_scores'] = (semantic_scores, labels)
         # loss_inp['pt_offsets'] = (pt_offsets, coords_float, instance_info, instance_labels)
         # if (epoch > cfg.prepare_epochs):
@@ -624,7 +645,7 @@ def model_fn_decorator(test=False):
 
 class WeightedFocalLoss(nn.Module):
     "Non weighted version of Focal Loss"
-    def __init__(self, alpha=0.75, gamma=2):
+    def __init__(self, alpha=0.25, gamma=2):
         super(WeightedFocalLoss, self).__init__()
         self.alpha = torch.tensor([alpha, 1-alpha]).cuda()
         self.gamma = gamma

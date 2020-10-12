@@ -3,6 +3,7 @@ import torch
 import numpy as np
 import math
 import numbers
+from math import exp
 
 from torch import nn
 from torch.nn import functional as F
@@ -201,11 +202,11 @@ def normalize_3d_coordinate(p, padding=0.1):
         padding (float): conventional padding paramter of ONet for unit cube, so [-0.5, 0.5] -> [-0.55, 0.55]
     '''
 
-    p_nor = p - p.min(dim=1, keepdim=True)[0]
+    p_nor = p + p.min(dim=1, keepdim=True)[0]
     p_nor = p_nor / p_nor.max(dim=1, keepdim=True)[0]
-    p_nor -= 0.5
-    p_nor = p_nor / (1 + padding + 10e-4)  # (-0.5, 0.5)
-    p_nor = p_nor + 0.5  # range (0, 1)
+    # p_nor -= 0.5
+    # p_nor = p_nor / (1 + padding + 10e-4)  # (-0.5, 0.5)
+    # p_nor = p_nor + 0.5  # range (0, 1)
     # f there are outliers out of the range
     if p_nor.max() >= 1:
         p_nor[p_nor >= 1] = 1 - 10e-4
@@ -452,3 +453,17 @@ class GaussianSmoothing(nn.Module):
             filtered (torch.Tensor): Filtered output.
         """
         return self.conv(input, weight=self.weight, groups=self.groups)
+
+
+def generate_heatmap(grid_xyz, instance_centers, sigma=0.25):
+    scaledGaussian = lambda x: exp(-(1 / 2) * ((x / sigma) ** 2))
+
+    distance = torch.tensor(grid_xyz).unsqueeze(dim=1).repeat(1, len(instance_centers), 1) - torch.tensor(
+        instance_centers).unsqueeze(dim=0).repeat(
+        grid_xyz.shape[0], 1, 1)
+    heatmap = torch.norm(distance, dim=2)
+    heatmap = heatmap.apply_(scaledGaussian)
+    heatmap = heatmap.max(dim=1)[0]
+    heatmap[heatmap < exp(-1)] = 0
+
+    return heatmap
