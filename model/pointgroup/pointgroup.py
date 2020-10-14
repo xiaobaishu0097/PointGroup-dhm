@@ -388,7 +388,7 @@ def model_fn_decorator(test=False):
     #### criterion
     semantic_criterion = nn.CrossEntropyLoss(ignore_index=cfg.ignore_label).cuda()
     score_criterion = nn.BCELoss(reduction='none').cuda()
-    center_criterion = WeightedFocalLoss().cuda()
+    center_criterion = WeightedFocalLoss(alpha=cfg.focal_loss_alpha, gamma=cfg.focal_loss_gamma).cuda()
 
     def test_model_fn(batch, model, epoch):
         coords = batch['locs'].cuda()  # (N, 1 + 3), long, cuda, dimension 0 for batch_idx
