@@ -74,35 +74,34 @@ def test(model, model_fn, data_name, epoch):
             preds = model_fn(batch, model, epoch)
             end1 = time.time() - start1
 
-            grid_preds = torch.sigmoid(preds['grid_centers'])
-            grid_centers = grid_preds
-            center_indexs = preds['center_indexs']
+            grid_center_preds = torch.sigmoid(preds['grid_center_preds'])
+            grid_center_gt = preds['grid_center_gt']
 
-            grid_cent_max = maxpool3d(grid_centers.reshape(1, 1, 32, 32, 32)).reshape(1, 32**3)
-            cent_candidates_indexs = (grid_centers == grid_cent_max)
-            grid_centers[~cent_candidates_indexs] = 0
-            topk_value_, topk_index_ = torch.topk(grid_centers, 100, dim=1)
+            grid_cent_max = maxpool3d(grid_center_preds.reshape(1, 1, 32, 32, 32)).reshape(1, 32**3)
+            cent_candidates_indexs = (grid_center_preds == grid_cent_max)
+            grid_center_preds[~cent_candidates_indexs] = 0
+            topk_value_, topk_index_ = torch.topk(grid_center_preds, 100, dim=1)
             topk_index_ = topk_index_[topk_value_ > true_threshold]
 
-            for grid_point in range(grid_centers.shape[1]):
-                if (grid_point in topk_index_) and (grid_point in center_indexs):
+            for grid_center_pred in range(grid_center_preds.shape[1]):
+                if (grid_center_pred in topk_index_) and (grid_center_pred in grid_center_gt):
                     tp += 1
-                elif (grid_point in topk_index_) and (grid_point not in center_indexs):
+                elif (grid_center_pred in topk_index_) and (grid_center_pred not in grid_center_gt):
                     fp += 1
-                elif (grid_point not in topk_index_) and (grid_point in center_indexs):
+                elif (grid_center_pred not in topk_index_) and (grid_center_pred in grid_center_gt):
                     fn += 1
-                elif (grid_point not in topk_index_) and (grid_point not in center_indexs):
+                elif (grid_center_pred not in topk_index_) and (grid_center_pred not in grid_center_gt):
                     tn += 1
 
             ##### save files
             start3 = time.time()
             if cfg.save_grid_points:
-                os.makedirs(os.path.join(result_dir, 'grid_points'), exist_ok=True)
-                os.makedirs(os.path.join(result_dir, 'grid_indexs'), exist_ok=True)
-                grid_points = grid_preds.cpu().numpy()
-                grid_indexs = center_indexs.cpu().numpy()
-                np.save(os.path.join(result_dir, 'grid_points', test_scene_name + '.npy'), grid_points)
-                np.save(os.path.join(result_dir, 'grid_indexs', test_scene_name + '.npy'), grid_indexs)
+                os.makedirs(os.path.join(result_dir, 'grid_center_preds'), exist_ok=True)
+                os.makedirs(os.path.join(result_dir, 'grid_center_gt'), exist_ok=True)
+                grid_center_preds = grid_center_preds.cpu().numpy()
+                grid_center_gt = grid_center_gt.cpu().numpy()
+                np.save(os.path.join(result_dir, 'grid_center_preds', test_scene_name + '.npy'), grid_center_preds)
+                np.save(os.path.join(result_dir, 'grid_center_gt', test_scene_name + '.npy'), grid_center_gt)
 
             # if cfg.save_semantic:
             #     os.makedirs(os.path.join(result_dir, 'semantic'), exist_ok=True)
