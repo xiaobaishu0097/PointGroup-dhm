@@ -77,8 +77,8 @@ def test(model, model_fn, data_name, epoch):
             grid_center_preds = torch.sigmoid(preds['grid_center_preds'])
             grid_center_gt = preds['grid_center_gt']
 
-            grid_cent_max = maxpool3d(grid_center_preds.reshape(1, 1, 32, 32, 32)).reshape(1, 32**3)
-            cent_candidates_indexs = (grid_center_preds == grid_cent_max)
+            grid_pred_max = maxpool3d(grid_center_preds.reshape(1, 1, 32, 32, 32)).reshape(1, 32**3)
+            cent_candidates_indexs = (grid_center_preds == grid_pred_max)
             grid_center_preds[~cent_candidates_indexs] = 0
             topk_value_, topk_index_ = torch.topk(grid_center_preds, 100, dim=1)
             topk_index_ = topk_index_[topk_value_ > true_threshold]

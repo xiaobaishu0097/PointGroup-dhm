@@ -31,6 +31,8 @@ class Dataset:
         self.max_npoint = cfg.max_npoint
         self.mode = cfg.mode
 
+        self.heatmap_sigma = cfg.heatmap_sigma
+
         if test:
             self.test_split = cfg.split  # val or test
             self.test_workers = cfg.test_workers
@@ -263,7 +265,7 @@ class Dataset:
         #     grid_xyz[i, 1] = grid_xyz[i, 1] + grid_size[0, 1] * ((i % 32**2) // 32)
         #     grid_xyz[i, 2] = grid_xyz[i, 2] + grid_size[0, 2] * (i // 32**2)
 
-        instance_heatmap = generate_heatmap(grid_xyz, instance_centers.cpu().numpy())
+        instance_heatmap = generate_heatmap(grid_xyz, instance_centers.cpu().numpy(), sigma=self.heatmap_sigma)
 
         norm_inst_centers = normalize_3d_coordinate(
             torch.cat((locs_float, instance_centers), dim=0).unsqueeze(dim=0).clone()
@@ -369,7 +371,7 @@ class Dataset:
         #     grid_xyz[i, 1] = grid_xyz[i, 1] + grid_size[0, 1] * ((i % 32**2) // 32)
         #     grid_xyz[i, 2] = grid_xyz[i, 2] + grid_size[0, 2] * (i // 32**2)
 
-        instance_heatmap = generate_heatmap(grid_xyz, instance_centers.cpu().numpy())
+        instance_heatmap = generate_heatmap(grid_xyz, instance_centers.cpu().numpy(), sigma=self.heatmap_sigma)
 
         norm_inst_centers = normalize_3d_coordinate(
             torch.cat((locs_float, instance_centers), dim=0).unsqueeze(dim=0).clone()
@@ -436,6 +438,35 @@ class Dataset:
 
         ### voxelize
         voxel_locs, p2v_map, v2p_map = pointgroup_ops.voxelization_idx(locs, self.batch_size, self.mode)
+
+        if self.test_split == 'val':
+            xyz = locs_float.numpy()
+            grid_xyz = np.zeros((32**3, 3), dtype=np.float32)
+            grid_xyz += xyz.min(axis=0, keepdims=True)
+            grid_size = (xyz.max(axis=0, keepdims=True) - xyz.min(axis=0, keepdims=True)) / 32
+            grid_xyz += grid_size / 2
+            grid_xyz = grid_xyz.reshape(32, 32, 32, 3)
+            for i in range(32):
+                grid_xyz[i, :, :, 0] = grid_xyz[i, :, :, 0] + i * grid_size[0, 0]
+                grid_xyz[:, i, :, 1] = grid_xyz[:, i, :, 1] + i * grid_size[0, 1]
+                grid_xyz[:, :, i, 2] = grid_xyz[:, :, i, 2] + i * grid_size[0, 2]
+            grid_xyz = grid_xyz.reshape(-1, 3)
+            # for i in range(grid_xyz.shape[0]):
+            #     grid_xyz[i, 0] = grid_xyz[i, 0] + grid_size[0, 0] * (i % 32)
+            #     grid_xyz[i, 1] = grid_xyz[i, 1] + grid_size[0, 1] * ((i % 32**2) // 32)
+            #     grid_xyz[i, 2] = grid_xyz[i, 2] + grid_size[0, 2] * (i // 32**2)
+
+            instance_heatmap = generate_heatmap(grid_xyz, instance_centers.cpu().numpy(), sigma=self.heatmap_sigma)
+
+            norm_inst_centers = normalize_3d_coordinate(
+                torch.cat((locs_float, instance_centers), dim=0).unsqueeze(dim=0).clone()
+            )[:, -instance_centers.shape[0]:, :]
+            grid_center_gt = coordinate2index(norm_inst_centers, 32, coord_type='3d')
+
+            return {'locs': locs, 'voxel_locs': voxel_locs, 'p2v_map': p2v_map, 'v2p_map': v2p_map,
+                    'locs_float': locs_float, 'feats': feats, 'instance_centers': instance_centers,
+                    'instance_heatmap': instance_heatmap, 'grid_center_gt': grid_center_gt,
+                    'id': id, 'offsets': batch_offsets, 'spatial_shape': spatial_shape}
 
         return {'locs': locs, 'voxel_locs': voxel_locs, 'p2v_map': p2v_map, 'v2p_map': v2p_map,
                 'locs_float': locs_float, 'feats': feats, 'instance_centers': instance_centers,

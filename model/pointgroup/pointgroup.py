@@ -562,7 +562,7 @@ def model_fn_decorator(test=False):
         ### center loss
         grid_center_preds, instance_heatmap = loss_inp['grid_centers']
 
-        center_loss = center_criterion(torch.sigmoid(grid_center_preds), instance_heatmap)
+        center_loss = center_criterion(grid_center_preds, instance_heatmap)
         loss_out['center_loss'] = (center_loss, instance_heatmap.shape[-1])
 
         # '''semantic loss'''

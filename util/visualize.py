@@ -11,7 +11,7 @@ from torch.nn import functional as F
 from operator import itemgetter
 from math import exp
 
-from model.common import GaussianSmoothing, generate_heatmap
+from model.common import generate_heatmap
 
 COLOR20 = np.array(
         [[230, 25, 75], [60, 180, 75], [255, 225, 25], [0, 130, 200], [245, 130, 48],
@@ -101,16 +101,16 @@ def get_coords_color(opt):
         grid_xyz += xyz.min(axis=0, keepdims=True)
         grid_size = (xyz.max(axis=0, keepdims=True) - xyz.min(axis=0, keepdims=True)) / 32
         grid_xyz -= grid_size / 2
-        # grid_xyz = grid_xyz.reshape(32, 32, 32, 3)
-        # for i in range(32):
-        #     grid_xyz[i, :, :, 0] = grid_xyz[i, :, :, 0] + i * grid_size[0, 0]
-        #     grid_xyz[:, i, :, 1] = grid_xyz[:, i, :, 1] + i * grid_size[0, 1]
-        #     grid_xyz[:, :, i, 2] = grid_xyz[:, :, i, 2] + i * grid_size[0, 2]
-        for i in range(grid_xyz.shape[0]):
-            grid_xyz[i, 0] = grid_xyz[i, 0] + grid_size[0, 0] * (i % 32)
-            grid_xyz[i, 1] = grid_xyz[i, 1] + grid_size[0, 1] * ((i % 32**2) // 32)
-            grid_xyz[i, 2] = grid_xyz[i, 2] + grid_size[0, 2] * (i // 32**2)
+        grid_xyz = grid_xyz.reshape(32, 32, 32, 3)
+        for i in range(32):
+            grid_xyz[i, :, :, 0] = grid_xyz[i, :, :, 0] + i * grid_size[0, 0]
+            grid_xyz[:, i, :, 1] = grid_xyz[:, i, :, 1] + i * grid_size[0, 1]
+            grid_xyz[:, :, i, 2] = grid_xyz[:, :, i, 2] + i * grid_size[0, 2]
         grid_xyz = grid_xyz.reshape(-1, 3)
+        # for i in range(grid_xyz.shape[0]):
+        #     grid_xyz[i, 0] = grid_xyz[i, 0] + grid_size[0, 0] * (i % 32)
+        #     grid_xyz[i, 1] = grid_xyz[i, 1] + grid_size[0, 1] * ((i % 32**2) // 32)
+        #     grid_xyz[i, 2] = grid_xyz[i, 2] + grid_size[0, 2] * (i // 32**2)
 
         # distance = torch.tensor(grid_xyz).unsqueeze(dim=1).repeat(1, len(inst_centers), 1) - torch.tensor(inst_centers).unsqueeze(dim=0).repeat(
         #     grid_xyz.shape[0], 1, 1)
@@ -132,7 +132,7 @@ def get_coords_color(opt):
         # instance_center = F.pad(instance_center, (2, 2, 2, 2, 2, 2), mode='constant')
         # instance_center = smoothing(instance_center).reshape(32**3, 1)
         grid_rgb = np.ones((32**3, 3)) * 255
-        gaussian_pro = generate_heatmap(grid_xyz, inst_centers)
+        gaussian_pro = generate_heatmap(grid_xyz, inst_centers, sigma=0.15)
         grid_rgb[:, 1] *= (1 - gaussian_pro).reshape(-1, ).numpy()
         grid_rgb[:, 2] *= (1 - gaussian_pro).reshape(-1, ).numpy()
         grid_rgb = grid_rgb.clip(0, 255)
@@ -157,9 +157,9 @@ def get_coords_color(opt):
         inst_label_rgb[object_idx] = COLOR20[inst_label[object_idx] % len(COLOR20)]
         rgb = inst_label_rgb
 
-        grid_points_file = os.path.join(opt.result_root, opt.room_split, 'grid_points', opt.room_name + '.npy')
-        assert os.path.isfile(grid_points_file), 'No grid points result - {}.'.format(grid_points_file)
-        grid_centers = np.load(grid_points_file)
+        grid_center_preds_file = os.path.join(opt.result_root, opt.room_split, 'grid_center_preds', opt.room_name + '.npy')
+        assert os.path.isfile(grid_center_preds_file), 'No grid points result - {}.'.format(grid_center_preds_file)
+        grid_center_preds = np.load(grid_center_preds_file)
         grid_rgb = np.ones((32**3, 3)) * 220
         grid_xyz = np.zeros((32**3, 3), dtype=np.float32)
         grid_xyz += xyz.min(axis=0, keepdims=True)
@@ -171,7 +171,6 @@ def get_coords_color(opt):
             grid_xyz[:, :, i, 2] = grid_xyz[:, :, i, 2] + i * grid_size[0, 2]
         grid_xyz = grid_xyz.reshape(-1, 3)
 
-        smoothing = GaussianSmoothing(4, 1, 1, dim=3)
 
         xyz = np.concatenate((xyz, grid_xyz), axis=0)
         rgb = np.concatenate((rgb, grid_rgb), axis=0)
