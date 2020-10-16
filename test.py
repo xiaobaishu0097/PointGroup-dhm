@@ -77,6 +77,21 @@ def test(model, model_fn, data_name, epoch):
             grid_center_preds = torch.sigmoid(preds['grid_center_preds'])
             grid_center_gt = preds['grid_center_gt']
 
+            grid_points = torch.zeros((32**3))
+            grid_points[grid_center_gt] = 1
+            grid_points = grid_points.reshape((32, 32, 32))
+            new_grid_center_gt = torch.zeros((32, 32, 32))
+            for coord in grid_points.nonzero():
+                x, y, z = coord[0], coord[1], coord[2]
+                for i in [-1, 0, 1]:
+                    new_x = x + i
+                    for j in [-1, 0, 1]:
+                        new_y = y + j
+                        for q in [-1, 0, 1]:
+                            new_z = z + q
+                            new_grid_center_gt[new_x, new_y, new_z] = 1
+            grid_center_gt = new_grid_center_gt
+
             grid_pred_max = maxpool3d(grid_center_preds.reshape(1, 1, 32, 32, 32)).reshape(1, 32**3)
             cent_candidates_indexs = (grid_center_preds == grid_pred_max)
             grid_center_preds[~cent_candidates_indexs] = 0
@@ -92,6 +107,8 @@ def test(model, model_fn, data_name, epoch):
                     fn += 1
                 elif (grid_center_pred not in topk_index_) and (grid_center_pred not in grid_center_gt):
                     tn += 1
+
+            fn = int(fn / 27)
 
             ##### save files
             start3 = time.time()

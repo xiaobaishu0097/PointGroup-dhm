@@ -32,7 +32,7 @@ TRAIN:
   train_workers: 16 # data loader workers
   optim: Adam # Adam or SGD
   lr: 0.001
-  step_epoch: 384
+  step_epoch: 30
   multiplier: 0.5
   momentum: 0.9
   weight_decay: 0.0001
@@ -64,7 +64,7 @@ GROUP:
 
 TEST:
   split: val
-  test_epoch: 96
+  test_epoch: 1
   test_workers: 16
   test_seed: 567
 
