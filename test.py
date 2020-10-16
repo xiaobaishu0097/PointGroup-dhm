@@ -85,11 +85,14 @@ def test(model, model_fn, data_name, epoch):
                 x, y, z = coord[0], coord[1], coord[2]
                 for i in [-1, 0, 1]:
                     new_x = x + i
-                    for j in [-1, 0, 1]:
-                        new_y = y + j
-                        for q in [-1, 0, 1]:
-                            new_z = z + q
-                            new_grid_center_gt[new_x, new_y, new_z] = 1
+                    if new_x >= 0 and new_x <= 31:
+                        for j in [-1, 0, 1]:
+                            new_y = y + j
+                            if new_y >= 0 and new_y <= 31:
+                                for q in [-1, 0, 1]:
+                                    new_z = z + q
+                                    if new_z >= 0 and new_z <= 31:
+                                        new_grid_center_gt[new_x, new_y, new_z] = 1
             grid_center_gt = new_grid_center_gt
 
             grid_pred_max = maxpool3d(grid_center_preds.reshape(1, 1, 32, 32, 32)).reshape(1, 32**3)
