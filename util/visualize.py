@@ -84,6 +84,12 @@ def get_coords_color(opt):
     rgb = (rgb + 1) * 127.5
 
     if opt.task == 'grid_gt':
+        # sem_valid = (label != 100)
+        # xyz = xyz[sem_valid]
+        # rgb = rgb[sem_valid]
+        # inst_label = inst_label[sem_valid]
+        # label = label[sem_valid]
+
         assert opt.room_split != 'test'
         inst_label = inst_label.astype(np.int)
         print("Instance number: {}".format(inst_label.max() + 1))
@@ -94,8 +100,6 @@ def get_coords_color(opt):
         inst_centers = []
         for inst_id in np.unique(inst_label[object_idx]):
             inst_centers.append(xyz[inst_label == inst_id].mean(0))
-
-        # smoothing = GaussianSmoothing(1, 5, 1, dim=3)
 
         grid_xyz = np.zeros((32**3, 3), dtype=np.float32)
         grid_xyz += xyz.min(axis=0, keepdims=True)
@@ -132,7 +136,7 @@ def get_coords_color(opt):
         # instance_center = F.pad(instance_center, (2, 2, 2, 2, 2, 2), mode='constant')
         # instance_center = smoothing(instance_center).reshape(32**3, 1)
         grid_rgb = np.ones((32**3, 3)) * 255
-        gaussian_pro = generate_heatmap(grid_xyz, inst_centers, sigma=0.15)
+        gaussian_pro = generate_heatmap(grid_xyz, inst_centers, sigma=0.25)
         grid_rgb[:, 1] *= (1 - gaussian_pro).reshape(-1, ).numpy()
         grid_rgb[:, 2] *= (1 - gaussian_pro).reshape(-1, ).numpy()
         grid_rgb = grid_rgb.clip(0, 255)
@@ -160,7 +164,9 @@ def get_coords_color(opt):
         grid_center_preds_file = os.path.join(opt.result_root, opt.room_split, 'grid_center_preds', opt.room_name + '.npy')
         assert os.path.isfile(grid_center_preds_file), 'No grid points result - {}.'.format(grid_center_preds_file)
         grid_center_preds = np.load(grid_center_preds_file)
-        grid_rgb = np.ones((32**3, 3)) * 220
+        grid_center_preds[grid_center_preds< 0.5] = 0
+        grid_rgb = np.ones((32**3, 3)) * 255
+        grid_rgb = grid_rgb * grid_center_preds.reshape(-1, 1)
         grid_xyz = np.zeros((32**3, 3), dtype=np.float32)
         grid_xyz += xyz.min(axis=0, keepdims=True)
         grid_size = (xyz.max(axis=0, keepdims=True) - xyz.min(axis=0, keepdims=True)) / 32
@@ -171,6 +177,8 @@ def get_coords_color(opt):
             grid_xyz[:, :, i, 2] = grid_xyz[:, :, i, 2] + i * grid_size[0, 2]
         grid_xyz = grid_xyz.reshape(-1, 3)
 
+        grid_xyz = grid_xyz[grid_center_preds.reshape(32 ** 3, ) != 0, :]
+        grid_rgb = grid_rgb[grid_center_preds.reshape(32 ** 3, ) != 0, :]
 
         xyz = np.concatenate((xyz, grid_xyz), axis=0)
         rgb = np.concatenate((rgb, grid_rgb), axis=0)

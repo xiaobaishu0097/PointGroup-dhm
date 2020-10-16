@@ -181,6 +181,9 @@ class Dataset:
         instance_pointnum = []  # (total_nInst), int
         instance_centers = [] # (totoal_nInst, 3)
 
+        instance_heatmap = []
+        grid_center_gt = []
+
         batch_offsets = [0]
 
         total_inst_num = 0
@@ -218,6 +221,24 @@ class Dataset:
             instance_label[np.where(instance_label != -100)] += total_inst_num
             total_inst_num += inst_num
 
+            grid_xyz = np.zeros((32 ** 3, 3), dtype=np.float32)
+            grid_xyz += xyz_middle.min(axis=0, keepdims=True)
+            grid_size = (xyz_middle.max(axis=0, keepdims=True) - xyz_middle.min(axis=0, keepdims=True)) / 32
+            grid_xyz += grid_size / 2
+            grid_xyz = grid_xyz.reshape(32, 32, 32, 3)
+            for i in range(32):
+                grid_xyz[i, :, :, 0] = grid_xyz[i, :, :, 0] + i * grid_size[0, 0]
+                grid_xyz[:, i, :, 1] = grid_xyz[:, i, :, 1] + i * grid_size[0, 1]
+                grid_xyz[:, :, i, 2] = grid_xyz[:, :, i, 2] + i * grid_size[0, 2]
+            grid_xyz = grid_xyz.reshape(-1, 3)
+
+            inst_heatmap = generate_heatmap(grid_xyz.astype(np.double), np.asarray(inst_center), sigma=self.heatmap_sigma)
+
+            norm_inst_centers = normalize_3d_coordinate(
+                torch.cat((torch.from_numpy(xyz_middle), torch.from_numpy(np.asarray(inst_center))), dim=0).unsqueeze(dim=0).clone()
+            )[:, -len(inst_center):, :]
+            grid_cent_gt = coordinate2index(norm_inst_centers, 32, coord_type='3d')
+
             ### merge the scene to the batch
             batch_offsets.append(batch_offsets[-1] + xyz.shape[0])
 
@@ -231,6 +252,9 @@ class Dataset:
             instance_pointnum.extend(inst_pointnum)
             instance_centers.append(torch.from_numpy(np.asarray(inst_center)))
 
+            instance_heatmap.append(inst_heatmap)
+            grid_center_gt.append(grid_cent_gt.squeeze())
+
         ### merge all the scenes in the batchd
         batch_offsets = torch.tensor(batch_offsets, dtype=torch.int)  # int (B+1)
 
@@ -243,34 +267,13 @@ class Dataset:
         instance_infos = torch.cat(instance_infos, 0).to(torch.float32)       # float (N, 9) (meanxyz, minxyz, maxxyz)
         instance_pointnum = torch.tensor(instance_pointnum, dtype=torch.int)  # int (total_nInst)
         instance_centers = torch.cat(instance_centers, 0).to(torch.float32)
+        instance_heatmap = torch.cat(instance_heatmap, 0).to(torch.float32)
+        grid_center_gt = torch.cat(grid_center_gt, 0).to(torch.float32)
 
         spatial_shape = np.clip((locs.max(0)[0][1:] + 1).numpy(), self.full_scale[0], None)     # long (3)
 
         ### voxelize
         voxel_locs, p2v_map, v2p_map = pointgroup_ops.voxelization_idx(locs, self.batch_size, self.mode)
-
-        xyz = locs_float.numpy()
-        grid_xyz = np.zeros((32**3, 3), dtype=np.float32)
-        grid_xyz += xyz.min(axis=0, keepdims=True)
-        grid_size = (xyz.max(axis=0, keepdims=True) - xyz.min(axis=0, keepdims=True)) / 32
-        grid_xyz += grid_size / 2
-        grid_xyz = grid_xyz.reshape(32, 32, 32, 3)
-        for i in range(32):
-            grid_xyz[i, :, :, 0] = grid_xyz[i, :, :, 0] + i * grid_size[0, 0]
-            grid_xyz[:, i, :, 1] = grid_xyz[:, i, :, 1] + i * grid_size[0, 1]
-            grid_xyz[:, :, i, 2] = grid_xyz[:, :, i, 2] + i * grid_size[0, 2]
-        grid_xyz = grid_xyz.reshape(-1, 3)
-        # for i in range(grid_xyz.shape[0]):
-        #     grid_xyz[i, 0] = grid_xyz[i, 0] + grid_size[0, 0] * (i % 32)
-        #     grid_xyz[i, 1] = grid_xyz[i, 1] + grid_size[0, 1] * ((i % 32**2) // 32)
-        #     grid_xyz[i, 2] = grid_xyz[i, 2] + grid_size[0, 2] * (i // 32**2)
-
-        instance_heatmap = generate_heatmap(grid_xyz, instance_centers.cpu().numpy(), sigma=self.heatmap_sigma)
-
-        norm_inst_centers = normalize_3d_coordinate(
-            torch.cat((locs_float, instance_centers), dim=0).unsqueeze(dim=0).clone()
-        )[:, -instance_centers.shape[0]:, :]
-        grid_center_gt = coordinate2index(norm_inst_centers, 32, coord_type='3d')
 
         return {'locs': locs, 'voxel_locs': voxel_locs, 'p2v_map': p2v_map, 'v2p_map': v2p_map,
                 'locs_float': locs_float, 'feats': feats, 'labels': labels, 'instance_labels': instance_labels,
