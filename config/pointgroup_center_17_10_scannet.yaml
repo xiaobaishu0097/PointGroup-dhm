@@ -24,6 +24,7 @@ STRUCTURE:
   m: 16 # 16 or 32
   block_residual: True
   block_reps: 2
+  unet3d_num_levels: 3
 
   use_coords: True
 

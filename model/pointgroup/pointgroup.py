@@ -220,7 +220,7 @@ class PointGroup(nn.Module):
             c_dim=32, dim=3, hidden_dim=32, scatter_type='mean',
             unet=False, unet_kwargs=None, unet3d=True,
             unet3d_kwargs={
-                'num_levels': 3,
+                'num_levels': cfg.unet3d_num_levels,
                 'f_maps': 32,
                 'in_channels': 32,
                 'out_channels': 32

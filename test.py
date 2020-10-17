@@ -51,7 +51,7 @@ def test(model, model_fn, data_name, epoch):
             exit(0)
     dataloader = dataset.test_data_loader
 
-    maxpool3d = nn.MaxPool3d(3, stride=1, padding=1)
+    maxpool3d = nn.MaxPool3d(5, stride=1, padding=2)
 
     with torch.no_grad():
         model = model.eval()
@@ -75,7 +75,7 @@ def test(model, model_fn, data_name, epoch):
             end1 = time.time() - start1
 
             grid_center_preds = torch.sigmoid(preds['grid_center_preds'])
-            grid_center_gt = preds['grid_center_gt']
+            grid_center_gt = preds['grid_center_gt'].cpu()
 
             grid_points = torch.zeros((32**3))
             grid_points[grid_center_gt] = 1
