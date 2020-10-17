@@ -64,7 +64,7 @@ GROUP:
 
 TEST:
   split: val
-  test_epoch: 304
+  test_epoch: 32
   test_workers: 16
   test_seed: 567
 

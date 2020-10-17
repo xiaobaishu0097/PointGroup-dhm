@@ -62,7 +62,7 @@ def test(model, model_fn, data_name, epoch):
         fp = 0
         fn = 0
 
-        true_threshold = 0.5
+        true_threshold = 0.0
         candidate_num = 100
 
         matches = {}
@@ -77,41 +77,54 @@ def test(model, model_fn, data_name, epoch):
             grid_center_preds = torch.sigmoid(preds['grid_center_preds'])
             grid_center_gt = preds['grid_center_gt']
 
-            # grid_points = torch.zeros((32**3))
-            # grid_points[grid_center_gt] = 1
-            # grid_points = grid_points.reshape((32, 32, 32))
-            # new_grid_center_gt = torch.zeros((32, 32, 32))
-            # for coord in grid_points.nonzero():
-            #     x, y, z = coord[0], coord[1], coord[2]
-            #     for i in [-1, 0, 1]:
-            #         new_x = x + i
-            #         if new_x >= 0 and new_x <= 31:
-            #             for j in [-1, 0, 1]:
-            #                 new_y = y + j
-            #                 if new_y >= 0 and new_y <= 31:
-            #                     for q in [-1, 0, 1]:
-            #                         new_z = z + q
-            #                         if new_z >= 0 and new_z <= 31:
-            #                             new_grid_center_gt[new_x, new_y, new_z] = 1
-            # grid_center_gt = new_grid_center_gt
+            grid_points = torch.zeros((32**3))
+            grid_points[grid_center_gt] = 1
+            grid_points = grid_points.reshape((32, 32, 32))
+            new_grid_center_gt = torch.zeros((32, 32, 32))
+            for coord in grid_points.nonzero():
+                x, y, z = coord[0], coord[1], coord[2]
+                for i in [-1, 0, 1]:
+                    new_x = x + i
+                    if new_x >= 0 and new_x <= 31:
+                        for j in [-1, 0, 1]:
+                            new_y = y + j
+                            if new_y >= 0 and new_y <= 31:
+                                for q in [-1, 0, 1]:
+                                    new_z = z + q
+                                    if new_z >= 0 and new_z <= 31:
+                                        new_grid_center_gt[new_x, new_y, new_z] = 1
+            new_grid_center_gt = new_grid_center_gt.reshape((32**3,))
+            grid_center_gt = new_grid_center_gt.nonzero().reshape((-1))
 
             grid_pred_max = maxpool3d(grid_center_preds.reshape(1, 1, 32, 32, 32)).reshape(1, 32**3)
             cent_candidates_indexs = (grid_center_preds == grid_pred_max)
             grid_center_preds[~cent_candidates_indexs] = 0
-            topk_value_, topk_index_ = torch.topk(grid_center_preds, 100, dim=1)
+            topk_value_, topk_index_ = torch.topk(grid_center_preds, candidate_num, dim=1)
             topk_index_ = topk_index_[topk_value_ > true_threshold]
 
-            for grid_center_pred in range(grid_center_preds.shape[1]):
-                if (grid_center_pred in topk_index_) and (grid_center_pred in grid_center_gt):
-                    tp += 1
-                elif (grid_center_pred in topk_index_) and (grid_center_pred not in grid_center_gt):
-                    fp += 1
-                elif (grid_center_pred not in topk_index_) and (grid_center_pred in grid_center_gt):
-                    fn += 1
-                elif (grid_center_pred not in topk_index_) and (grid_center_pred not in grid_center_gt):
-                    tn += 1
+            # for grid_center_pred in range(grid_center_preds.shape[1]):
+            #     if (grid_center_pred in topk_index_) and (grid_center_pred in grid_center_gt):
+            #         tp += 1
+            #     elif (grid_center_pred in topk_index_) and (grid_center_pred not in grid_center_gt):
+            #         fp += 1
+            #     elif (grid_center_pred not in topk_index_) and (grid_center_pred in grid_center_gt):
+            #         fn += 1
+            #     elif (grid_center_pred not in topk_index_) and (grid_center_pred not in grid_center_gt):
+            #         tn += 1
 
-            # fn = int(fn / 27)
+            tp_scene = 0
+            fp_scene = 0
+
+            for index in topk_index_.cpu():
+                if index in grid_center_gt:
+                    tp_scene += 1
+                else:
+                    fp_scene += 1
+            fn_scene = int(preds['grid_center_gt'].shape[2] - tp_scene)
+
+            tp += tp_scene
+            fp += fp_scene
+            fn += fn_scene
 
             ##### save files
             start3 = time.time()
@@ -153,6 +166,8 @@ def test(model, model_fn, data_name, epoch):
 
             ##### print
             logger.info("instance iter: {}/{} point_num: {} time: total {:.2f}s inference {:.2f}s save {:.2f}s".format(batch['id'][0] + 1, len(dataset.test_files), N, end, end1, end3))
+
+        # fn = int(fn / 27)
 
         precision = tp / (tp + fp + 1)
         recall = tp / (tp + fn + 1)
