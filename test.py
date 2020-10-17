@@ -111,7 +111,7 @@ def test(model, model_fn, data_name, epoch):
                 elif (grid_center_pred not in topk_index_) and (grid_center_pred not in grid_center_gt):
                     tn += 1
 
-            fn = int(fn / 27)
+            # fn = int(fn / 27)
 
             ##### save files
             start3 = time.time()
