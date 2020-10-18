@@ -106,11 +106,11 @@ def test(model, model_fn, data_name, epoch):
             fp_scene = 0
 
             for index in topk_index_.cpu():
-                if index in grid_center_gt:
+                if index in grid_center_gt.long():
                     tp_scene += 1
                 else:
                     fp_scene += 1
-            fn_scene = int(preds['grid_center_gt'].shape[2] - tp_scene)
+            fn_scene = int(preds['grid_center_gt'].shape[0] - tp_scene)
 
             tp += tp_scene
             fp += fp_scene
