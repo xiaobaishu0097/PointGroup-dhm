@@ -11,7 +11,7 @@ from torch.nn import functional as F
 from operator import itemgetter
 from math import exp
 
-from model.common import generate_heatmap
+from model.common import generate_heatmap, normalize_3d_coordinate, coordinate2index
 
 COLOR20 = np.array(
         [[230, 25, 75], [60, 180, 75], [255, 225, 25], [0, 130, 200], [245, 130, 48],
@@ -104,13 +104,13 @@ def get_coords_color(opt):
         grid_xyz = np.zeros((32**3, 3), dtype=np.float32)
         grid_xyz += xyz.min(axis=0, keepdims=True)
         grid_size = (xyz.max(axis=0, keepdims=True) - xyz.min(axis=0, keepdims=True)) / 32
-        grid_xyz -= grid_size / 2
+        grid_xyz += grid_size / 2
         grid_xyz = grid_xyz.reshape(32, 32, 32, 3)
         for i in range(32):
             grid_xyz[i, :, :, 0] = grid_xyz[i, :, :, 0] + i * grid_size[0, 0]
             grid_xyz[:, i, :, 1] = grid_xyz[:, i, :, 1] + i * grid_size[0, 1]
             grid_xyz[:, :, i, 2] = grid_xyz[:, :, i, 2] + i * grid_size[0, 2]
-        grid_xyz = grid_xyz.reshape(-1, 3)
+        grid_xyz = grid_xyz.reshape((-1, 3)) # , order='F'
         # for i in range(grid_xyz.shape[0]):
         #     grid_xyz[i, 0] = grid_xyz[i, 0] + grid_size[0, 0] * (i % 32)
         #     grid_xyz[i, 1] = grid_xyz[i, 1] + grid_size[0, 1] * ((i % 32**2) // 32)
@@ -123,20 +123,23 @@ def get_coords_color(opt):
         # gaussian_pro = gaussian_pro.max(dim=1)[0]
         # gaussian_pro[gaussian_pro < exp(-1)] = 0
 
-        # grid_indexs_file = os.path.join(opt.result_root, opt.room_split, 'grid_indexs', opt.room_name + '.npy')
-        # assert os.path.isfile(grid_indexs_file), 'No grid indexs result - {}.'.format(grid_indexs_file)
-        # grid_centers = np.load(grid_indexs_file)
-        grid_centers = []
-        # for inst_center in inst_centers:
-        #     xyz_index = (inst_center - xyz.min(axis=0, keepdims=True)) / grid_size
-        #     grid_centers.append(round(xyz_index[0, 0])*32**0 + round(xyz_index[0, 1])*32 + round(xyz_index[0, 2])*32**2)
-        # instance_center = torch.zeros((32 ** 3, 1))
-        # instance_center[grid_centers] = 10
-        # instance_center = instance_center.reshape((1, 1, 32, 32, 32))
-        # instance_center = F.pad(instance_center, (2, 2, 2, 2, 2, 2), mode='constant')
-        # instance_center = smoothing(instance_center).reshape(32**3, 1)
-        grid_rgb = np.ones((32**3, 3)) * 255
-        gaussian_pro = generate_heatmap(grid_xyz, inst_centers, sigma=0.25)
+        # gaussian_pro = generate_heatmap(grid_xyz, inst_centers, sigma=0.25)
+
+        # norm_inst_centers = normalize_3d_coordinate(
+        #     torch.cat((torch.from_numpy(xyz), torch.from_numpy(np.asarray(inst_centers))), dim=0).unsqueeze(
+        #         dim=0).clone()
+        # )[:, -len(inst_centers):, :]
+        # gaussian_pro_index = coordinate2index(norm_inst_centers, 32, coord_type='3d')
+
+        gaussian_pro_index_file = os.path.join(opt.result_root, opt.room_split, 'grid_center_gt', opt.room_name + '.npy')
+        assert os.path.isfile(gaussian_pro_index_file), 'No grid points result - {}.'.format(gaussian_pro_index_file)
+        gaussian_pro_index = np.load(gaussian_pro_index_file)
+
+        gaussian_pro = torch.zeros((32**3))
+        for i in gaussian_pro_index:
+            gaussian_pro[i] = 1
+
+        grid_rgb = np.ones((32 ** 3, 3)) * 255
         grid_rgb[:, 1] *= (1 - gaussian_pro).reshape(-1, ).numpy()
         grid_rgb[:, 2] *= (1 - gaussian_pro).reshape(-1, ).numpy()
         grid_rgb = grid_rgb.clip(0, 255)
@@ -164,7 +167,7 @@ def get_coords_color(opt):
         grid_center_preds_file = os.path.join(opt.result_root, opt.room_split, 'grid_center_preds', opt.room_name + '.npy')
         assert os.path.isfile(grid_center_preds_file), 'No grid points result - {}.'.format(grid_center_preds_file)
         grid_center_preds = np.load(grid_center_preds_file)
-        grid_center_preds[grid_center_preds< 0.5] = 0
+        grid_center_preds[grid_center_preds < 0] = 0
         grid_rgb = np.ones((32**3, 3)) * 255
         grid_rgb = grid_rgb * grid_center_preds.reshape(-1, 1)
         grid_xyz = np.zeros((32**3, 3), dtype=np.float32)

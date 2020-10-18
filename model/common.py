@@ -251,7 +251,7 @@ def coordinate2index(x, reso, coord_type='2d'):
     if coord_type == '2d':  # plane
         index = x[:, :, 0] + reso * x[:, :, 1]
     elif coord_type == '3d':  # grid
-        index = x[:, :, 0] + reso * (x[:, :, 1] + reso * x[:, :, 2])
+        index = x[:, :, 2] + reso * (x[:, :, 1] + reso * x[:, :, 0])
     index = index[:, None, :]
     return index
 

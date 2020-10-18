@@ -42,12 +42,13 @@ class Dataset:
     def trainLoader(self):
         train_file_names = sorted(glob.glob(os.path.join(self.data_root, self.dataset, 'train', '*' + self.filename_suffix)))
         self.train_files = [torch.load(i) for i in train_file_names]
+        # self.train_files = [torch.load(train_file_names[0])]
 
         logger.info('Training samples: {}'.format(len(self.train_files)))
 
         train_set = list(range(len(self.train_files)))
         self.train_data_loader = DataLoader(train_set, batch_size=self.batch_size, collate_fn=self.trainMerge, num_workers=self.train_workers,
-                                            shuffle=True, sampler=None, drop_last=True, pin_memory=True)
+                                            shuffle=True, sampler=None, drop_last=False, pin_memory=True)
 
 
     def valLoader(self):
@@ -64,6 +65,8 @@ class Dataset:
     def testLoader(self):
         self.test_file_names = sorted(glob.glob(os.path.join(self.data_root, self.dataset, self.test_split, '*' + self.filename_suffix)))
         self.test_files = [torch.load(i) for i in self.test_file_names]
+        # self.test_file_names = sorted(glob.glob(os.path.join(self.data_root, self.dataset, 'train', '*' + self.filename_suffix)))
+        # self.test_files = [torch.load(self.test_file_names[0])]
 
         logger.info('Testing samples ({}): {}'.format(self.test_split, len(self.test_files)))
 
@@ -192,6 +195,7 @@ class Dataset:
 
             ### jitter / flip x / rotation
             xyz_middle = self.dataAugment(xyz_origin, True, True, True)
+            # xyz_middle = self.dataAugment(xyz_origin, False, False, False)
 
             ### scale
             xyz = xyz_middle * self.scale
@@ -369,10 +373,6 @@ class Dataset:
             grid_xyz[:, i, :, 1] = grid_xyz[:, i, :, 1] + i * grid_size[0, 1]
             grid_xyz[:, :, i, 2] = grid_xyz[:, :, i, 2] + i * grid_size[0, 2]
         grid_xyz = grid_xyz.reshape(-1, 3)
-        # for i in range(grid_xyz.shape[0]):
-        #     grid_xyz[i, 0] = grid_xyz[i, 0] + grid_size[0, 0] * (i % 32)
-        #     grid_xyz[i, 1] = grid_xyz[i, 1] + grid_size[0, 1] * ((i % 32**2) // 32)
-        #     grid_xyz[i, 2] = grid_xyz[i, 2] + grid_size[0, 2] * (i // 32**2)
 
         instance_heatmap = generate_heatmap(grid_xyz, instance_centers.cpu().numpy(), sigma=self.heatmap_sigma)
 
@@ -395,6 +395,9 @@ class Dataset:
         feats = []
         instance_centers = []  # (totoal_nInst, 3)
 
+        instance_heatmap = []
+        grid_center_gt = []
+
         batch_offsets = [0]
 
         for i, idx in enumerate(id):
@@ -408,6 +411,7 @@ class Dataset:
 
             ### flip x / rotation
             xyz_middle = self.dataAugment(xyz_origin, False, True, True)
+            # xyz_middle = self.dataAugment(xyz_origin, False, False, False)
 
             ### scale
             xyz = xyz_middle * self.scale
@@ -420,6 +424,24 @@ class Dataset:
             _, inst_infos = self.getInstanceInfo(xyz_middle, instance_label.astype(np.int32))
             inst_center = inst_infos['instance_center']
 
+            grid_xyz = np.zeros((32 ** 3, 3), dtype=np.float32)
+            grid_xyz += xyz_middle.min(axis=0, keepdims=True)
+            grid_size = (xyz_middle.max(axis=0, keepdims=True) - xyz_middle.min(axis=0, keepdims=True)) / 32
+            grid_xyz += grid_size / 2
+            grid_xyz = grid_xyz.reshape(32, 32, 32, 3)
+            for i in range(32):
+                grid_xyz[i, :, :, 0] = grid_xyz[i, :, :, 0] + i * grid_size[0, 0]
+                grid_xyz[:, i, :, 1] = grid_xyz[:, i, :, 1] + i * grid_size[0, 1]
+                grid_xyz[:, :, i, 2] = grid_xyz[:, :, i, 2] + i * grid_size[0, 2]
+            grid_xyz = grid_xyz.reshape(-1, 3)
+
+            inst_heatmap = generate_heatmap(grid_xyz.astype(np.double), np.asarray(inst_center), sigma=self.heatmap_sigma)
+
+            norm_inst_centers = normalize_3d_coordinate(
+                torch.cat((torch.from_numpy(xyz_middle), torch.from_numpy(np.asarray(inst_center))), dim=0).unsqueeze(dim=0).clone()
+            )[:, -len(inst_center):, :]
+            grid_cent_gt = coordinate2index(norm_inst_centers, 32, coord_type='3d')
+
             ### merge the scene to the batch
             batch_offsets.append(batch_offsets[-1] + xyz.shape[0])
 
@@ -427,6 +449,9 @@ class Dataset:
             locs_float.append(torch.from_numpy(xyz_middle))
             feats.append(torch.from_numpy(rgb))
             instance_centers.append(torch.from_numpy(np.asarray(inst_center)))
+
+            instance_heatmap.append(inst_heatmap)
+            grid_center_gt.append(grid_cent_gt.squeeze())
 
         ### merge all the scenes in the batch
         batch_offsets = torch.tensor(batch_offsets, dtype=torch.int)  # int (B+1)
@@ -443,28 +468,8 @@ class Dataset:
         voxel_locs, p2v_map, v2p_map = pointgroup_ops.voxelization_idx(locs, self.batch_size, self.mode)
 
         if self.test_split == 'val':
-            xyz = locs_float.numpy()
-            grid_xyz = np.zeros((32**3, 3), dtype=np.float32)
-            grid_xyz += xyz.min(axis=0, keepdims=True)
-            grid_size = (xyz.max(axis=0, keepdims=True) - xyz.min(axis=0, keepdims=True)) / 32
-            grid_xyz += grid_size / 2
-            grid_xyz = grid_xyz.reshape(32, 32, 32, 3)
-            for i in range(32):
-                grid_xyz[i, :, :, 0] = grid_xyz[i, :, :, 0] + i * grid_size[0, 0]
-                grid_xyz[:, i, :, 1] = grid_xyz[:, i, :, 1] + i * grid_size[0, 1]
-                grid_xyz[:, :, i, 2] = grid_xyz[:, :, i, 2] + i * grid_size[0, 2]
-            grid_xyz = grid_xyz.reshape(-1, 3)
-            # for i in range(grid_xyz.shape[0]):
-            #     grid_xyz[i, 0] = grid_xyz[i, 0] + grid_size[0, 0] * (i % 32)
-            #     grid_xyz[i, 1] = grid_xyz[i, 1] + grid_size[0, 1] * ((i % 32**2) // 32)
-            #     grid_xyz[i, 2] = grid_xyz[i, 2] + grid_size[0, 2] * (i // 32**2)
-
-            instance_heatmap = generate_heatmap(grid_xyz, instance_centers.cpu().numpy(), sigma=self.heatmap_sigma)
-
-            norm_inst_centers = normalize_3d_coordinate(
-                torch.cat((locs_float, instance_centers), dim=0).unsqueeze(dim=0).clone()
-            )[:, -instance_centers.shape[0]:, :]
-            grid_center_gt = coordinate2index(norm_inst_centers, 32, coord_type='3d')
+            instance_heatmap = torch.cat(instance_heatmap, 0).to(torch.float32)
+            grid_center_gt = torch.cat(grid_center_gt, 0).to(torch.float32)
 
             return {'locs': locs, 'voxel_locs': voxel_locs, 'p2v_map': p2v_map, 'v2p_map': v2p_map,
                     'locs_float': locs_float, 'feats': feats, 'instance_centers': instance_centers,

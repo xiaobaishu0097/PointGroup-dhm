@@ -217,7 +217,7 @@ class PointGroup(nn.Module):
         #### pointnet++ encoder
         # TODO: add parameters of PointNet++
         self.encoder = pointnet.LocalPoolPointnet(
-            c_dim=32, dim=3, hidden_dim=32, scatter_type='mean',
+            c_dim=32, dim=3, hidden_dim=32, scatter_type=cfg.scatter_type,
             unet=False, unet_kwargs=None, unet3d=True,
             unet3d_kwargs={
                 'num_levels': cfg.unet3d_num_levels,

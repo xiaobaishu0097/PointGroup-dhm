@@ -24,7 +24,6 @@ STRUCTURE:
   m: 16 # 16 or 32
   block_residual: True
   block_reps: 2
-  scatter_type: max
   unet3d_num_levels: 3
 
   use_coords: True
@@ -34,7 +33,7 @@ TRAIN:
   train_workers: 16 # data loader workers
   optim: Adam # Adam or SGD
   lr: 0.001
-  step_epoch: 30
+  step_epoch: 384
   multiplier: 0.5
   momentum: 0.9
   weight_decay: 0.0001
@@ -66,7 +65,7 @@ GROUP:
 
 TEST:
   split: val
-  test_epoch: 1
+  test_epoch: 384
   test_workers: 16
   test_seed: 567
 
@@ -75,7 +74,7 @@ TEST:
   TEST_NPOINT_THRESH: 100
 
   eval: True
-  save_grid_points: False
+  save_grid_points: True
   save_semantic: False
   save_pt_offsets: False
   save_instance: False
