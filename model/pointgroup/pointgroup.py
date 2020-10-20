@@ -488,6 +488,9 @@ def model_fn_decorator(test=False):
         grid_center_preds = ret['grid_center_preds'] # (1, 32**3)
         grid_center_preds = grid_center_preds.reshape(1, -1)
 
+        # instance_heatmap = torch.zeros((32**3)).cuda()
+        # instance_heatmap[grid_center_gt.long()] = 1
+
         instance_heatmap = instance_heatmap.reshape((1, -1))
 
         # grid_coords = normalize_3d_coordinate(

@@ -123,7 +123,7 @@ def get_coords_color(opt):
         # gaussian_pro = gaussian_pro.max(dim=1)[0]
         # gaussian_pro[gaussian_pro < exp(-1)] = 0
 
-        # gaussian_pro = generate_heatmap(grid_xyz, inst_centers, sigma=0.25)
+        gaussian_pro = generate_heatmap(grid_xyz, inst_centers, sigma=0.25)
 
         # norm_inst_centers = normalize_3d_coordinate(
         #     torch.cat((torch.from_numpy(xyz), torch.from_numpy(np.asarray(inst_centers))), dim=0).unsqueeze(
@@ -131,13 +131,13 @@ def get_coords_color(opt):
         # )[:, -len(inst_centers):, :]
         # gaussian_pro_index = coordinate2index(norm_inst_centers, 32, coord_type='3d')
 
-        gaussian_pro_index_file = os.path.join(opt.result_root, opt.room_split, 'grid_center_gt', opt.room_name + '.npy')
-        assert os.path.isfile(gaussian_pro_index_file), 'No grid points result - {}.'.format(gaussian_pro_index_file)
-        gaussian_pro_index = np.load(gaussian_pro_index_file)
-
-        gaussian_pro = torch.zeros((32**3))
-        for i in gaussian_pro_index:
-            gaussian_pro[i] = 1
+        # gaussian_pro_index_file = os.path.join(opt.result_root, opt.room_split, 'grid_center_gt', opt.room_name + '.npy')
+        # assert os.path.isfile(gaussian_pro_index_file), 'No grid points result - {}.'.format(gaussian_pro_index_file)
+        # gaussian_pro_index = np.load(gaussian_pro_index_file)
+        #
+        # gaussian_pro = torch.zeros((32**3))
+        # for i in gaussian_pro_index:
+        #     gaussian_pro[i] = 1
 
         grid_rgb = np.ones((32 ** 3, 3)) * 255
         grid_rgb[:, 1] *= (1 - gaussian_pro).reshape(-1, ).numpy()
@@ -168,7 +168,7 @@ def get_coords_color(opt):
         assert os.path.isfile(grid_center_preds_file), 'No grid points result - {}.'.format(grid_center_preds_file)
         grid_center_preds = np.load(grid_center_preds_file)
         grid_center_preds[grid_center_preds < 0] = 0
-        grid_rgb = np.ones((32**3, 3)) * 255
+        grid_rgb = np.ones((32**3, 3)) * 220
         grid_rgb = grid_rgb * grid_center_preds.reshape(-1, 1)
         grid_xyz = np.zeros((32**3, 3), dtype=np.float32)
         grid_xyz += xyz.min(axis=0, keepdims=True)

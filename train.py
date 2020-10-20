@@ -78,7 +78,7 @@ def train_epoch(train_loader, model, model_fn, optimizer, epoch):
         remain_time = '{:02d}:{:02d}:{:02d}'.format(int(t_h), int(t_m), int(t_s))
 
         sys.stdout.write(
-            "epoch: {}/{} iter: {}/{} loss: {:.4f}({:.4f}) data_time: {:.2f}({:.2f}) iter_time: {:.2f}({:.2f}) remain_time: {remain_time}\n".format
+            "epoch: {}/{} iter: {}/{} loss: {:.6f}({:.6f}) data_time: {:.2f}({:.2f}) iter_time: {:.2f}({:.2f}) remain_time: {remain_time}\n".format
             (epoch, cfg.epochs, i + 1, len(train_loader), am_dict['loss'].val, am_dict['loss'].avg,
              data_time.val, data_time.avg, iter_time.val, iter_time.avg, remain_time=remain_time))
         if (i == len(train_loader) - 1): print()
