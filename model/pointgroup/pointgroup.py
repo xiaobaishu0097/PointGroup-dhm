@@ -169,10 +169,16 @@ class PointGroup(nn.Module):
         )
 
         #### center prediction
-        self.grid_center = nn.Sequential(
+        self.grid_center_pred = nn.Sequential(
             nn.Linear(32, 32),
             nn.ReLU(),
             nn.Linear(32, 1)
+        )
+
+        self.grid_center_offset = nn.Sequential(
+            nn.Linear(32, 32),
+            nn.ReLU(),
+            nn.Linear(32, 3)
         )
 
         #### semantic segmentation
@@ -310,9 +316,15 @@ class PointGroup(nn.Module):
         }
         '''
         bs, c_dim, grid_size = encoded_feats['grid'].shape[0], encoded_feats['grid'].shape[1], encoded_feats['grid'].shape[2]
-        grid_center_preds = self.grid_center(encoded_feats['grid'].reshape(bs, c_dim, -1).permute(0, 2, 1))
+        grid_feats = encoded_feats['grid'].reshape(bs, c_dim, -1).permute(0, 2, 1)
 
-        ret['grid_center_preds'] = grid_center_preds.permute(0, 2, 1).reshape(bs, grid_size, grid_size, grid_size)
+        ### grid point center probabilty prediction
+        grid_center_preds = self.grid_center_pred(grid_feats)
+        ret['grid_center_preds'] = grid_center_preds
+
+        ### grid point center offset vector prediction
+        grid_center_offsets = self.grid_center_offset(grid_feats)
+        ret['grid_center_offsets'] = grid_center_offsets
 
         # input = spconv.SparseConvTensor(input['voxel_feats'], input['voxel_coords'], input['spatial_shape'],
         #                                 input['batch_size'])
@@ -424,7 +436,9 @@ def model_fn_decorator(test=False):
 
         ret = model(input_, p2v_map, coords_float, coords[:, 0].int(), batch_offsets, epoch)
         grid_center_preds = ret['grid_center_preds']
-        grid_center_preds = grid_center_preds.reshape(1, -1)
+        # grid_center_preds = grid_center_preds.reshape(1, -1)
+
+        grid_center_offsets = ret['grid_center_offsets']  # (1, 32**3, 3)
 
         ret['grid_center_gt'] = grid_center_gt
 
@@ -487,6 +501,8 @@ def model_fn_decorator(test=False):
         ret = model(input_, p2v_map, coords_float, coords[:, 0].int(), batch_offsets, epoch)
         grid_center_preds = ret['grid_center_preds'] # (1, 32**3)
         grid_center_preds = grid_center_preds.reshape(1, -1)
+
+        grid_center_offsets = ret['grid_center_offsets'] # (1, 32**3, 3)
 
         # instance_heatmap = torch.zeros((32**3)).cuda()
         # instance_heatmap[grid_center_gt.long()] = 1

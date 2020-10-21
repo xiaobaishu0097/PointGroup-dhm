@@ -477,6 +477,8 @@ def generate_adaptive_heatmap(
         min_radius=0,
 ):
     size_adaptive_radius = lambda x: (1 - np.sqrt((2 * min_IoU) / (1 + min_IoU))) * x
+    # we assume that the bounding box is the same as ground truth
+    # then r = (1 - \frac{2 IoU}{1 + IoU}) \sqrt{w^2 + h^2 + d^2}
     scaledGaussian = lambda x: exp(-(1 / 2) * (x ** 2))
 
     diagonal_length = torch.norm(instance_size, dim=1, keepdim=True)
