@@ -440,6 +440,7 @@ class Dataset:
             instance_label = self.getCroppedInstLabel(instance_label, valid_idxs)
             _, inst_infos = self.getInstanceInfo(xyz_middle, instance_label.astype(np.int32))
             inst_center = inst_infos['instance_center']
+            inst_size = inst_infos['instance_size']
 
             ### get instance center heatmap
             grid_xyz = np.zeros((32 ** 3, 3), dtype=np.float32)
@@ -453,7 +454,14 @@ class Dataset:
                 grid_xyz[:, :, i, 2] = grid_xyz[:, :, i, 2] + i * grid_size[0, 2]
             grid_xyz = grid_xyz.reshape(-1, 3)
 
-            inst_heatmap = generate_heatmap(grid_xyz.astype(np.double), np.asarray(inst_center), sigma=self.heatmap_sigma)
+            if not self.heatmap_sigma:
+                inst_heatmap = generate_adaptive_heatmap(
+                    torch.tensor(grid_xyz, dtype=torch.float64), torch.tensor(inst_center), torch.tensor(inst_size),
+                    min_IoU=self.min_IoU, min_radius=np.linalg.norm(grid_size),
+                )
+            else:
+                inst_heatmap = generate_heatmap(grid_xyz.astype(np.double), np.asarray(inst_center),
+                                                sigma=self.heatmap_sigma)
 
             norm_inst_centers = normalize_3d_coordinate(
                 torch.cat((torch.from_numpy(xyz_middle), torch.from_numpy(np.asarray(inst_center))), dim=0).unsqueeze(dim=0).clone()
