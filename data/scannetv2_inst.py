@@ -348,6 +348,7 @@ class Dataset:
             inst_info = inst_infos["instance_info"]  # (n, 9), (cx, cy, cz, minx, miny, minz, maxx, maxy, maxz)
             inst_pointnum = inst_infos["instance_pointnum"]  # (nInst), list
             inst_center = inst_infos['instance_center']  # (nInst, 3) (cx, cy, cz)
+            inst_size = inst_infos['instance_size']
 
             instance_label[np.where(instance_label != -100)] += total_inst_num
             total_inst_num += inst_num
