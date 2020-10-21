@@ -11,7 +11,7 @@ from torch.nn import functional as F
 from operator import itemgetter
 from math import exp
 
-from model.common import generate_heatmap, normalize_3d_coordinate, coordinate2index
+from model.common import generate_heatmap, normalize_3d_coordinate, coordinate2index, generate_adaptive_heatmap
 
 COLOR20 = np.array(
         [[230, 25, 75], [60, 180, 75], [255, 225, 25], [0, 130, 200], [245, 130, 48],
@@ -97,9 +97,12 @@ def get_coords_color(opt):
         object_idx = (inst_label >= 0)
         inst_label_rgb[object_idx] = COLOR20[inst_label[object_idx] % len(COLOR20)]
         rgb = inst_label_rgb
+
         inst_centers = []
+        inst_sizes = []
         for inst_id in np.unique(inst_label[object_idx]):
             inst_centers.append(xyz[inst_label == inst_id].mean(0))
+            inst_sizes.append(xyz[inst_label == inst_id].max(0) - xyz[inst_label == inst_id].min(0))
 
         grid_xyz = np.zeros((32**3, 3), dtype=np.float32)
         grid_xyz += xyz.min(axis=0, keepdims=True)
@@ -123,7 +126,11 @@ def get_coords_color(opt):
         # gaussian_pro = gaussian_pro.max(dim=1)[0]
         # gaussian_pro[gaussian_pro < exp(-1)] = 0
 
-        gaussian_pro = generate_heatmap(grid_xyz, inst_centers, sigma=0.25)
+        # gaussian_pro = generate_heatmap(grid_xyz, inst_centers, sigma=0.25)
+        gaussian_pro = generate_adaptive_heatmap(
+            torch.tensor(grid_xyz), torch.tensor(inst_centers), torch.tensor(inst_sizes),
+            min_radius=np.linalg.norm(grid_size)
+        )
 
         # norm_inst_centers = normalize_3d_coordinate(
         #     torch.cat((torch.from_numpy(xyz), torch.from_numpy(np.asarray(inst_centers))), dim=0).unsqueeze(
@@ -163,12 +170,14 @@ def get_coords_color(opt):
         object_idx = (inst_label >= 0)
         inst_label_rgb[object_idx] = COLOR20[inst_label[object_idx] % len(COLOR20)]
         rgb = inst_label_rgb
+        rgb = np.ones_like(rgb) * 255
 
         grid_center_preds_file = os.path.join(opt.result_root, opt.room_split, 'grid_center_preds', opt.room_name + '.npy')
         assert os.path.isfile(grid_center_preds_file), 'No grid points result - {}.'.format(grid_center_preds_file)
         grid_center_preds = np.load(grid_center_preds_file)
         grid_center_preds[grid_center_preds < 0] = 0
-        grid_rgb = np.ones((32**3, 3)) * 220
+        grid_rgb = np.ones((32**3, 3))
+        grid_rgb[:, 0] = grid_rgb[:, 0]  * 220
         grid_rgb = grid_rgb * grid_center_preds.reshape(-1, 1)
         grid_xyz = np.zeros((32**3, 3), dtype=np.float32)
         grid_xyz += xyz.min(axis=0, keepdims=True)

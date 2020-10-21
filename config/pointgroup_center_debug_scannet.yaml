@@ -42,7 +42,8 @@ TRAIN:
   loss_weight: [1.0, 1.0, 1.0, 1.0] # semantic_loss, offset_norm_loss, offset_dir_loss, score_loss
   focal_loss_alpha: 0.25
   focal_loss_gamma: 2
-  heatmap_sigma: 0.25
+  heatmap_sigma: 0
+  min_IoU: 0.5
 
   fg_thresh: 0.75
   bg_thresh: 0.25

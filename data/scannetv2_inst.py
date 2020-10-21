@@ -8,7 +8,7 @@ import scipy.ndimage
 import scipy.interpolate
 import torch
 from torch.utils.data import DataLoader
-from model.common import generate_heatmap, normalize_3d_coordinate, coordinate2index
+from model.common import generate_heatmap, normalize_3d_coordinate, coordinate2index, generate_adaptive_heatmap
 
 sys.path.append('../')
 
@@ -32,6 +32,7 @@ class Dataset:
         self.mode = cfg.mode
 
         self.heatmap_sigma = cfg.heatmap_sigma
+        self.min_IoU = cfg.min_IoU
 
         if test:
             self.test_split = cfg.split  # val or test
@@ -105,6 +106,7 @@ class Dataset:
         instance_pointnum = []   # (nInst), int
         instance_num = int(instance_label.max()) + 1
         instance_center = []
+        instance_size = []
         for i_ in range(instance_num):
             inst_idx_i = np.where(instance_label == i_)
 
@@ -113,6 +115,7 @@ class Dataset:
             min_xyz_i = xyz_i.min(0)
             max_xyz_i = xyz_i.max(0)
             mean_xyz_i = xyz_i.mean(0)
+            size_xyz_i = xyz_i.max(0) - xyz_i.min(0)
             instance_info_i = instance_info[inst_idx_i]
             instance_info_i[:, 0:3] = mean_xyz_i
             instance_info_i[:, 3:6] = min_xyz_i
@@ -121,6 +124,7 @@ class Dataset:
 
             ### instance_centers
             instance_center.append(mean_xyz_i)
+            instance_size.append(size_xyz_i)
 
             ### instance_pointnum
             instance_pointnum.append(inst_idx_i[0].size)
@@ -129,6 +133,7 @@ class Dataset:
             "instance_info": instance_info,
             "instance_pointnum": instance_pointnum,
             "instance_center": instance_center,
+            "instance_size": instance_size,
         }
 
 
@@ -221,10 +226,12 @@ class Dataset:
             inst_info = inst_infos["instance_info"]  # (n, 9), (cx, cy, cz, minx, miny, minz, maxx, maxy, maxz)
             inst_pointnum = inst_infos["instance_pointnum"]   # (nInst), list
             inst_center = inst_infos['instance_center']   # (nInst, 3) (cx, cy, cz)
+            inst_size = inst_infos['instance_size']
 
             instance_label[np.where(instance_label != -100)] += total_inst_num
             total_inst_num += inst_num
 
+            ### get instance center heatmap
             grid_xyz = np.zeros((32 ** 3, 3), dtype=np.float32)
             grid_xyz += xyz_middle.min(axis=0, keepdims=True)
             grid_size = (xyz_middle.max(axis=0, keepdims=True) - xyz_middle.min(axis=0, keepdims=True)) / 32
@@ -236,12 +243,22 @@ class Dataset:
                 grid_xyz[:, :, i, 2] = grid_xyz[:, :, i, 2] + i * grid_size[0, 2]
             grid_xyz = grid_xyz.reshape(-1, 3)
 
-            inst_heatmap = generate_heatmap(grid_xyz.astype(np.double), np.asarray(inst_center), sigma=self.heatmap_sigma)
+            # TODO: adaptive Gaussian sigma based on instance size
+            if not self.heatmap_sigma:
+                inst_heatmap = generate_adaptive_heatmap(
+                    torch.tensor(grid_xyz, dtype=torch.float64), torch.tensor(inst_center), torch.tensor(inst_size),
+                    min_IoU=self.min_IoU, min_radius=np.linalg.norm(grid_size),
+                )
+            else:
+                inst_heatmap = generate_heatmap(grid_xyz.astype(np.double), np.asarray(inst_center),
+                                                sigma=self.heatmap_sigma)
 
             norm_inst_centers = normalize_3d_coordinate(
                 torch.cat((torch.from_numpy(xyz_middle), torch.from_numpy(np.asarray(inst_center))), dim=0).unsqueeze(dim=0).clone()
             )[:, -len(inst_center):, :]
             grid_cent_gt = coordinate2index(norm_inst_centers, 32, coord_type='3d')
+
+            # TODO: introduce grid point offset ground truth
 
             ### merge the scene to the batch
             batch_offsets.append(batch_offsets[-1] + xyz.shape[0])
@@ -424,6 +441,7 @@ class Dataset:
             _, inst_infos = self.getInstanceInfo(xyz_middle, instance_label.astype(np.int32))
             inst_center = inst_infos['instance_center']
 
+            ### get instance center heatmap
             grid_xyz = np.zeros((32 ** 3, 3), dtype=np.float32)
             grid_xyz += xyz_middle.min(axis=0, keepdims=True)
             grid_size = (xyz_middle.max(axis=0, keepdims=True) - xyz_middle.min(axis=0, keepdims=True)) / 32

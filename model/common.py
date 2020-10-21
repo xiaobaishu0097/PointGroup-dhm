@@ -467,3 +467,31 @@ def generate_heatmap(grid_xyz, instance_centers, sigma=0.25):
     heatmap[heatmap < exp(-1)] = 0
 
     return heatmap
+
+
+def generate_adaptive_heatmap(
+        grid_xyz: torch.tensor,  # (N, 3)
+        instance_centers: torch.tensor,  # (N, 3)
+        instance_size: torch.tensor,  # (N, 3)
+        min_IoU=0.5,
+        min_radius=0,
+):
+    size_adaptive_radius = lambda x: (1 - np.sqrt((2 * min_IoU) / (1 + min_IoU))) * x
+    scaledGaussian = lambda x: exp(-(1 / 2) * (x ** 2))
+
+    diagonal_length = torch.norm(instance_size, dim=1, keepdim=True)
+    instance_radius = diagonal_length.apply_(size_adaptive_radius)
+    instance_radius[instance_radius < min_radius] = torch.tensor(min_radius)
+    instance_sigma = instance_radius / 3
+
+    distance = grid_xyz.unsqueeze(dim=1).repeat(1, instance_centers.shape[0], 1) - instance_centers.unsqueeze(
+        dim=0).repeat(grid_xyz.shape[0], 1, 1)
+    grid_instance_distance = torch.norm(distance, dim=2)
+
+    heatmap = torch.div(grid_instance_distance,
+                        instance_sigma.reshape(1, -1).repeat(grid_instance_distance.shape[0], 1))
+    heatmap = heatmap.apply_(scaledGaussian)
+    heatmap = heatmap.max(dim=1)[0]
+    heatmap[heatmap < exp(-1)] = 0
+
+    return heatmap
