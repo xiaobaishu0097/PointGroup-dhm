@@ -323,8 +323,8 @@ class PointGroup(nn.Module):
         ret['grid_center_preds'] = grid_center_preds
 
         ### grid point center offset vector prediction
-        grid_center_offsets = self.grid_center_offset(grid_feats)
-        ret['grid_center_offsets'] = grid_center_offsets
+        grid_center_offset_preds = self.grid_center_offset(grid_feats)
+        ret['grid_center_offset_preds'] = grid_center_offset_preds
 
         # input = spconv.SparseConvTensor(input['voxel_feats'], input['voxel_coords'], input['spatial_shape'],
         #                                 input['batch_size'])
@@ -405,6 +405,7 @@ def model_fn_decorator(test=False):
     semantic_criterion = nn.CrossEntropyLoss(ignore_index=cfg.ignore_label).cuda()
     score_criterion = nn.BCELoss(reduction='none').cuda()
     center_criterion = WeightedFocalLoss(alpha=cfg.focal_loss_alpha, gamma=cfg.focal_loss_gamma).cuda()
+    center_offset_criterion = nn.L1Loss().cuda()
 
     def test_model_fn(batch, model, epoch):
         coords = batch['locs'].cuda()  # (N, 1 + 3), long, cuda, dimension 0 for batch_idx
@@ -417,6 +418,7 @@ def model_fn_decorator(test=False):
 
         instance_centers = batch['instance_centers'].cuda()
         grid_center_gt = batch['grid_center_gt'].cuda()
+        grid_center_offset = batch['grid_center_offset'].cuda()
 
         batch_offsets = batch['offsets'].cuda()  # (B + 1), int, cuda
 
@@ -438,9 +440,8 @@ def model_fn_decorator(test=False):
         grid_center_preds = ret['grid_center_preds']
         # grid_center_preds = grid_center_preds.reshape(1, -1)
 
-        grid_center_offsets = ret['grid_center_offsets']  # (1, 32**3, 3)
-
-        ret['grid_center_gt'] = grid_center_gt
+        grid_center_offset_preds = ret['grid_center_offset_preds']  # (1, 32**3, 3)
+        grid_center_offset_preds = grid_center_offset_preds.squeeze(dim=0)
 
         # semantic_scores = ret['semantic_scores']  # (N, nClass) float32, cuda
         # pt_offsets = ret['pt_offsets']  # (N, 3), float32, cuda
@@ -451,7 +452,9 @@ def model_fn_decorator(test=False):
         with torch.no_grad():
             preds = {}
             preds['grid_center_preds'] = grid_center_preds
+            preds['grid_center_offset_preds'] = grid_center_offset_preds
             preds['grid_center_gt'] = grid_center_gt
+            preds['grid_center_offset'] = grid_center_offset
             # preds['semantic'] = semantic_scores
             # preds['pt_offsets'] = pt_offsets
             # if (epoch > cfg.prepare_epochs):
@@ -479,8 +482,10 @@ def model_fn_decorator(test=False):
         instance_info = batch['instance_info'].cuda()  # (N, 9), float32, cuda, (meanxyz, minxyz, maxxyz)
         instance_pointnum = batch['instance_pointnum'].cuda()  # (total_nInst), int, cuda
         instance_centers = batch['instance_centers'].cuda()
+
         instance_heatmap = batch['instance_heatmap'].cuda()
         grid_center_gt = batch['grid_center_gt'].cuda()
+        grid_center_offset = batch['grid_center_offset'].cuda()
 
         batch_offsets = batch['offsets'].cuda()  # (B + 1), int, cuda
 
@@ -502,7 +507,8 @@ def model_fn_decorator(test=False):
         grid_center_preds = ret['grid_center_preds'] # (1, 32**3)
         grid_center_preds = grid_center_preds.reshape(1, -1)
 
-        grid_center_offsets = ret['grid_center_offsets'] # (1, 32**3, 3)
+        grid_center_offset_preds = ret['grid_center_offset_preds'] # (1, 32**3, 3)
+        grid_center_offset_preds = grid_center_offset_preds.squeeze(dim=0)
 
         # instance_heatmap = torch.zeros((32**3)).cuda()
         # instance_heatmap[grid_center_gt.long()] = 1
@@ -525,6 +531,7 @@ def model_fn_decorator(test=False):
 
         loss_inp = {}
         loss_inp['grid_centers'] = (grid_center_preds, instance_heatmap)
+        loss_inp['grid_center_offsets'] = (grid_center_offset_preds, grid_center_offset)
         # loss_inp['semantic_scores'] = (semantic_scores, labels)
         # loss_inp['pt_offsets'] = (pt_offsets, coords_float, instance_info, instance_labels)
         # if (epoch > cfg.prepare_epochs):
@@ -536,8 +543,10 @@ def model_fn_decorator(test=False):
         with torch.no_grad():
             preds = {}
             preds['grid_center_preds'] = grid_center_preds
+            preds['grid_center_offset_preds'] = grid_center_offset_preds
             preds['grid_center_gt'] = grid_center_gt
             preds['instance_heatmap'] = instance_heatmap
+            preds['grid_center_offset'] = grid_center_offset
             # preds['semantic'] = semantic_scores
             # preds['pt_offsets'] = pt_offsets
             # if (epoch > cfg.prepare_epochs):
@@ -566,6 +575,12 @@ def model_fn_decorator(test=False):
 
         center_loss = center_criterion(grid_center_preds, instance_heatmap)
         loss_out['center_loss'] = (center_loss, instance_heatmap.shape[-1])
+
+        ### center offset loss
+        grid_center_offset_preds, grid_center_offsets = loss_inp['grid_center_offsets']
+
+        center_offset_loss = center_offset_criterion(grid_center_offset_preds, grid_center_offsets)
+        loss_out['center_offset_loss'] = (center_offset_loss, grid_center_offsets.shape[0])
 
         # '''semantic loss'''
         # semantic_scores, semantic_labels = loss_inp['semantic_scores']
@@ -621,7 +636,7 @@ def model_fn_decorator(test=False):
         #     2] * offset_dir_loss
         # if (epoch > cfg.prepare_epochs):
         #     loss += (cfg.loss_weight[3] * score_loss)
-        loss = center_loss
+        loss = cfg.loss_weight[0] * center_loss + cfg.loss_weight[1] * center_offset_loss
 
         return loss, loss_out, infos
 

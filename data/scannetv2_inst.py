@@ -8,6 +8,8 @@ import scipy.ndimage
 import scipy.interpolate
 import torch
 from torch.utils.data import DataLoader
+import torch_scatter
+
 from model.common import generate_heatmap, normalize_3d_coordinate, coordinate2index, generate_adaptive_heatmap
 
 sys.path.append('../')
@@ -191,6 +193,7 @@ class Dataset:
 
         instance_heatmap = []
         grid_center_gt = []
+        grid_center_offset = []
 
         batch_offsets = [0]
 
@@ -253,13 +256,30 @@ class Dataset:
                 inst_heatmap = generate_heatmap(grid_xyz.astype(np.double), np.asarray(inst_center),
                                                 sigma=self.heatmap_sigma)
 
-            norm_inst_centers = normalize_3d_coordinate(
+            norm_coords = normalize_3d_coordinate(
                 torch.cat((torch.from_numpy(xyz_middle), torch.from_numpy(np.asarray(inst_center))), dim=0).unsqueeze(dim=0).clone()
-            )[:, -len(inst_center):, :]
+            )
+            norm_inst_centers = norm_coords[:, -len(inst_center):, :]
             grid_cent_gt = coordinate2index(norm_inst_centers, 32, coord_type='3d')
 
-            # TODO: introduce grid point offset ground truth
-
+            # TODO: improve grid point offset ground truth and add comments
+            norm_coords = norm_coords[:, :-len(inst_center), :]
+            point_index = coordinate2index(norm_coords, 32, coord_type='3d').squeeze()
+            valid_point_index = point_index[np.where(instance_label != -100)]
+            valid_inst_label = instance_label[np.where(instance_label != -100)]
+            valid_inst_label = torch.nn.functional.one_hot(torch.from_numpy(valid_inst_label).to(torch.int64))
+            grid_inst_label = torch_scatter.scatter_add(valid_inst_label, valid_point_index, dim=0)
+            if grid_inst_label.shape[0] < grid_xyz.shape[0]:
+                zero_padding = torch.zeros((grid_xyz.shape[0]-grid_inst_label.shape[0], grid_inst_label.shape[1]))
+                grid_inst_label = torch.cat((grid_inst_label, zero_padding.to(torch.long)))
+            grid_inst_label_sum = grid_inst_label.sum(dim=1)
+            grid_inst_label = grid_inst_label.max(dim=1)[1]
+            grid_center_xyz = torch.mm(
+                torch.nn.functional.one_hot(grid_inst_label).to(torch.double), torch.tensor(inst_center)
+            )
+            grid_cent_offset = torch.tensor(grid_xyz).to(torch.float64) - grid_center_xyz
+            invalid_grid_index = grid_inst_label_sum == 0
+            grid_cent_offset[invalid_grid_index] = 0
 
             ### merge the scene to the batch
             batch_offsets.append(batch_offsets[-1] + xyz.shape[0])
@@ -276,6 +296,7 @@ class Dataset:
 
             instance_heatmap.append(inst_heatmap)
             grid_center_gt.append(grid_cent_gt.squeeze())
+            grid_center_offset.append(grid_cent_offset)
 
         ### merge all the scenes in the batchd
         batch_offsets = torch.tensor(batch_offsets, dtype=torch.int)  # int (B+1)
@@ -289,8 +310,10 @@ class Dataset:
         instance_infos = torch.cat(instance_infos, 0).to(torch.float32)       # float (N, 9) (meanxyz, minxyz, maxxyz)
         instance_pointnum = torch.tensor(instance_pointnum, dtype=torch.int)  # int (total_nInst)
         instance_centers = torch.cat(instance_centers, 0).to(torch.float32)
+
         instance_heatmap = torch.cat(instance_heatmap, 0).to(torch.float32)
         grid_center_gt = torch.cat(grid_center_gt, 0).to(torch.float32)
+        grid_center_offset = torch.cat(grid_center_offset, 0).to(torch.float32)
 
         spatial_shape = np.clip((locs.max(0)[0][1:] + 1).numpy(), self.full_scale[0], None)     # long (3)
 
@@ -301,7 +324,7 @@ class Dataset:
                 'locs_float': locs_float, 'feats': feats, 'labels': labels, 'instance_labels': instance_labels,
                 'instance_info': instance_infos, 'instance_pointnum': instance_pointnum,
                 'instance_centers': instance_centers, 'instance_heatmap': instance_heatmap,
-                'grid_center_gt': grid_center_gt,
+                'grid_center_gt': grid_center_gt, 'grid_center_offset': grid_center_offset,
                 'id': id, 'offsets': batch_offsets, 'spatial_shape': spatial_shape}
 
 
@@ -318,6 +341,7 @@ class Dataset:
 
         instance_heatmap = []
         grid_center_gt = []
+        grid_center_offset = []
 
         batch_offsets = [0]
 
@@ -375,10 +399,30 @@ class Dataset:
                 inst_heatmap = generate_heatmap(grid_xyz.astype(np.double), np.asarray(inst_center),
                                                 sigma=self.heatmap_sigma)
 
-            norm_inst_centers = normalize_3d_coordinate(
+            norm_coords = normalize_3d_coordinate(
                 torch.cat((torch.from_numpy(xyz_middle), torch.from_numpy(np.asarray(inst_center))), dim=0).unsqueeze(dim=0).clone()
-            )[:, -len(inst_center):, :]
+            )
+            norm_inst_centers = norm_coords[:, -len(inst_center):, :]
             grid_cent_gt = coordinate2index(norm_inst_centers, 32, coord_type='3d')
+
+            # TODO: improve grid point offset ground truth and add comments
+            norm_coords = norm_coords[:, :-len(inst_center), :]
+            point_index = coordinate2index(norm_coords, 32, coord_type='3d').squeeze()
+            valid_point_index = point_index[np.where(instance_label != -100)]
+            valid_inst_label = instance_label[np.where(instance_label != -100)]
+            valid_inst_label = torch.nn.functional.one_hot(torch.from_numpy(valid_inst_label).to(torch.int64))
+            grid_inst_label = torch_scatter.scatter_add(valid_inst_label, valid_point_index, dim=0)
+            if grid_inst_label.shape[0] < grid_xyz.shape[0]:
+                zero_padding = torch.zeros((grid_xyz.shape[0]-grid_inst_label.shape[0], grid_inst_label.shape[1]))
+                grid_inst_label = torch.cat((grid_inst_label, zero_padding.to(torch.long)))
+            grid_inst_label_sum = grid_inst_label.sum(dim=1)
+            grid_inst_label = grid_inst_label.max(dim=1)[1]
+            grid_center_xyz = torch.mm(
+                torch.nn.functional.one_hot(grid_inst_label).to(torch.double), torch.tensor(inst_center)
+            )
+            grid_cent_offset = torch.tensor(grid_xyz).to(torch.float64) - grid_center_xyz
+            invalid_grid_index = grid_inst_label_sum == 0
+            grid_cent_offset[invalid_grid_index] = 0
 
             ### merge the scene to the batch
             batch_offsets.append(batch_offsets[-1] + xyz.shape[0])
@@ -395,6 +439,7 @@ class Dataset:
 
             instance_heatmap.append(inst_heatmap)
             grid_center_gt.append(grid_cent_gt.squeeze())
+            grid_center_offset.append(grid_cent_offset)
 
         ### merge all the scenes in the batch
         batch_offsets = torch.tensor(batch_offsets, dtype=torch.int)  # int (B+1)
@@ -408,8 +453,10 @@ class Dataset:
         instance_infos = torch.cat(instance_infos, 0).to(torch.float32)               # float (N, 9) (meanxyz, minxyz, maxxyz)
         instance_pointnum = torch.tensor(instance_pointnum, dtype=torch.int)          # int (total_nInst)
         instance_centers = torch.cat(instance_centers, 0).to(torch.float32)
+
         instance_heatmap = torch.cat(instance_heatmap, 0).to(torch.float32)
         grid_center_gt = torch.cat(grid_center_gt, 0).to(torch.float32)
+        grid_center_offset = torch.cat(grid_center_offset, 0).to(torch.float32)
 
         spatial_shape = np.clip((locs.max(0)[0][1:] + 1).numpy(), self.full_scale[0], None)  # long (3)
 
@@ -420,7 +467,7 @@ class Dataset:
                 'locs_float': locs_float, 'feats': feats, 'labels': labels, 'instance_labels': instance_labels,
                 'instance_info': instance_infos, 'instance_pointnum': instance_pointnum,
                 'instance_centers': instance_centers, 'instance_heatmap': instance_heatmap,
-                'grid_center_gt': grid_center_gt,
+                'grid_center_gt': grid_center_gt, 'grid_center_offset': grid_center_offset,
                 'id': id, 'offsets': batch_offsets, 'spatial_shape': spatial_shape}
 
 
