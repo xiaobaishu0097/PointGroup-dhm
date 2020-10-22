@@ -62,6 +62,8 @@ def test(model, model_fn, data_name, epoch):
         fp = 0
         fn = 0
 
+        offset_error = 0
+
         true_threshold = 0.0
         candidate_num = 100
 
@@ -76,6 +78,12 @@ def test(model, model_fn, data_name, epoch):
 
             grid_center_preds = torch.sigmoid(preds['grid_center_preds'])
             grid_center_gt = preds['grid_center_gt'].cpu()
+
+            grid_center_offset_preds = preds['grid_center_offset_preds']
+            grid_center_offset = preds['grid_center_offset']
+
+            center_offset_error = grid_center_offset_preds - grid_center_offset
+            offset_error_mean = torch.norm(center_offset_error, dim=1).mean()
 
             grid_points = torch.zeros((32**3))
             grid_points[grid_center_gt.long()] = 1
@@ -115,6 +123,8 @@ def test(model, model_fn, data_name, epoch):
             tp += tp_scene
             fp += fp_scene
             fn += fn_scene
+
+            offset_error += offset_error_mean
 
             ##### save files
             start3 = time.time()
@@ -162,7 +172,7 @@ def test(model, model_fn, data_name, epoch):
         precision = tp / (tp + fp + 1)
         recall = tp / (tp + fn + 1)
         ##### print
-        logger.info("precision: {}, recall: {}".format(precision, recall))
+        logger.info("Center prediction: precision: {}, recall: {}; Center offset prediction: {}".format(precision, recall, offset_error))
 
 
 

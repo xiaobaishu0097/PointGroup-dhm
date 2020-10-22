@@ -438,10 +438,11 @@ def model_fn_decorator(test=False):
 
         ret = model(input_, p2v_map, coords_float, coords[:, 0].int(), batch_offsets, epoch)
         grid_center_preds = ret['grid_center_preds']
-        # grid_center_preds = grid_center_preds.reshape(1, -1)
+        grid_center_preds = grid_center_preds.reshape(1, -1)
 
-        grid_center_offset_preds = ret['grid_center_offset_preds']  # (1, 32**3, 3)
+        grid_center_offset_preds = ret['grid_center_offset_preds'] # (1, 32**3, 3)
         grid_center_offset_preds = grid_center_offset_preds.squeeze(dim=0)
+        grid_center_offset_preds = grid_center_offset_preds[grid_center_gt.long(), :] # (nInst, 3)
 
         # semantic_scores = ret['semantic_scores']  # (N, nClass) float32, cuda
         # pt_offsets = ret['pt_offsets']  # (N, 3), float32, cuda
@@ -509,6 +510,7 @@ def model_fn_decorator(test=False):
 
         grid_center_offset_preds = ret['grid_center_offset_preds'] # (1, 32**3, 3)
         grid_center_offset_preds = grid_center_offset_preds.squeeze(dim=0)
+        grid_center_offset_preds = grid_center_offset_preds[grid_center_gt.long(), :] # (nInst, 3)
 
         # instance_heatmap = torch.zeros((32**3)).cuda()
         # instance_heatmap[grid_center_gt.long()] = 1
