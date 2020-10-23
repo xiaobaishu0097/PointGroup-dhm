@@ -82,6 +82,7 @@ def test(model, model_fn, data_name, epoch):
             grid_center_offset_preds = preds['grid_center_offset_preds']
             grid_center_offset = preds['grid_center_offset']
 
+            grid_center_offset_preds = grid_center_offset_preds[grid_center_gt.long(), :]
             center_offset_error = grid_center_offset_preds - grid_center_offset
             offset_error_mean = torch.norm(center_offset_error, dim=1).mean()
 

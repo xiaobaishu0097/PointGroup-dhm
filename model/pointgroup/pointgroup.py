@@ -18,6 +18,7 @@ sys.path.append('../../')
 from lib.pointgroup_ops.functions import pointgroup_ops
 from util import utils
 from model.encoder import pointnet
+from model.decoder import decoder
 from model.common import coordinate2index, normalize_3d_coordinate
 
 
@@ -235,6 +236,16 @@ class PointGroup(nn.Module):
             padding=0.1, n_blocks=5
         )
 
+        ### convolutional occupancy networks decoder
+        self.decoder = decoder.LocalDecoder(
+            dim=3,
+            c_dim=32,
+            hidden_size=32,
+        )
+
+        self.point_offset = nn.Linear(32, 3)
+        self.point_semantic = nn.Linear(32, classes)
+
     @staticmethod
     def set_bn_init(m):
         classname = m.__class__.__name__
@@ -315,6 +326,15 @@ class PointGroup(nn.Module):
         grid: grid features (b, c, grid_dim, grid_dim, grid_dim)
         }
         '''
+
+        point_feats = self.decoder(encoded_feats['coord'], encoded_feats)
+
+        point_offset_preds = self.point_offset(point_feats)
+        ret['point_offset_preds'] = point_offset_preds
+
+        point_semantic_preds = self.point_semantic(point_feats)
+        ret['point_semantic_preds'] = point_semantic_preds
+
         bs, c_dim, grid_size = encoded_feats['grid'].shape[0], encoded_feats['grid'].shape[1], encoded_feats['grid'].shape[2]
         grid_feats = encoded_feats['grid'].reshape(bs, c_dim, -1).permute(0, 2, 1)
 
@@ -442,7 +462,6 @@ def model_fn_decorator(test=False):
 
         grid_center_offset_preds = ret['grid_center_offset_preds'] # (1, 32**3, 3)
         grid_center_offset_preds = grid_center_offset_preds.squeeze(dim=0)
-        grid_center_offset_preds = grid_center_offset_preds[grid_center_gt.long(), :] # (nInst, 3)
 
         # semantic_scores = ret['semantic_scores']  # (N, nClass) float32, cuda
         # pt_offsets = ret['pt_offsets']  # (N, 3), float32, cuda
@@ -505,6 +524,13 @@ def model_fn_decorator(test=False):
         }
 
         ret = model(input_, p2v_map, coords_float, coords[:, 0].int(), batch_offsets, epoch)
+
+        point_offset_preds = ret['point_offset_preds']
+        point_offset_preds = point_offset_preds.squeeze()
+
+        point_semantic_preds = ret['point_semantic_preds']
+        point_semantic_preds = point_semantic_preds.squeeze()
+
         grid_center_preds = ret['grid_center_preds'] # (1, 32**3)
         grid_center_preds = grid_center_preds.reshape(1, -1)
 
@@ -532,6 +558,10 @@ def model_fn_decorator(test=False):
             # proposals_offset: (nProposal + 1), int, cpu
 
         loss_inp = {}
+
+        loss_inp['pt_offsets'] = (point_offset_preds, coords_float, instance_info, instance_labels)
+        loss_inp['semantic_scores'] = (point_semantic_preds, labels)
+
         loss_inp['grid_centers'] = (grid_center_preds, instance_heatmap)
         loss_inp['grid_center_offsets'] = (grid_center_offset_preds, grid_center_offset)
         # loss_inp['semantic_scores'] = (semantic_scores, labels)
@@ -584,36 +614,36 @@ def model_fn_decorator(test=False):
         center_offset_loss = center_offset_criterion(grid_center_offset_preds, grid_center_offsets)
         loss_out['center_offset_loss'] = (center_offset_loss, grid_center_offsets.shape[0])
 
-        # '''semantic loss'''
-        # semantic_scores, semantic_labels = loss_inp['semantic_scores']
-        # # semantic_scores: (N, nClass), float32, cuda
-        # # semantic_labels: (N), long, cuda
-        #
-        # semantic_loss = semantic_criterion(semantic_scores, semantic_labels)
-        # loss_out['semantic_loss'] = (semantic_loss, semantic_scores.shape[0])
-        #
-        # '''offset loss'''
-        # pt_offsets, coords, instance_info, instance_labels = loss_inp['pt_offsets']
-        # # pt_offsets: (N, 3), float, cuda
-        # # coords: (N, 3), float32
-        # # instance_info: (N, 9), float32 tensor (meanxyz, minxyz, maxxyz)
-        # # instance_labels: (N), long
-        #
-        # gt_offsets = instance_info[:, 0:3] - coords  # (N, 3)
-        # pt_diff = pt_offsets - gt_offsets  # (N, 3)
-        # pt_dist = torch.sum(torch.abs(pt_diff), dim=-1)  # (N)
-        # valid = (instance_labels != cfg.ignore_label).float()
-        # offset_norm_loss = torch.sum(pt_dist * valid) / (torch.sum(valid) + 1e-6)
-        #
-        # gt_offsets_norm = torch.norm(gt_offsets, p=2, dim=1)  # (N), float
-        # gt_offsets_ = gt_offsets / (gt_offsets_norm.unsqueeze(-1) + 1e-8)
-        # pt_offsets_norm = torch.norm(pt_offsets, p=2, dim=1)
-        # pt_offsets_ = pt_offsets / (pt_offsets_norm.unsqueeze(-1) + 1e-8)
-        # direction_diff = - (gt_offsets_ * pt_offsets_).sum(-1)  # (N)
-        # offset_dir_loss = torch.sum(direction_diff * valid) / (torch.sum(valid) + 1e-6)
-        #
-        # loss_out['offset_norm_loss'] = (offset_norm_loss, valid.sum())
-        # loss_out['offset_dir_loss'] = (offset_dir_loss, valid.sum())
+        '''semantic loss'''
+        semantic_scores, semantic_labels = loss_inp['semantic_scores']
+        # semantic_scores: (N, nClass), float32, cuda
+        # semantic_labels: (N), long, cuda
+
+        semantic_loss = semantic_criterion(semantic_scores, semantic_labels)
+        loss_out['semantic_loss'] = (semantic_loss, semantic_scores.shape[0])
+
+        '''offset loss'''
+        pt_offsets, coords, instance_info, instance_labels = loss_inp['pt_offsets']
+        # pt_offsets: (N, 3), float, cuda
+        # coords: (N, 3), float32
+        # instance_info: (N, 9), float32 tensor (meanxyz, minxyz, maxxyz)
+        # instance_labels: (N), long
+
+        gt_offsets = instance_info[:, 0:3] - coords  # (N, 3)
+        pt_diff = pt_offsets - gt_offsets  # (N, 3)
+        pt_dist = torch.sum(torch.abs(pt_diff), dim=-1)  # (N)
+        valid = (instance_labels != cfg.ignore_label).float()
+        offset_norm_loss = torch.sum(pt_dist * valid) / (torch.sum(valid) + 1e-6)
+
+        gt_offsets_norm = torch.norm(gt_offsets, p=2, dim=1)  # (N), float
+        gt_offsets_ = gt_offsets / (gt_offsets_norm.unsqueeze(-1) + 1e-8)
+        pt_offsets_norm = torch.norm(pt_offsets, p=2, dim=1)
+        pt_offsets_ = pt_offsets / (pt_offsets_norm.unsqueeze(-1) + 1e-8)
+        direction_diff = - (gt_offsets_ * pt_offsets_).sum(-1)  # (N)
+        offset_dir_loss = torch.sum(direction_diff * valid) / (torch.sum(valid) + 1e-6)
+
+        loss_out['offset_norm_loss'] = (offset_norm_loss, valid.sum())
+        loss_out['offset_dir_loss'] = (offset_dir_loss, valid.sum())
 
         # if (epoch > cfg.prepare_epochs):
         #     '''score loss'''
