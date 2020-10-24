@@ -147,6 +147,8 @@ class PointGroup(nn.Module):
         self.pretrain_module = cfg.pretrain_module
         self.fix_module = cfg.fix_module
 
+        self.model_mode = cfg.model_mode
+
         norm_fn = functools.partial(nn.BatchNorm1d, eps=1e-4, momentum=0.1)
 
         if block_residual:
@@ -157,17 +159,17 @@ class PointGroup(nn.Module):
         if cfg.use_coords:
             input_c += 3
 
-        #### backbone
-        self.input_conv = spconv.SparseSequential(
-            spconv.SubMConv3d(input_c, m, kernel_size=3, padding=1, bias=False, indice_key='subm1')
-        )
-
-        self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block, indice_key_id=1)
-
-        self.output_layer = spconv.SparseSequential(
-            norm_fn(m),
-            nn.ReLU()
-        )
+        # #### backbone
+        # self.input_conv = spconv.SparseSequential(
+        #     spconv.SubMConv3d(input_c, m, kernel_size=3, padding=1, bias=False, indice_key='subm1')
+        # )
+        #
+        # self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block, indice_key_id=1)
+        #
+        # self.output_layer = spconv.SparseSequential(
+        #     norm_fn(m),
+        #     nn.ReLU()
+        # )
 
         #### center prediction
         self.grid_center_pred = nn.Sequential(
@@ -182,32 +184,33 @@ class PointGroup(nn.Module):
             nn.Linear(32, 3)
         )
 
-        #### semantic segmentation
-        self.linear = nn.Linear(m, classes)  # bias(default): True
+        # #### semantic segmentation
+        # self.linear = nn.Linear(m, classes)  # bias(default): True
 
-        #### offset
-        self.offset = nn.Sequential(
-            nn.Linear(m, m, bias=True),
-            norm_fn(m),
-            nn.ReLU()
-        )
-        self.offset_linear = nn.Linear(m, 3, bias=True)
+        # #### offset
+        # self.offset = nn.Sequential(
+        #     nn.Linear(m, m, bias=True),
+        #     norm_fn(m),
+        #     nn.ReLU()
+        # )
+        # self.offset_linear = nn.Linear(m, 3, bias=True)
 
-        #### score branch
-        self.score_unet = UBlock([m, 2 * m], norm_fn, 2, block, indice_key_id=1)
-        self.score_outputlayer = spconv.SparseSequential(
-            norm_fn(m),
-            nn.ReLU()
-        )
-        self.score_linear = nn.Linear(m, 1)
-
-        self.apply(self.set_bn_init)
+        # #### score branch
+        # self.score_unet = UBlock([m, 2 * m], norm_fn, 2, block, indice_key_id=1)
+        # self.score_outputlayer = spconv.SparseSequential(
+        #     norm_fn(m),
+        #     nn.ReLU()
+        # )
+        # self.score_linear = nn.Linear(m, 1)
+        #
+        # self.apply(self.set_bn_init)
 
         #### fix parameter
-        module_map = {'input_conv': self.input_conv, 'unet': self.unet, 'output_layer': self.output_layer,
-                      'linear': self.linear, 'offset': self.offset, 'offset_linear': self.offset_linear,
-                      'score_unet': self.score_unet, 'score_outputlayer': self.score_outputlayer,
-                      'score_linear': self.score_linear}
+        # module_map = {'input_conv': self.input_conv, 'unet': self.unet, 'output_layer': self.output_layer,
+        #               'linear': self.linear, 'offset': self.offset, 'offset_linear': self.offset_linear,
+        #               'score_unet': self.score_unet, 'score_outputlayer': self.score_outputlayer,
+        #               'score_linear': self.score_linear}
+        module_map = {}
 
         for m in self.fix_module:
             mod = module_map[m]
@@ -236,15 +239,67 @@ class PointGroup(nn.Module):
             padding=0.1, n_blocks=5
         )
 
-        ### convolutional occupancy networks decoder
-        self.decoder = decoder.LocalDecoder(
-            dim=3,
-            c_dim=32,
-            hidden_size=32,
-        )
+        if self.model_mode == 0:
+            ### convolutional occupancy networks decoder
+            self.decoder = decoder.LocalDecoder(
+                dim=3,
+                c_dim=32,
+                hidden_size=32,
+            )
 
-        self.point_offset = nn.Linear(32, 3)
-        self.point_semantic = nn.Linear(32, classes)
+            self.point_offset = nn.Sequential(
+                nn.Linear(32, 32, bias=True),
+                norm_fn(32),
+                nn.ReLU(),
+                nn.Linear(32, 3, bias=True),
+            )
+            self.point_semantic = nn.Linear(32, classes)
+
+        # elif self.model_mode == 1:
+        #     self.input_conv = spconv.SparseSequential(
+        #         spconv.SubMConv3d(input_c, m, kernel_size=3, padding=1, bias=False, indice_key='subm1')
+        #     )
+        #
+        #     self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
+        #                        indice_key_id=1)
+        #
+        #     self.output_layer = spconv.SparseSequential(
+        #         norm_fn(m),
+        #         nn.ReLU()
+        #     )
+        #     #### semantic segmentation
+        #     self.linear = nn.Linear(m, classes)  # bias(default): True
+        #
+        #     #### offset
+        #     self.offset = nn.Sequential(
+        #         nn.Linear(m, m, bias=True),
+        #         norm_fn(m),
+        #         nn.ReLU()
+        #     )
+        #     self.offset_linear = nn.Linear(m, 3, bias=True)
+        # elif self.model_mode == 2:
+        #     self.input_conv = spconv.SparseSequential(
+        #         spconv.SubMConv3d(input_c, m, kernel_size=3, padding=1, bias=False, indice_key='subm1')
+        #     )
+        #
+        #     self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
+        #                        indice_key_id=1)
+        #
+        #     self.output_layer = spconv.SparseSequential(
+        #         norm_fn(m),
+        #         nn.ReLU()
+        #     )
+        #     #### semantic segmentation
+        #     self.linear = nn.Linear(m, classes)  # bias(default): True
+        #
+        #     #### offset
+        #     self.offset = nn.Sequential(
+        #         nn.Linear(m, m, bias=True),
+        #         norm_fn(m),
+        #         nn.ReLU()
+        #     )
+        #     self.offset_linear = nn.Linear(m, 3, bias=True)
+
 
     @staticmethod
     def set_bn_init(m):
@@ -327,24 +382,43 @@ class PointGroup(nn.Module):
         }
         '''
 
-        point_feats = self.decoder(encoded_feats['coord'], encoded_feats)
+        if self.model_mode == 0:
+            point_feats = self.decoder(encoded_feats['coord'], encoded_feats).squeeze(dim=0)
 
-        point_offset_preds = self.point_offset(point_feats)
-        ret['point_offset_preds'] = point_offset_preds
+            point_offset_preds = self.point_offset(point_feats)
+            point_semantic_preds = self.point_semantic(point_feats)
+        elif self.model_mode == 1:
+            output = self.input_conv(input)
+            output = self.unet(output)
+            output = self.output_layer(output)
+            output_feats = output.features[input_map.long()]
 
-        point_semantic_preds = self.point_semantic(point_feats)
-        ret['point_semantic_preds'] = point_semantic_preds
+            #### semantic segmentation
+            semantic_scores = self.linear(output_feats)  # (N, nClass), float
+            semantic_preds = semantic_scores.max(1)[1]  # (N), long
+
+            # ret['semantic_scores'] = semantic_scores
+
+            #### offset
+            pt_offsets_feats = self.offset(output_feats)
+            pt_offsets = self.offset_linear(pt_offsets_feats)  # (N, 3), float32
+
+            # ret['pt_offsets'] = pt_offsets
 
         bs, c_dim, grid_size = encoded_feats['grid'].shape[0], encoded_feats['grid'].shape[1], encoded_feats['grid'].shape[2]
         grid_feats = encoded_feats['grid'].reshape(bs, c_dim, -1).permute(0, 2, 1)
 
         ### grid point center probabilty prediction
         grid_center_preds = self.grid_center_pred(grid_feats)
-        ret['grid_center_preds'] = grid_center_preds
 
         ### grid point center offset vector prediction
         grid_center_offset_preds = self.grid_center_offset(grid_feats)
+
+        ret['point_semantic_preds'] = point_semantic_preds
+        ret['point_offset_preds'] = point_offset_preds
+        ret['grid_center_preds'] = grid_center_preds
         ret['grid_center_offset_preds'] = grid_center_offset_preds
+
 
         # input = spconv.SparseConvTensor(input['voxel_feats'], input['voxel_coords'], input['spatial_shape'],
         #                                 input['batch_size'])

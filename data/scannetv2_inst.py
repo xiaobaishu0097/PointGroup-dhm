@@ -45,6 +45,7 @@ class Dataset:
     def trainLoader(self):
         train_file_names = sorted(glob.glob(os.path.join(self.data_root, self.dataset, 'train', '*' + self.filename_suffix)))
         self.train_files = [torch.load(i) for i in train_file_names]
+        # train_file_names = sorted(glob.glob(os.path.join(self.data_root, self.dataset, 'val', '*' + self.filename_suffix)))
         # self.train_files = [torch.load(train_file_names[0])]
 
         logger.info('Training samples: {}'.format(len(self.train_files)))
@@ -68,7 +69,7 @@ class Dataset:
     def testLoader(self):
         self.test_file_names = sorted(glob.glob(os.path.join(self.data_root, self.dataset, self.test_split, '*' + self.filename_suffix)))
         self.test_files = [torch.load(i) for i in self.test_file_names]
-        # self.test_file_names = sorted(glob.glob(os.path.join(self.data_root, self.dataset, 'train', '*' + self.filename_suffix)))
+        # self.test_file_names = sorted(glob.glob(os.path.join(self.data_root, self.dataset, 'val', '*' + self.filename_suffix)))
         # self.test_files = [torch.load(self.test_file_names[0])]
 
         logger.info('Testing samples ({}): {}'.format(self.test_split, len(self.test_files)))
