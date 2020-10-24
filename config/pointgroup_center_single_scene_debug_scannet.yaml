@@ -30,7 +30,7 @@ STRUCTURE:
   use_coords: True
 
 TRAIN:
-  epochs: 1024
+  epochs: 2048
   train_workers: 16 # data loader workers
   optim: Adam # Adam or SGD
   lr: 0.001
@@ -39,7 +39,7 @@ TRAIN:
   momentum: 0.9
   weight_decay: 0.0001
   save_freq: 16  # also eval_freq
-  loss_weight: [1.0, 0.1, 1.0, 1.0] # semantic_loss, offset_norm_loss, offset_dir_loss, score_loss
+  loss_weight: [0.1, 0.01, 1.0, 1.0, 1.0] # semantic_loss, offset_norm_loss, offset_dir_loss, score_loss
   focal_loss_alpha: 0.25
   focal_loss_gamma: 2
   heatmap_sigma: 0 # 0 -> adaptive sigma based on instance size
@@ -67,7 +67,7 @@ GROUP:
 
 TEST:
   split: val
-  test_epoch: 1024
+  test_epoch: 2048
   test_workers: 16
   test_seed: 567
 

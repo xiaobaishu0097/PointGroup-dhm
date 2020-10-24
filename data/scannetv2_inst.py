@@ -329,6 +329,7 @@ class Dataset:
                 'instance_info': instance_infos, 'instance_pointnum': instance_pointnum,
                 'instance_centers': instance_centers, 'instance_heatmap': instance_heatmap,
                 'grid_center_gt': grid_center_gt, 'grid_center_offset': grid_center_offset,
+                'grid_xyz': torch.from_numpy(grid_xyz),
                 'id': id, 'offsets': batch_offsets, 'spatial_shape': spatial_shape}
 
 
@@ -467,6 +468,7 @@ class Dataset:
         feats = []
         instance_centers = []  # (totoal_nInst, 3)
 
+        instance_infos = []  # (N, 9)
         instance_heatmap = []
         grid_center_gt = []
         grid_center_offset = []
@@ -541,6 +543,7 @@ class Dataset:
             instance_heatmap.append(inst_heatmap)
             grid_center_gt.append(grid_cent_gt.squeeze())
             grid_center_offset.append(torch.from_numpy(grid_cent_offset))
+            instance_infos.append(torch.from_numpy(inst_infos["instance_info"]))
 
         ### merge all the scenes in the batch
         batch_offsets = torch.tensor(batch_offsets, dtype=torch.int)  # int (B+1)
@@ -560,11 +563,13 @@ class Dataset:
             instance_heatmap = torch.cat(instance_heatmap, 0).to(torch.float32)
             grid_center_gt = torch.cat(grid_center_gt, 0).to(torch.float32)
             grid_center_offset = torch.cat(grid_center_offset, 0).to(torch.float32)
+            instance_infos = torch.cat(instance_infos, 0).to(torch.float32)  # float (N, 9) (meanxyz, minxyz, maxxyz)
 
             return {'locs': locs, 'voxel_locs': voxel_locs, 'p2v_map': p2v_map, 'v2p_map': v2p_map,
                     'locs_float': locs_float, 'feats': feats, 'instance_centers': instance_centers,
                     'instance_heatmap': instance_heatmap, 'grid_center_gt': grid_center_gt,
-                    'grid_center_offset': grid_center_offset,
+                    'grid_center_offset': grid_center_offset, 'grid_xyz': torch.from_numpy(grid_xyz),
+                    'labels': torch.from_numpy(label), 'instance_info': instance_infos,
                     'id': id, 'offsets': batch_offsets, 'spatial_shape': spatial_shape}
 
         return {'locs': locs, 'voxel_locs': voxel_locs, 'p2v_map': p2v_map, 'v2p_map': v2p_map,

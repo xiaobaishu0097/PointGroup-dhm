@@ -57,13 +57,13 @@ def test(model, model_fn, data_name, epoch):
         model = model.eval()
         start = time.time()
 
-        tp = 0
-        tn = 0
-        fp = 0
-        fn = 0
-
-        offset_error = 0
-
+        # tp = 0
+        # tn = 0
+        # fp = 0
+        # fn = 0
+        #
+        # offset_error = 0
+        #
         true_threshold = 0.0
         candidate_num = 100
 
@@ -76,34 +76,19 @@ def test(model, model_fn, data_name, epoch):
             preds = model_fn(batch, model, epoch)
             end1 = time.time() - start1
 
+            ##### get predictions (#1 semantic_pred, pt_offsets; #2 scores, proposals_pred)
+            semantic_scores = preds['semantic']  # (N, nClass=20) float32, cuda
+            semantic_pred = semantic_scores.max(1)[1]  # (N) long, cuda
+
+            pt_offsets = preds['pt_offsets']    # (N, 3), float32, cuda
+            pt_coords = preds['pt_coords']
+            grid_xyz = preds['grid_xyz']
+
             grid_center_preds = torch.sigmoid(preds['grid_center_preds'])
             grid_center_gt = preds['grid_center_gt'].cpu()
 
             grid_center_offset_preds = preds['grid_center_offset_preds']
             grid_center_offset = preds['grid_center_offset']
-
-            grid_center_offset_preds = grid_center_offset_preds[grid_center_gt.long(), :]
-            center_offset_error = grid_center_offset_preds - grid_center_offset
-            offset_error_mean = torch.norm(center_offset_error, dim=1).mean()
-
-            grid_points = torch.zeros((32**3))
-            grid_points[grid_center_gt.long()] = 1
-            grid_points = grid_points.reshape((32, 32, 32))
-            new_grid_center_gt = torch.zeros((32, 32, 32))
-            for coord in grid_points.nonzero():
-                x, y, z = coord[0], coord[1], coord[2]
-                for i in [-1, 0, 1]:
-                    new_x = x + i
-                    if new_x >= 0 and new_x <= 31:
-                        for j in [-1, 0, 1]:
-                            new_y = y + j
-                            if new_y >= 0 and new_y <= 31:
-                                for q in [-1, 0, 1]:
-                                    new_z = z + q
-                                    if new_z >= 0 and new_z <= 31:
-                                        new_grid_center_gt[new_x, new_y, new_z] = 1
-            new_grid_center_gt = new_grid_center_gt.reshape((32**3,))
-            grid_center_gt = new_grid_center_gt.nonzero().reshape((-1))
 
             grid_pred_max = maxpool3d(grid_center_preds.reshape(1, 1, 32, 32, 32)).reshape(1, 32**3)
             cent_candidates_indexs = (grid_center_preds == grid_pred_max)
@@ -111,21 +96,80 @@ def test(model, model_fn, data_name, epoch):
             topk_value_, topk_index_ = torch.topk(grid_center_preds, candidate_num, dim=1)
             topk_index_ = topk_index_[topk_value_ > true_threshold]
 
-            tp_scene = 0
-            fp_scene = 0
+            inst_cent_cand_xyz = (grid_xyz[topk_index_] + grid_center_offset_preds[topk_index_]).unsqueeze(dim=0)
+            pt_cent_xyz = (pt_coords + pt_offsets).unsqueeze(dim=1)
+            pt_inst_cent_dist = torch.norm(
+                pt_cent_xyz.repeat(1, inst_cent_cand_xyz.shape[1], 1) - inst_cent_cand_xyz.repeat(pt_cent_xyz.shape[0], 1, 1),
+                dim=2
+            )
+            pt_inst_cent = torch.nn.functional.one_hot(pt_inst_cent_dist.min(dim=1)[1])
+            valid_inst_index = pt_inst_cent.sum(dim=0) > cfg.TEST_NPOINT_THRESH
+            pt_inst_cent = pt_inst_cent[:, valid_inst_index].permute(1, 0)
 
-            for index in topk_index_.cpu():
-                if index in grid_center_gt.long():
-                    tp_scene += 1
-                else:
-                    fp_scene += 1
-            fn_scene = int(preds['grid_center_gt'].shape[0] - tp_scene)
+            inst_semantic_id = torch.mm(pt_inst_cent.float(), torch.nn.functional.one_hot(semantic_pred.to(torch.int64)).float())
+            inst_semantic_id = inst_semantic_id.max(dim=1)[1]
+            inst_semantic_id = torch.tensor([semantic_label_idx[i] for i in inst_semantic_id])
 
-            tp += tp_scene
-            fp += fp_scene
-            fn += fn_scene
+            inst_scores = torch.ones((pt_inst_cent.shape[0]))
 
-            offset_error += offset_error_mean
+            ninst = pt_inst_cent.shape[0]
+
+            ##### prepare for evaluation
+            if cfg.eval:
+                pred_info = {}
+                pred_info['conf'] = inst_scores.cpu().numpy()
+                pred_info['label_id'] = inst_semantic_id.cpu().numpy()
+                pred_info['mask'] = pt_inst_cent.cpu().numpy()
+                gt_file = os.path.join(cfg.data_root, cfg.dataset, cfg.split + '_gt', test_scene_name + '.txt')
+                gt2pred, pred2gt = eval.assign_instances_for_scan(test_scene_name, pred_info, gt_file)
+                matches[test_scene_name] = {}
+                matches[test_scene_name]['gt'] = gt2pred
+                matches[test_scene_name]['pred'] = pred2gt
+
+            # grid_center_offset_preds = grid_center_offset_preds[grid_center_gt.long(), :]
+            # center_offset_error = grid_center_offset_preds - grid_center_offset
+            # offset_error_mean = torch.norm(center_offset_error, dim=1).mean()
+            #
+            # grid_points = torch.zeros((32**3))
+            # grid_points[grid_center_gt.long()] = 1
+            # grid_points = grid_points.reshape((32, 32, 32))
+            # new_grid_center_gt = torch.zeros((32, 32, 32))
+            # for coord in grid_points.nonzero():
+            #     x, y, z = coord[0], coord[1], coord[2]
+            #     for i in [-1, 0, 1]:
+            #         new_x = x + i
+            #         if new_x >= 0 and new_x <= 31:
+            #             for j in [-1, 0, 1]:
+            #                 new_y = y + j
+            #                 if new_y >= 0 and new_y <= 31:
+            #                     for q in [-1, 0, 1]:
+            #                         new_z = z + q
+            #                         if new_z >= 0 and new_z <= 31:
+            #                             new_grid_center_gt[new_x, new_y, new_z] = 1
+            # new_grid_center_gt = new_grid_center_gt.reshape((32**3,))
+            # grid_center_gt = new_grid_center_gt.nonzero().reshape((-1))
+            #
+            # grid_pred_max = maxpool3d(grid_center_preds.reshape(1, 1, 32, 32, 32)).reshape(1, 32**3)
+            # cent_candidates_indexs = (grid_center_preds == grid_pred_max)
+            # grid_center_preds[~cent_candidates_indexs] = 0
+            # topk_value_, topk_index_ = torch.topk(grid_center_preds, candidate_num, dim=1)
+            # topk_index_ = topk_index_[topk_value_ > true_threshold]
+            #
+            # tp_scene = 0
+            # fp_scene = 0
+            #
+            # for index in topk_index_.cpu():
+            #     if index in grid_center_gt.long():
+            #         tp_scene += 1
+            #     else:
+            #         fp_scene += 1
+            # fn_scene = int(preds['grid_center_gt'].shape[0] - tp_scene)
+            #
+            # tp += tp_scene
+            # fp += fp_scene
+            # fn += fn_scene
+            #
+            # offset_error += offset_error_mean
 
             ##### save files
             start3 = time.time()
@@ -137,30 +181,18 @@ def test(model, model_fn, data_name, epoch):
                 np.save(os.path.join(result_dir, 'grid_center_preds', test_scene_name + '.npy'), grid_center_preds)
                 np.save(os.path.join(result_dir, 'grid_center_gt', test_scene_name + '.npy'), grid_center_gt)
 
-            # if cfg.save_semantic:
-            #     os.makedirs(os.path.join(result_dir, 'semantic'), exist_ok=True)
-            #     semantic_np = semantic_pred.cpu().numpy()
-            #     np.save(os.path.join(result_dir, 'semantic', test_scene_name + '.npy'), semantic_np)
-            #
-            # if cfg.save_pt_offsets:
-            #     os.makedirs(os.path.join(result_dir, 'coords_offsets'), exist_ok=True)
-            #     pt_offsets_np = pt_offsets.cpu().numpy()
-            #     coords_np = batch['locs_float'].numpy()
-            #     coords_offsets = np.concatenate((coords_np, pt_offsets_np), 1)   # (N, 6)
-            #     np.save(os.path.join(result_dir, 'coords_offsets', test_scene_name + '.npy'), coords_offsets)
-            #
-            #
-            # if(epoch > cfg.prepare_epochs and cfg.save_instance):
-            #     f = open(os.path.join(result_dir, test_scene_name + '.txt'), 'w')
-            #     for proposal_id in range(nclusters):
-            #         clusters_i = clusters[proposal_id].cpu().numpy()  # (N)
-            #         semantic_label = np.argmax(np.bincount(semantic_pred[np.where(clusters_i == 1)[0]].cpu()))
-            #         score = cluster_scores[proposal_id]
-            #         f.write('predicted_masks/{}_{:03d}.txt {} {:.4f}'.format(test_scene_name, proposal_id, semantic_label_idx[semantic_label], score))
-            #         if proposal_id < nclusters - 1:
-            #             f.write('\n')
-            #         np.savetxt(os.path.join(result_dir, 'predicted_masks', test_scene_name + '_%03d.txt' % (proposal_id)), clusters_i, fmt='%d')
-            #     f.close()
+            if cfg.save_instance:
+                f = open(os.path.join(result_dir, test_scene_name + '.txt'), 'w')
+                for proposal_id in range(ninst):
+                    clusters_i = pt_inst_cent[proposal_id].cpu().numpy()  # (N)
+                    semantic_label = np.argmax(np.bincount(semantic_pred[np.where(clusters_i == 1)[0]].cpu()))
+                    score = inst_scores[proposal_id]
+                    f.write('predicted_masks/{}_{:03d}.txt {} {:.4f}'.format(test_scene_name, proposal_id, semantic_label_idx[semantic_label], score))
+                    if proposal_id < ninst - 1:
+                        f.write('\n')
+                    np.savetxt(os.path.join(result_dir, 'predicted_masks', test_scene_name + '_%03d.txt' % (proposal_id)), clusters_i, fmt='%d')
+                f.close()
+
             end3 = time.time() - start3
             end = time.time() - start
             start = time.time()
@@ -168,12 +200,18 @@ def test(model, model_fn, data_name, epoch):
             ##### print
             logger.info("instance iter: {}/{} point_num: {} time: total {:.2f}s inference {:.2f}s save {:.2f}s".format(batch['id'][0] + 1, len(dataset.test_files), N, end, end1, end3))
 
+        ##### evaluation
+        if cfg.eval:
+            ap_scores = eval.evaluate_matches(matches)
+            avgs = eval.compute_averages(ap_scores)
+            eval.print_results(avgs)
+
         # fn = int(fn / 27)
 
-        precision = tp / (tp + fp + 1)
-        recall = tp / (tp + fn + 1)
+        # precision = tp / (tp + fp + 1)
+        # recall = tp / (tp + fn + 1)
         ##### print
-        logger.info("Center prediction: precision: {}, recall: {}; Center offset prediction: {}".format(precision, recall, offset_error))
+        # logger.info("Center prediction: precision: {}, recall: {}; Center offset prediction: {}".format(precision, recall, offset_error))
 
 
 

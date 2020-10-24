@@ -436,9 +436,12 @@ def model_fn_decorator(test=False):
         coords_float = batch['locs_float'].cuda()  # (N, 3), float32, cuda
         feats = batch['feats'].cuda()  # (N, C), float32, cuda
 
+        instance_info = batch['instance_info'].cuda()  # (N, 9), float32, cuda, (meanxyz, minxyz, maxxyz)
+        labels = batch['labels'].cuda()  # (N), long, cuda
         instance_centers = batch['instance_centers'].cuda()
         grid_center_gt = batch['grid_center_gt'].cuda()
         grid_center_offset = batch['grid_center_offset'].cuda()
+        grid_xyz = batch['grid_xyz'].cuda()
 
         batch_offsets = batch['offsets'].cuda()  # (B + 1), int, cuda
 
@@ -457,6 +460,13 @@ def model_fn_decorator(test=False):
         }
 
         ret = model(input_, p2v_map, coords_float, coords[:, 0].int(), batch_offsets, epoch)
+
+        point_offset_preds = ret['point_offset_preds']
+        point_offset_preds = point_offset_preds.squeeze()
+
+        point_semantic_preds = ret['point_semantic_preds']
+        point_semantic_preds = point_semantic_preds.squeeze()
+
         grid_center_preds = ret['grid_center_preds']
         grid_center_preds = grid_center_preds.reshape(1, -1)
 
@@ -471,10 +481,17 @@ def model_fn_decorator(test=False):
         ##### preds
         with torch.no_grad():
             preds = {}
+            preds['pt_offsets'] = point_offset_preds
+            # preds['pt_offsets'] = instance_info[:, 0:3] - coords_float
+            preds['semantic'] = point_semantic_preds
+            # preds['semantic'] = labels
             preds['grid_center_preds'] = grid_center_preds
             preds['grid_center_offset_preds'] = grid_center_offset_preds
             preds['grid_center_gt'] = grid_center_gt
             preds['grid_center_offset'] = grid_center_offset
+            preds['pt_coords'] = coords_float
+            preds['grid_xyz'] = grid_xyz
+            preds['instance_centers'] = instance_centers
             # preds['semantic'] = semantic_scores
             # preds['pt_offsets'] = pt_offsets
             # if (epoch > cfg.prepare_epochs):
@@ -668,7 +685,9 @@ def model_fn_decorator(test=False):
         #     2] * offset_dir_loss
         # if (epoch > cfg.prepare_epochs):
         #     loss += (cfg.loss_weight[3] * score_loss)
-        loss = cfg.loss_weight[0] * center_loss + cfg.loss_weight[1] * center_offset_loss
+        loss = cfg.loss_weight[0] * center_loss + cfg.loss_weight[1] * center_offset_loss + \
+               cfg.loss_weight[2] * semantic_loss + cfg.loss_weight[3] * offset_norm_loss + \
+               cfg.loss_weight[4] * offset_dir_loss
 
         return loss, loss_out, infos
 
