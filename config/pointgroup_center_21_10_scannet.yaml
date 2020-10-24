@@ -26,6 +26,7 @@ STRUCTURE:
   block_reps: 2
   scatter_type: max
   unet3d_num_levels: 3
+  model_mode: 0 # 0: weihao 1: heming 2: mehrdard
 
   use_coords: True
 
@@ -39,7 +40,7 @@ TRAIN:
   momentum: 0.9
   weight_decay: 0.0001
   save_freq: 16  # also eval_freq
-  loss_weight: [1.0, 1.0, 1.0, 1.0] # semantic_loss, offset_norm_loss, offset_dir_loss, score_loss
+  loss_weight: [1.0, 1.0, 1.0, 1.0, 1.0] # semantic_loss, offset_norm_loss, offset_dir_loss, score_loss
   focal_loss_alpha: 0.25
   focal_loss_gamma: 2
   heatmap_sigma: 0
