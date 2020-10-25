@@ -116,7 +116,7 @@ class LocalPoolPointnet(nn.Module):
         return c_out.permute(0, 2, 1)
 
 
-    def forward(self, p):
+    def forward(self, p, rgb):
         batch_size, T, D = p.size()
 
         # acquire the index for each point
@@ -135,7 +135,7 @@ class LocalPoolPointnet(nn.Module):
             coord['grid'] = normalize_3d_coordinate(p.clone(), padding=self.padding)
             index['grid'] = coordinate2index(coord['grid'], self.reso_grid, coord_type='3d')
         
-        net = self.fc_pos(p)
+        net = self.fc_pos(torch.cat((p, rgb), dim=2))
 
         net = self.blocks[0](net)
         for block in self.blocks[1:]:

@@ -241,10 +241,10 @@ class Dataset:
             grid_size = (xyz_middle.max(axis=0, keepdims=True) - xyz_middle.min(axis=0, keepdims=True)) / 32
             grid_xyz += grid_size / 2
             grid_xyz = grid_xyz.reshape(32, 32, 32, 3)
-            for i in range(32):
-                grid_xyz[i, :, :, 0] = grid_xyz[i, :, :, 0] + i * grid_size[0, 0]
-                grid_xyz[:, i, :, 1] = grid_xyz[:, i, :, 1] + i * grid_size[0, 1]
-                grid_xyz[:, :, i, 2] = grid_xyz[:, :, i, 2] + i * grid_size[0, 2]
+            for index in range(32):
+                grid_xyz[index, :, :, 0] = grid_xyz[index, :, :, 0] + index * grid_size[0, 0]
+                grid_xyz[:, index, :, 1] = grid_xyz[:, index, :, 1] + index * grid_size[0, 1]
+                grid_xyz[:, :, index, 2] = grid_xyz[:, :, index, 2] + index * grid_size[0, 2]
             grid_xyz = grid_xyz.reshape(-1, 3)
 
             ### size adaptive gaussian function or fixed sigma gaussian
@@ -389,10 +389,10 @@ class Dataset:
             grid_size = (xyz_middle.max(axis=0, keepdims=True) - xyz_middle.min(axis=0, keepdims=True)) / 32
             grid_xyz += grid_size / 2
             grid_xyz = grid_xyz.reshape(32, 32, 32, 3)
-            for i in range(32):
-                grid_xyz[i, :, :, 0] = grid_xyz[i, :, :, 0] + i * grid_size[0, 0]
-                grid_xyz[:, i, :, 1] = grid_xyz[:, i, :, 1] + i * grid_size[0, 1]
-                grid_xyz[:, :, i, 2] = grid_xyz[:, :, i, 2] + i * grid_size[0, 2]
+            for index in range(32):
+                grid_xyz[index, :, :, 0] = grid_xyz[index, :, :, 0] + index * grid_size[0, 0]
+                grid_xyz[:, index, :, 1] = grid_xyz[:, index, :, 1] + index * grid_size[0, 1]
+                grid_xyz[:, :, index, 2] = grid_xyz[:, :, index, 2] + index * grid_size[0, 2]
             grid_xyz = grid_xyz.reshape(-1, 3)
 
             ### size adaptive gaussian function or fixed sigma gaussian
@@ -507,10 +507,10 @@ class Dataset:
             grid_size = (xyz_middle.max(axis=0, keepdims=True) - xyz_middle.min(axis=0, keepdims=True)) / 32
             grid_xyz += grid_size / 2
             grid_xyz = grid_xyz.reshape(32, 32, 32, 3)
-            for i in range(32):
-                grid_xyz[i, :, :, 0] = grid_xyz[i, :, :, 0] + i * grid_size[0, 0]
-                grid_xyz[:, i, :, 1] = grid_xyz[:, i, :, 1] + i * grid_size[0, 1]
-                grid_xyz[:, :, i, 2] = grid_xyz[:, :, i, 2] + i * grid_size[0, 2]
+            for index in range(32):
+                grid_xyz[index, :, :, 0] = grid_xyz[index, :, :, 0] + index * grid_size[0, 0]
+                grid_xyz[:, index, :, 1] = grid_xyz[:, index, :, 1] + index * grid_size[0, 1]
+                grid_xyz[:, :, index, 2] = grid_xyz[:, :, index, 2] + index * grid_size[0, 2]
             grid_xyz = grid_xyz.reshape(-1, 3)
 
             if not self.heatmap_sigma:

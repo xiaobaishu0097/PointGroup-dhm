@@ -225,9 +225,8 @@ class PointGroup(nn.Module):
                     "Load pretrained " + m + ": %d/%d" % utils.load_model_param(module_map[m], pretrain_dict, prefix=m))
 
         #### pointnet++ encoder
-        # TODO: add parameters of PointNet++
         self.encoder = pointnet.LocalPoolPointnet(
-            c_dim=32, dim=3, hidden_dim=32, scatter_type=cfg.scatter_type,
+            c_dim=32, dim=6, hidden_dim=32, scatter_type=cfg.scatter_type,
             unet=False, unet_kwargs=None, unet3d=True,
             unet3d_kwargs={
                 'num_levels': cfg.unet3d_num_levels,
@@ -255,28 +254,28 @@ class PointGroup(nn.Module):
             )
             self.point_semantic = nn.Linear(32, classes)
 
-        # elif self.model_mode == 1:
-        #     self.input_conv = spconv.SparseSequential(
-        #         spconv.SubMConv3d(input_c, m, kernel_size=3, padding=1, bias=False, indice_key='subm1')
-        #     )
-        #
-        #     self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
-        #                        indice_key_id=1)
-        #
-        #     self.output_layer = spconv.SparseSequential(
-        #         norm_fn(m),
-        #         nn.ReLU()
-        #     )
-        #     #### semantic segmentation
-        #     self.linear = nn.Linear(m, classes)  # bias(default): True
-        #
-        #     #### offset
-        #     self.offset = nn.Sequential(
-        #         nn.Linear(m, m, bias=True),
-        #         norm_fn(m),
-        #         nn.ReLU()
-        #     )
-        #     self.offset_linear = nn.Linear(m, 3, bias=True)
+        elif self.model_mode == 1:
+            self.input_conv = spconv.SparseSequential(
+                spconv.SubMConv3d(32, m, kernel_size=3, padding=1, bias=False, indice_key='subm1')
+            )
+
+            self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
+                               indice_key_id=1)
+
+            self.output_layer = spconv.SparseSequential(
+                norm_fn(m),
+                nn.ReLU()
+            )
+            #### semantic segmentation
+            self.linear = nn.Linear(m, classes)  # bias(default): True
+
+            #### offset
+            self.offset = nn.Sequential(
+                nn.Linear(m, m, bias=True),
+                norm_fn(m),
+                nn.ReLU(),
+                nn.Linear(m, 3, bias=True)
+            )
         # elif self.model_mode == 2:
         #     self.input_conv = spconv.SparseSequential(
         #         spconv.SubMConv3d(input_c, m, kernel_size=3, padding=1, bias=False, indice_key='subm1')
@@ -364,7 +363,7 @@ class PointGroup(nn.Module):
 
         return voxelization_feats, inp_map
 
-    def forward(self, input, input_map, coords, batch_idxs, batch_offsets, epoch):
+    def forward(self, input, input_map, coords, rgb, batch_idxs, batch_offsets, epoch):
         '''
         :param input_map: (N), int, cuda
         :param coords: (N, 3), float, cuda
@@ -373,7 +372,7 @@ class PointGroup(nn.Module):
         '''
         ret = {}
 
-        encoded_feats = self.encoder(coords.unsqueeze(dim=0))
+        encoded_feats = self.encoder(coords.unsqueeze(dim=0), rgb.unsqueeze(dim=0))
         '''encoded_feats:{
         coord: coordinate of points (b, n, 3)
         index: index of points (b, 1, n)
@@ -388,20 +387,30 @@ class PointGroup(nn.Module):
             point_offset_preds = self.point_offset(point_feats)
             point_semantic_preds = self.point_semantic(point_feats)
         elif self.model_mode == 1:
-            output = self.input_conv(input)
+            voxel_feats = pointgroup_ops.voxelization(
+                # encoded_feats['point'].squeeze(dim=0),
+                input['pt_feats'],
+                input['v2p_map'],
+                input['mode']
+            )  # (M, C), float, cuda
+
+            input_ = spconv.SparseConvTensor(
+                voxel_feats, input['voxel_coords'], input['spatial_shape'], input['batch_size']
+            )
+            output = self.input_conv(input_)
             output = self.unet(output)
             output = self.output_layer(output)
             output_feats = output.features[input_map.long()]
 
             #### semantic segmentation
             semantic_scores = self.linear(output_feats)  # (N, nClass), float
-            semantic_preds = semantic_scores.max(1)[1]  # (N), long
+            point_semantic_preds = semantic_scores
 
             # ret['semantic_scores'] = semantic_scores
 
             #### offset
-            pt_offsets_feats = self.offset(output_feats)
-            pt_offsets = self.offset_linear(pt_offsets_feats)  # (N, 3), float32
+            pt_offsets = self.offset(output_feats) # (N, 3), float32
+            point_offset_preds = pt_offsets
 
             # ret['pt_offsets'] = pt_offsets
 
@@ -521,19 +530,23 @@ def model_fn_decorator(test=False):
 
         spatial_shape = batch['spatial_shape']
 
+        rgb = feats
+
         if cfg.use_coords:
             feats = torch.cat((feats, coords_float), 1)
-        voxel_feats = pointgroup_ops.voxelization(feats, v2p_map, cfg.mode)  # (M, C), float, cuda
-
+        # voxel_feats = pointgroup_ops.voxelization(feats, v2p_map, cfg.mode)  # (M, C), float, cuda
+        #
         # input_ = spconv.SparseConvTensor(voxel_feats, voxel_coords.int(), spatial_shape, cfg.batch_size)
         input_ = {
-            'voxel_feats': voxel_feats,
+            'pt_feats': feats,
+            'v2p_map': v2p_map,
+            'mode': cfg.mode,
             'voxel_coords': voxel_coords.int(),
             'spatial_shape': spatial_shape,
             'batch_size': cfg.batch_size,
         }
 
-        ret = model(input_, p2v_map, coords_float, coords[:, 0].int(), batch_offsets, epoch)
+        ret = model(input_, p2v_map, coords_float, rgb, coords[:, 0].int(), batch_offsets, epoch)
 
         point_offset_preds = ret['point_offset_preds']
         point_offset_preds = point_offset_preds.squeeze()
@@ -602,19 +615,23 @@ def model_fn_decorator(test=False):
 
         spatial_shape = batch['spatial_shape']
 
+        rgb = feats
+
         if cfg.use_coords:
             feats = torch.cat((feats, coords_float), 1)
-        voxel_feats = pointgroup_ops.voxelization(feats, v2p_map, cfg.mode)  # (M, C), float, cuda
-
+        # voxel_feats = pointgroup_ops.voxelization(feats, v2p_map, cfg.mode)  # (M, C), float, cuda
+        #
         # input_ = spconv.SparseConvTensor(voxel_feats, voxel_coords.int(), spatial_shape, cfg.batch_size)
         input_ = {
-            'voxel_feats': voxel_feats,
+            'pt_feats': feats,
+            'v2p_map': v2p_map,
+            'mode': cfg.mode,
             'voxel_coords': voxel_coords.int(),
             'spatial_shape': spatial_shape,
             'batch_size': cfg.batch_size,
         }
 
-        ret = model(input_, p2v_map, coords_float, coords[:, 0].int(), batch_offsets, epoch)
+        ret = model(input_, p2v_map, coords_float, rgb, coords[:, 0].int(), batch_offsets, epoch)
 
         point_offset_preds = ret['point_offset_preds']
         point_offset_preds = point_offset_preds.squeeze()

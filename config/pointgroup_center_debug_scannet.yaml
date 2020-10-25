@@ -21,12 +21,12 @@ DATA:
 
 STRUCTURE:
   model_name: pointgroup
-  m: 16 # 16 or 32
+  m: 32 # 16 or 32
   block_residual: True
   block_reps: 2
   scatter_type: max
   unet3d_num_levels: 3
-  model_mode: 0 # 0: weihao 1: heming 2: mehrdard
+  model_mode: 1 # 0: weihao 1: heming 2: mehrdard
 
   use_coords: True
 
