@@ -473,6 +473,7 @@ def generate_adaptive_heatmap(
         grid_xyz: torch.tensor,  # (N, 3)
         instance_centers: torch.tensor,  # (N, 3)
         instance_size: torch.tensor,  # (N, 3)
+        instance_label: torch.tensor, # (N, 1)
         min_IoU=0.5,
         min_radius=0,
 ):
@@ -493,7 +494,11 @@ def generate_adaptive_heatmap(
     heatmap = torch.div(grid_instance_distance,
                         instance_sigma.reshape(1, -1).repeat(grid_instance_distance.shape[0], 1))
     heatmap = heatmap.apply_(scaledGaussian)
-    heatmap = heatmap.max(dim=1)[0]
+    heatmap, instance_label_indexs = heatmap.max(dim=1)
     heatmap[heatmap < exp(-1)] = 0
+    grid_instance_label = instance_label[instance_label_indexs]
 
-    return heatmap
+    return {
+        'heatmap': heatmap,
+        'grid_instance_label': grid_instance_label,
+    }

@@ -34,13 +34,13 @@ TRAIN:
   epochs: 384
   train_workers: 16 # data loader workers
   optim: Adam # Adam or SGD
-  lr: 0.001
+  lr: 0.01
   step_epoch: 384
   multiplier: 0.5
   momentum: 0.9
   weight_decay: 0.0001
   save_freq: 16  # also eval_freq
-  loss_weight: [1.0, 1.0, 1.0, 1.0, 1.0] # semantic_loss, offset_norm_loss, offset_dir_loss, score_loss
+  loss_weight: [1.0, 1.0, 0.1, 1.0, 1.0, 1.0] # center, center_semantic, center_offset, semantic, pt_offset_norm, pt_offset_dir
   focal_loss_alpha: 0.25
   focal_loss_gamma: 2
   heatmap_sigma: 0
@@ -75,6 +75,7 @@ TEST:
   TEST_NMS_THRESH: 0.3
   TEST_SCORE_THRESH: 0.09
   TEST_NPOINT_THRESH: 100
+  TEST_DIST_THRESH: 5
 
   eval: True
   save_grid_points: True

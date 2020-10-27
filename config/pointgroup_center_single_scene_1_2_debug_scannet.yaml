@@ -21,12 +21,12 @@ DATA:
 
 STRUCTURE:
   model_name: pointgroup
-  m: 16 # 16 or 32
+  m: 32 # 16 or 32
   block_residual: True
   block_reps: 2
   scatter_type: mean
   unet3d_num_levels: 3
-  model_mode: 0 # 0: weihao 1: heming 2: mehrdard
+  model_mode: 1 # 0: weihao 1: heming 2: mehrdard
 
   use_coords: True
 
@@ -40,7 +40,7 @@ TRAIN:
   momentum: 0.9
   weight_decay: 0.0001
   save_freq: 16  # also eval_freq
-  loss_weight: [1.0, 0.1, 1.0, 1.0, 1.0] # semantic_loss, offset_norm_loss, offset_dir_loss, score_loss
+  loss_weight: [0.1, 0.01, 1.0, 1.0, 1.0] # center, center_offset, semantic, pt_offset_norm, pt_offset_dir
   focal_loss_alpha: 0.25
   focal_loss_gamma: 2
   heatmap_sigma: 0 # 0 -> adaptive sigma based on instance size

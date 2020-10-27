@@ -98,6 +98,11 @@ def get_coords_color(opt):
         inst_label_rgb[object_idx] = COLOR20[inst_label[object_idx] % len(COLOR20)]
         rgb = inst_label_rgb
 
+        pt_offsets_file = os.path.join(opt.result_root, opt.room_split, 'pt_offsets', opt.room_name + '.npy')
+        assert os.path.isfile(pt_offsets_file), 'No grid points result - {}.'.format(pt_offsets_file)
+        pt_offsets = np.load(pt_offsets_file)
+        xyz = xyz + pt_offsets
+
         inst_centers = []
         inst_sizes = []
         for inst_id in np.unique(inst_label[object_idx]):

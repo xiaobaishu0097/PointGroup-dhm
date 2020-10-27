@@ -99,7 +99,7 @@ class Dataset:
         return x + g(x) * mag
 
 
-    def getInstanceInfo(self, xyz, instance_label):
+    def getInstanceInfo(self, xyz, instance_label, semantic_label):
         '''
         :param xyz: (n, 3)
         :param instance_label: (n), int, (0~nInst-1, -100)
@@ -108,8 +108,9 @@ class Dataset:
         instance_info = np.ones((xyz.shape[0], 9), dtype=np.float32) * -100.0   # (n, 9), float, (cx, cy, cz, minx, miny, minz, maxx, maxy, maxz)
         instance_pointnum = []   # (nInst), int
         instance_num = int(instance_label.max()) + 1
-        instance_center = []
-        instance_size = []
+        instance_centers = []
+        instance_sizes = []
+        instance_labels = []
         for i_ in range(instance_num):
             inst_idx_i = np.where(instance_label == i_)
 
@@ -125,9 +126,12 @@ class Dataset:
             instance_info_i[:, 6:9] = max_xyz_i
             instance_info[inst_idx_i] = instance_info_i
 
+            semantic_label[semantic_label == -100] = 20
+
             ### instance_centers
-            instance_center.append(mean_xyz_i)
-            instance_size.append(size_xyz_i)
+            instance_centers.append(mean_xyz_i)
+            instance_sizes.append(size_xyz_i)
+            instance_labels.append(np.argmax(np.bincount(np.int32(semantic_label[inst_idx_i]))))
 
             ### instance_pointnum
             instance_pointnum.append(inst_idx_i[0].size)
@@ -135,8 +139,9 @@ class Dataset:
         return instance_num, {
             "instance_info": instance_info,
             "instance_pointnum": instance_pointnum,
-            "instance_center": instance_center,
-            "instance_size": instance_size,
+            "instance_center": instance_centers,
+            "instance_size": instance_sizes,
+            "instance_label": instance_labels,
         }
 
 
@@ -195,6 +200,7 @@ class Dataset:
         instance_heatmap = []
         grid_center_gt = []
         grid_center_offset = []
+        grid_instance_label = []
 
         batch_offsets = [0]
 
@@ -225,12 +231,16 @@ class Dataset:
             label = label[valid_idxs]
             instance_label = self.getCroppedInstLabel(instance_label, valid_idxs)
 
+            label[label == -100] = 20
+            label[instance_label == -100] = 20
+
             ### get instance information
-            inst_num, inst_infos = self.getInstanceInfo(xyz_middle, instance_label.astype(np.int32))
+            inst_num, inst_infos = self.getInstanceInfo(xyz_middle, instance_label.astype(np.int32), label)
             inst_info = inst_infos["instance_info"]  # (n, 9), (cx, cy, cz, minx, miny, minz, maxx, maxy, maxz)
             inst_pointnum = inst_infos["instance_pointnum"]   # (nInst), list
             inst_center = inst_infos['instance_center']   # (nInst, 3) (cx, cy, cz)
             inst_size = inst_infos['instance_size']
+            inst_label = inst_infos['instance_label']
 
             instance_label[np.where(instance_label != -100)] += total_inst_num
             total_inst_num += inst_num
@@ -249,10 +259,12 @@ class Dataset:
 
             ### size adaptive gaussian function or fixed sigma gaussian
             if not self.heatmap_sigma:
-                inst_heatmap = generate_adaptive_heatmap(
+                grid_infos = generate_adaptive_heatmap(
                     torch.tensor(grid_xyz, dtype=torch.float64), torch.tensor(inst_center), torch.tensor(inst_size),
-                    min_IoU=self.min_IoU, min_radius=np.linalg.norm(grid_size),
+                    torch.tensor(inst_label), min_IoU=self.min_IoU, min_radius=np.linalg.norm(grid_size),
                 )
+                inst_heatmap = grid_infos['heatmap']
+                grid_inst_label = grid_infos['grid_instance_label']
             else:
                 inst_heatmap = generate_heatmap(grid_xyz.astype(np.double), np.asarray(inst_center),
                                                 sigma=self.heatmap_sigma)
@@ -262,6 +274,16 @@ class Dataset:
             )
             norm_inst_centers = norm_coords[:, -len(inst_center):, :]
             grid_cent_gt = coordinate2index(norm_inst_centers, 32, coord_type='3d')
+
+            # inst_info_center = inst_info[:, :3]
+            # inst_info_center[inst_info_center == -100] = 0
+            # inst_info_center_norm_coords = normalize_3d_coordinate(
+            #     torch.cat((torch.from_numpy(xyz_middle), torch.from_numpy(inst_info_center).to(torch.float64)), dim=0).unsqueeze(dim=0).clone()
+            # )[:, inst_info.shape[0]:, :]
+            # inst_info_center_index = coordinate2index(inst_info_center_norm_coords, 32, coord_type='3d').squeeze()
+            # inst_info_center = grid_xyz[inst_info_center_index]
+            # inst_info_center[np.where(instance_label == -100)] = 0
+            # inst_info[:, :3] = inst_info_center
 
             # TODO: improve grid point offset ground truth and add comments
             # norm_coords = norm_coords[:, :-len(inst_center), :]
@@ -302,6 +324,7 @@ class Dataset:
             instance_heatmap.append(inst_heatmap)
             grid_center_gt.append(grid_cent_gt.squeeze())
             grid_center_offset.append(torch.from_numpy(grid_cent_offset))
+            grid_instance_label.append(grid_inst_label)
 
         ### merge all the scenes in the batchd
         batch_offsets = torch.tensor(batch_offsets, dtype=torch.int)  # int (B+1)
@@ -319,6 +342,7 @@ class Dataset:
         instance_heatmap = torch.cat(instance_heatmap, 0).to(torch.float32)
         grid_center_gt = torch.cat(grid_center_gt, 0).to(torch.float32)
         grid_center_offset = torch.cat(grid_center_offset, 0).to(torch.float32)
+        grid_instance_label = torch.cat(grid_instance_label, 0).to(torch.float32)
 
         spatial_shape = np.clip((locs.max(0)[0][1:] + 1).numpy(), self.full_scale[0], None)     # long (3)
 
@@ -330,7 +354,7 @@ class Dataset:
                 'instance_info': instance_infos, 'instance_pointnum': instance_pointnum,
                 'instance_centers': instance_centers, 'instance_heatmap': instance_heatmap,
                 'grid_center_gt': grid_center_gt, 'grid_center_offset': grid_center_offset,
-                'grid_xyz': torch.from_numpy(grid_xyz),
+                'grid_xyz': torch.from_numpy(grid_xyz), 'grid_instance_label': grid_instance_label,
                 'id': id, 'offsets': batch_offsets, 'spatial_shape': spatial_shape}
 
 
@@ -348,6 +372,7 @@ class Dataset:
         instance_heatmap = []
         grid_center_gt = []
         grid_center_offset = []
+        grid_instance_label = []
 
         batch_offsets = [0]
 
@@ -374,11 +399,12 @@ class Dataset:
             instance_label = self.getCroppedInstLabel(instance_label, valid_idxs)
 
             ### get instance information
-            inst_num, inst_infos = self.getInstanceInfo(xyz_middle, instance_label.astype(np.int32))
+            inst_num, inst_infos = self.getInstanceInfo(xyz_middle, instance_label.astype(np.int32), label)
             inst_info = inst_infos["instance_info"]  # (n, 9), (cx, cy, cz, minx, miny, minz, maxx, maxy, maxz)
-            inst_pointnum = inst_infos["instance_pointnum"]  # (nInst), list
-            inst_center = inst_infos['instance_center']  # (nInst, 3) (cx, cy, cz)
+            inst_pointnum = inst_infos["instance_pointnum"]   # (nInst), list
+            inst_center = inst_infos['instance_center']   # (nInst, 3) (cx, cy, cz)
             inst_size = inst_infos['instance_size']
+            inst_label = inst_infos['instance_label']
 
             instance_label[np.where(instance_label != -100)] += total_inst_num
             total_inst_num += inst_num
@@ -397,10 +423,12 @@ class Dataset:
 
             ### size adaptive gaussian function or fixed sigma gaussian
             if not self.heatmap_sigma:
-                inst_heatmap = generate_adaptive_heatmap(
+                grid_infos = generate_adaptive_heatmap(
                     torch.tensor(grid_xyz, dtype=torch.float64), torch.tensor(inst_center), torch.tensor(inst_size),
-                    min_IoU=self.min_IoU, min_radius=np.linalg.norm(grid_size),
+                    torch.tensor(inst_label), min_IoU=self.min_IoU, min_radius=np.linalg.norm(grid_size),
                 )
+                inst_heatmap = grid_infos['heatmap']
+                grid_inst_label = grid_infos['grid_instance_label']
             else:
                 inst_heatmap = generate_heatmap(grid_xyz.astype(np.double), np.asarray(inst_center),
                                                 sigma=self.heatmap_sigma)
@@ -415,6 +443,9 @@ class Dataset:
             grid_cent_xyz = grid_xyz[grid_cent_gt]
             grid_cent_offset = grid_cent_xyz - np.array(inst_center)
             grid_cent_offset = grid_cent_offset.squeeze()
+
+            label[label == -100] = 20
+            label[instance_label == -100] = 20
 
             ### merge the scene to the batch
             batch_offsets.append(batch_offsets[-1] + xyz.shape[0])
@@ -432,6 +463,7 @@ class Dataset:
             instance_heatmap.append(inst_heatmap)
             grid_center_gt.append(grid_cent_gt.squeeze())
             grid_center_offset.append(torch.from_numpy(grid_cent_offset))
+            grid_instance_label.append(grid_inst_label)
 
         ### merge all the scenes in the batch
         batch_offsets = torch.tensor(batch_offsets, dtype=torch.int)  # int (B+1)
@@ -449,6 +481,7 @@ class Dataset:
         instance_heatmap = torch.cat(instance_heatmap, 0).to(torch.float32)
         grid_center_gt = torch.cat(grid_center_gt, 0).to(torch.float32)
         grid_center_offset = torch.cat(grid_center_offset, 0).to(torch.float32)
+        grid_instance_label = torch.cat(grid_instance_label, 0).to(torch.float32)
 
         spatial_shape = np.clip((locs.max(0)[0][1:] + 1).numpy(), self.full_scale[0], None)  # long (3)
 
@@ -473,6 +506,7 @@ class Dataset:
         instance_heatmap = []
         grid_center_gt = []
         grid_center_offset = []
+        grid_instance_label = []
 
         batch_offsets = [0]
 
@@ -497,9 +531,10 @@ class Dataset:
 
             _, valid_idxs = self.crop(xyz)
             instance_label = self.getCroppedInstLabel(instance_label, valid_idxs)
-            _, inst_infos = self.getInstanceInfo(xyz_middle, instance_label.astype(np.int32))
+            _, inst_infos = self.getInstanceInfo(xyz_middle, instance_label.astype(np.int32), label)
             inst_center = inst_infos['instance_center']
             inst_size = inst_infos['instance_size']
+            inst_label = inst_infos['instance_label']
 
             ### get instance center heatmap
             grid_xyz = np.zeros((32 ** 3, 3), dtype=np.float32)
@@ -514,10 +549,12 @@ class Dataset:
             grid_xyz = grid_xyz.reshape(-1, 3)
 
             if not self.heatmap_sigma:
-                inst_heatmap = generate_adaptive_heatmap(
+                grid_infos = generate_adaptive_heatmap(
                     torch.tensor(grid_xyz, dtype=torch.float64), torch.tensor(inst_center), torch.tensor(inst_size),
-                    min_IoU=self.min_IoU, min_radius=np.linalg.norm(grid_size),
+                    torch.tensor(inst_label), min_IoU=self.min_IoU, min_radius=np.linalg.norm(grid_size),
                 )
+                inst_heatmap = grid_infos['heatmap']
+                grid_inst_label = grid_infos['grid_instance_label']
             else:
                 inst_heatmap = generate_heatmap(grid_xyz.astype(np.double), np.asarray(inst_center),
                                                 sigma=self.heatmap_sigma)
@@ -545,6 +582,7 @@ class Dataset:
             grid_center_gt.append(grid_cent_gt.squeeze())
             grid_center_offset.append(torch.from_numpy(grid_cent_offset))
             instance_infos.append(torch.from_numpy(inst_infos["instance_info"]))
+            grid_instance_label.append(grid_inst_label)
 
         ### merge all the scenes in the batch
         batch_offsets = torch.tensor(batch_offsets, dtype=torch.int)  # int (B+1)
@@ -565,11 +603,13 @@ class Dataset:
             grid_center_gt = torch.cat(grid_center_gt, 0).to(torch.float32)
             grid_center_offset = torch.cat(grid_center_offset, 0).to(torch.float32)
             instance_infos = torch.cat(instance_infos, 0).to(torch.float32)  # float (N, 9) (meanxyz, minxyz, maxxyz)
+            grid_instance_label = torch.cat(grid_instance_label, 0).to(torch.float32)
 
             return {'locs': locs, 'voxel_locs': voxel_locs, 'p2v_map': p2v_map, 'v2p_map': v2p_map,
                     'locs_float': locs_float, 'feats': feats, 'instance_centers': instance_centers,
                     'instance_heatmap': instance_heatmap, 'grid_center_gt': grid_center_gt,
                     'grid_center_offset': grid_center_offset, 'grid_xyz': torch.from_numpy(grid_xyz),
+                    'grid_instance_label': grid_instance_label,
                     'labels': torch.from_numpy(label), 'instance_info': instance_infos,
                     'id': id, 'offsets': batch_offsets, 'spatial_shape': spatial_shape}
 

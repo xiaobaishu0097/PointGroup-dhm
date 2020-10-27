@@ -28,7 +28,7 @@ def init():
     os.system('cp {} {}'.format(cfg.config, backup_dir))
 
     global semantic_label_idx
-    semantic_label_idx = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 16, 24, 28, 33, 34, 36, 39]
+    semantic_label_idx = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 16, 24, 28, 33, 34, 36, 39, -100]
 
     logger.info(cfg)
 
@@ -61,9 +61,9 @@ def test(model, model_fn, data_name, epoch):
         # tn = 0
         # fp = 0
         # fn = 0
-        #
+
         # offset_error = 0
-        #
+
         true_threshold = 0.0
         candidate_num = 100
 
@@ -77,15 +77,23 @@ def test(model, model_fn, data_name, epoch):
             end1 = time.time() - start1
 
             ##### get predictions (#1 semantic_pred, pt_offsets; #2 scores, proposals_pred)
-            semantic_scores = preds['semantic']  # (N, nClass=20) float32, cuda
-            semantic_pred = semantic_scores.max(1)[1]  # (N) long, cuda
 
             pt_offsets = preds['pt_offsets']    # (N, 3), float32, cuda
             pt_coords = preds['pt_coords']
             grid_xyz = preds['grid_xyz']
 
+            semantic_scores = preds['semantic']  # (N, nClass=20) float32, cuda
+            semantic_pred = semantic_scores.max(1)[1]  # (N) long, cuda
+            valid_index = (semantic_pred != 20)
+
+            # semantic_pred = semantic_scores
+            # valid_index = (semantic_pred != 20)
+            # semantic_pred[~valid_index] = 0
+
             grid_center_preds = torch.sigmoid(preds['grid_center_preds'])
             grid_center_gt = preds['grid_center_gt'].cpu()
+
+            grid_center_semantic_preds = preds['grid_center_semantic_preds']
 
             grid_center_offset_preds = preds['grid_center_offset_preds']
             grid_center_offset = preds['grid_center_offset']
@@ -102,12 +110,32 @@ def test(model, model_fn, data_name, epoch):
                 pt_cent_xyz.repeat(1, inst_cent_cand_xyz.shape[1], 1) - inst_cent_cand_xyz.repeat(pt_cent_xyz.shape[0], 1, 1),
                 dim=2
             )
-            pt_inst_cent = torch.nn.functional.one_hot(pt_inst_cent_dist.min(dim=1)[1])
+            ### set the category restristion during instance generation
+            inst_identity_mat = torch.nn.functional.one_hot(
+                grid_center_semantic_preds[topk_index_].to(torch.long), num_classes=cfg.classes+1
+            ).float()
+            pt_identity_mat = torch.nn.functional.one_hot(semantic_pred.to(torch.long), num_classes=cfg.classes+1).float()
+            pt_inst_cov_mat = torch.mm(pt_identity_mat, inst_identity_mat.t())
+            pt_inst_cov_mat[pt_inst_cov_mat == 0] = 1000
+            pt_inst_cent_dist = pt_inst_cent_dist * pt_inst_cov_mat
+            ### set the minimum distance threshold between point and grid point
+            valid_dist_thresh = pt_inst_cent_dist.min(dim=1)[0] > cfg.TEST_DIST_THRESH
+            pt_inst_cent = torch.nn.functional.one_hot(pt_inst_cent_dist.min(dim=1)[1], num_classes=100)
+            pt_inst_cent[valid_dist_thresh, :] = 0
+            ### set the minimum point number threshold for each center
             valid_inst_index = pt_inst_cent.sum(dim=0) > cfg.TEST_NPOINT_THRESH
             pt_inst_cent = pt_inst_cent[:, valid_inst_index].permute(1, 0)
+            pt_inst_cent[:, ~valid_index] = 0
 
-            inst_semantic_id = torch.mm(pt_inst_cent.float(), torch.nn.functional.one_hot(semantic_pred.to(torch.int64)).float())
-            inst_semantic_id = inst_semantic_id.max(dim=1)[1]
+            ### instance semantic label
+            # TODO: decide which way to get instance semantic id
+            ### 1. based on the majority point semantic labels in the instance
+            # inst_semantic_id = torch.mm(pt_inst_cent.float(), torch.nn.functional.one_hot(semantic_pred.to(torch.int64)).float())
+            # inst_semantic_id = inst_semantic_id.max(dim=1)[1]
+            ### 2. based on grid center semantic predictions
+            inst_semantic_id = grid_center_semantic_preds[topk_index_]
+            inst_semantic_id = inst_semantic_id[valid_inst_index].long()
+
             inst_semantic_id = torch.tensor([semantic_label_idx[i] for i in inst_semantic_id])
 
             inst_scores = torch.ones((pt_inst_cent.shape[0]))
@@ -176,10 +204,16 @@ def test(model, model_fn, data_name, epoch):
             if cfg.save_grid_points:
                 os.makedirs(os.path.join(result_dir, 'grid_center_preds'), exist_ok=True)
                 os.makedirs(os.path.join(result_dir, 'grid_center_gt'), exist_ok=True)
+                os.makedirs(os.path.join(result_dir, 'pt_offsets'), exist_ok=True)
+                os.makedirs(os.path.join(result_dir, 'semantic_pred'), exist_ok=True)
                 grid_center_preds = grid_center_preds.cpu().numpy()
                 grid_center_gt = grid_center_gt.cpu().numpy()
+                pt_offsets = pt_offsets.cpu().numpy()
+                semantic_pred = semantic_pred.cpu().numpy()
                 np.save(os.path.join(result_dir, 'grid_center_preds', test_scene_name + '.npy'), grid_center_preds)
                 np.save(os.path.join(result_dir, 'grid_center_gt', test_scene_name + '.npy'), grid_center_gt)
+                np.save(os.path.join(result_dir, 'pt_offsets', test_scene_name + '.npy'), pt_offsets)
+                np.save(os.path.join(result_dir, 'semantic_pred', test_scene_name + '.npy'), semantic_pred)
 
             if cfg.save_instance:
                 f = open(os.path.join(result_dir, test_scene_name + '.txt'), 'w')
@@ -210,8 +244,8 @@ def test(model, model_fn, data_name, epoch):
 
         # precision = tp / (tp + fp + 1)
         # recall = tp / (tp + fn + 1)
-        ##### print
-        # logger.info("Center prediction: precision: {}, recall: {}; Center offset prediction: {}".format(precision, recall, offset_error))
+        # #### print
+        # logger.info("Center prediction: precision: {}, recall: {}".format(precision, recall))
 
 
 
