@@ -314,6 +314,7 @@ class Dataset:
             locs.append(torch.cat([torch.LongTensor(xyz.shape[0], 1).fill_(i), torch.from_numpy(xyz).long()], 1))
             locs_float.append(torch.from_numpy(xyz_middle))
             feats.append(torch.from_numpy(rgb) + torch.randn(3) * 0.1)
+            # feats.append(torch.from_numpy(rgb))
             labels.append(torch.from_numpy(label))
             instance_labels.append(torch.from_numpy(instance_label))
 
@@ -493,6 +494,7 @@ class Dataset:
                 'instance_info': instance_infos, 'instance_pointnum': instance_pointnum,
                 'instance_centers': instance_centers, 'instance_heatmap': instance_heatmap,
                 'grid_center_gt': grid_center_gt, 'grid_center_offset': grid_center_offset,
+                'grid_instance_label': grid_instance_label,
                 'id': id, 'offsets': batch_offsets, 'spatial_shape': spatial_shape}
 
 
