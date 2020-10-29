@@ -24,9 +24,6 @@ from model.decoder import decoder
 from model.common import coordinate2index, normalize_3d_coordinate
 
 
-# from model.encoder import PointNetPlusPlus
-
-
 class ResidualBlock(SparseModule):
     def __init__(self, in_channels, out_channels, norm_fn, indice_key=None):
         super().__init__()
@@ -130,7 +127,7 @@ class PointGroup(nn.Module):
 
         input_c = cfg.input_channel
         m = cfg.m
-        classes = cfg.classes + 1
+        classes = cfg.classes
         block_reps = cfg.block_reps
         block_residual = cfg.block_residual
 
@@ -161,39 +158,6 @@ class PointGroup(nn.Module):
 
         if cfg.use_coords:
             input_c += 3
-
-        # #### backbone
-        # self.input_conv = spconv.SparseSequential(
-        #     spconv.SubMConv3d(input_c, m, kernel_size=3, padding=1, bias=False, indice_key='subm1')
-        # )
-        #
-        # self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block, indice_key_id=1)
-        #
-        # self.output_layer = spconv.SparseSequential(
-        #     norm_fn(m),
-        #     nn.ReLU()
-        # )
-
-        # #### semantic segmentation
-        # self.linear = nn.Linear(m, classes)  # bias(default): True
-
-        # #### offset
-        # self.offset = nn.Sequential(
-        #     nn.Linear(m, m, bias=True),
-        #     norm_fn(m),
-        #     nn.ReLU()
-        # )
-        # self.offset_linear = nn.Linear(m, 3, bias=True)
-
-        # #### score branch
-        # self.score_unet = UBlock([m, 2 * m], norm_fn, 2, block, indice_key_id=1)
-        # self.score_outputlayer = spconv.SparseSequential(
-        #     norm_fn(m),
-        #     nn.ReLU()
-        # )
-        # self.score_linear = nn.Linear(m, 1)
-        #
-        # self.apply(self.set_bn_init)
 
         #### pointnet++ encoder
         self.encoder = pointnet.LocalPoolPointnet(
@@ -291,6 +255,7 @@ class PointGroup(nn.Module):
                 nn.ReLU(),
             )
             self.offset_linear = nn.Linear(m, 3, bias=True)
+
         elif self.model_mode == 3:
             ### convolutional occupancy networks decoder
             self.decoder = decoder.LocalDecoder(
@@ -316,7 +281,6 @@ class PointGroup(nn.Module):
         #               'score_unet': self.score_unet, 'score_outputlayer': self.score_outputlayer,
         #               'score_linear': self.score_linear}
         module_map = {}
-
         # module_map = {'input_conv': self.input_conv, 'unet': self.unet, 'output_layer': self.output_layer,
         #               'linear': self.linear, 'offset': self.offset, 'offset_linear': self.offset_linear,}
 

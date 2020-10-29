@@ -215,7 +215,7 @@ class ScannetDatast(Dataset):
             label = label[valid_idxs]
             instance_label = self.getCroppedInstLabel(instance_label, valid_idxs)
 
-            label[label == -100] = 20
+            # label[label == -100] = 20
 
             ### get instance information
             inst_num, inst_infos = self.getInstanceInfo(xyz_middle, instance_label.astype(np.int32), label.copy())
@@ -248,7 +248,7 @@ class ScannetDatast(Dataset):
                 )
                 instance_heatmap = grid_infos['heatmap']
                 grid_instance_label = grid_infos['grid_instance_label']
-                # grid_inst_label[grid_inst_label == 20] = -100
+                grid_instance_label[grid_instance_label == 20] = -100
             else:
                 instance_heatmap = generate_heatmap(grid_xyz.astype(np.double), np.asarray(instance_centers),
                                                 sigma=self.heatmap_sigma)
