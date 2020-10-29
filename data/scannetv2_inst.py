@@ -42,20 +42,20 @@ class ScannetDatast(Dataset):
         self.data_mode = data_mode
 
         if self.data_mode == 'train':
-            train_file_names = sorted(
+            self.file_names = sorted(
                 glob.glob(os.path.join(self.data_root, self.dataset, 'train', '*' + self.filename_suffix))
             )
-            self.data_files = [torch.load(i) for i in train_file_names]
+            self.data_files = [torch.load(i) for i in self.file_names]
             # train_file_names = sorted(glob.glob(os.path.join(self.data_root, self.dataset, 'val', '*' + self.filename_suffix)))
             # self.data_files = [torch.load(train_file_names[0])]
 
             logger.info('Training samples: {}'.format(len(self.data_files)))
 
         elif self.data_mode == 'val':
-            val_file_names = sorted(
+            self.file_names = sorted(
                 glob.glob(os.path.join(self.data_root, self.dataset, 'val', '*' + self.filename_suffix))
             )
-            self.data_files = [torch.load(i) for i in val_file_names]
+            self.data_files = [torch.load(i) for i in self.file_names]
 
             logger.info('Validation samples: {}'.format(len(self.data_files)))
 
@@ -64,10 +64,10 @@ class ScannetDatast(Dataset):
             self.test_workers = cfg.test_workers
             cfg.batch_size = 1
 
-            self.test_file_names = sorted(
+            self.file_names = sorted(
                 glob.glob(os.path.join(self.data_root, self.dataset, self.test_split, '*' + self.filename_suffix))
             )
-            self.data_files = [torch.load(i) for i in self.test_file_names]
+            self.data_files = [torch.load(i) for i in self.self.file_names]
             # self.test_file_names = sorted(glob.glob(os.path.join(self.data_root, self.dataset, 'val', '*' + self.filename_suffix)))
             # self.test_files = [torch.load(self.test_file_names[0])]
 

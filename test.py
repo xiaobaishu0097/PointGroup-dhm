@@ -72,17 +72,18 @@ def test(model, model_fn, data_name, epoch):
         matches = {}
         for i, batch in enumerate(data_loader_test):
             N = batch['feats'].shape[0]
-            test_scene_name = dataset_test.test_file_names[int(batch['id'][0])].split('/')[-1][:12]
+            test_scene_name = dataset_test.file_names[int(batch['id'][0])].split('/')[-1][:12]
 
             start1 = time.time()
             preds = model_fn(batch, model, epoch)
             end1 = time.time() - start1
 
+            grid_xyz = batch['grid_xyz'].squeeze(dim=0).cuda()
+
             ##### get predictions (#1 semantic_pred, pt_offsets; #2 scores, proposals_pred)
 
             pt_offsets = preds['pt_offsets']    # (N, 3), float32, cuda
             pt_coords = preds['pt_coords']
-            grid_xyz = preds['grid_xyz']
 
             semantic_scores = preds['semantic']  # (N, nClass=20) float32, cuda
             semantic_pred = semantic_scores.max(1)[1]  # (N) long, cuda
@@ -103,7 +104,7 @@ def test(model, model_fn, data_name, epoch):
             topk_index_ = topk_index_[topk_value_ > true_threshold]
 
             inst_cent_cand_xyz = (grid_xyz[topk_index_] + grid_center_offset_preds[topk_index_]).unsqueeze(dim=0)
-            pt_cent_xyz = (pt_coords + pt_offsets).unsqueeze(dim=1)
+            pt_cent_xyz = (pt_coords + pt_offsets).permute(1, 0, 2)
             pt_inst_cent_dist = torch.norm(
                 pt_cent_xyz.repeat(1, inst_cent_cand_xyz.shape[1], 1) - inst_cent_cand_xyz.repeat(pt_cent_xyz.shape[0], 1, 1),
                 dim=2
