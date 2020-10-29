@@ -51,7 +51,9 @@ def test(model, model_fn, data_name, epoch):
             exit(0)
     sampler_test = torch.utils.data.SequentialSampler(dataset_test)
 
-    data_loader_test = DataLoader(dataset_test, 1, sampler=sampler_test, drop_last=False, num_workers=cfg.train_workers)
+    data_loader_test = DataLoader(
+        dataset_test, batch_size=1, shuffle=False, sampler=sampler_test, drop_last=False, num_workers=cfg.test_workers
+    )
 
     maxpool3d = nn.MaxPool3d(3, stride=1, padding=1)
 
@@ -71,7 +73,7 @@ def test(model, model_fn, data_name, epoch):
 
         matches = {}
         for i, batch in enumerate(data_loader_test):
-            N = batch['feats'].shape[0]
+            N = batch['feats'].shape[1]
             test_scene_name = dataset_test.file_names[int(batch['id'][0])].split('/')[-1][:12]
 
             start1 = time.time()

@@ -67,7 +67,7 @@ class ScannetDatast(Dataset):
             self.file_names = sorted(
                 glob.glob(os.path.join(self.data_root, self.dataset, self.test_split, '*' + self.filename_suffix))
             )
-            self.data_files = [torch.load(i) for i in self.self.file_names]
+            self.data_files = [torch.load(i) for i in self.file_names]
             # self.test_file_names = sorted(glob.glob(os.path.join(self.data_root, self.dataset, 'val', '*' + self.filename_suffix)))
             # self.test_files = [torch.load(self.test_file_names[0])]
 
@@ -189,7 +189,7 @@ class ScannetDatast(Dataset):
         batch_offsets = [0]
         total_inst_num = 0
 
-        if self.data_mode == 'train' or self.data_mode == 'val':
+        if self.data_mode == 'train':
             xyz_origin, rgb, label, instance_label = self.data_files[idx]
 
             ### jitter / flip x / rotation
@@ -313,9 +313,121 @@ class ScannetDatast(Dataset):
                 'spatial_shape': spatial_shape,  # long (3)
             }
 
+        elif self.data_mode == 'val':
+            xyz_origin, rgb, label, instance_label = self.data_files[idx]
+
+            ### jitter / flip x / rotation
+            xyz_middle = self.dataAugment(xyz_origin, True, True, True)
+            # xyz_middle = self.dataAugment(xyz_origin, False, False, False)
+
+            ### scale
+            xyz = xyz_middle * self.scale
+
+            ### offset
+            xyz -= xyz.min(0)
+
+            # label[label == -100] = 20
+
+            ### get instance information
+            inst_num, inst_infos = self.getInstanceInfo(xyz_middle, instance_label.astype(np.int32), label.copy())
+            instance_infos = inst_infos["instance_info"]  # (n, 9), (cx, cy, cz, minx, miny, minz, maxx, maxy, maxz)
+            instance_pointnum = inst_infos["instance_pointnum"]  # (nInst), list
+            instance_centers = inst_infos['instance_center']  # (nInst, 3) (cx, cy, cz)
+            inst_size = inst_infos['instance_size']
+            inst_label = inst_infos['instance_label']
+
+            instance_label[np.where(instance_label != -100)] += total_inst_num
+            total_inst_num += inst_num
+
+            ### get instance center heatmap
+            grid_xyz = np.zeros((32 ** 3, 3), dtype=np.float32)
+            grid_xyz += xyz_middle.min(axis=0, keepdims=True)
+            grid_size = (xyz_middle.max(axis=0, keepdims=True) - xyz_middle.min(axis=0, keepdims=True)) / 32
+            grid_xyz += grid_size / 2
+            grid_xyz = grid_xyz.reshape(32, 32, 32, 3)
+            for index in range(32):
+                grid_xyz[index, :, :, 0] = grid_xyz[index, :, :, 0] + index * grid_size[0, 0]
+                grid_xyz[:, index, :, 1] = grid_xyz[:, index, :, 1] + index * grid_size[0, 1]
+                grid_xyz[:, :, index, 2] = grid_xyz[:, :, index, 2] + index * grid_size[0, 2]
+            grid_xyz = grid_xyz.reshape(-1, 3)
+
+            ### size adaptive gaussian function or fixed sigma gaussian
+            if not self.heatmap_sigma:
+                grid_infos = generate_adaptive_heatmap(
+                    torch.tensor(grid_xyz, dtype=torch.float64), torch.tensor(instance_centers), torch.tensor(inst_size),
+                    torch.tensor(inst_label), min_IoU=self.min_IoU, min_radius=np.linalg.norm(grid_size),
+                )
+                instance_heatmap = grid_infos['heatmap']
+                grid_instance_label = grid_infos['grid_instance_label']
+                grid_instance_label[grid_instance_label == 20] = -100
+            else:
+                instance_heatmap = generate_heatmap(grid_xyz.astype(np.double), np.asarray(instance_centers),
+                                                    sigma=self.heatmap_sigma)
+
+            norm_coords = normalize_3d_coordinate(
+                torch.cat((torch.from_numpy(xyz_middle), torch.from_numpy(np.asarray(instance_centers))), dim=0).unsqueeze(
+                    dim=0).clone()
+            )
+            norm_inst_centers = norm_coords[:, -len(instance_centers):, :]
+            grid_center_gt = coordinate2index(norm_inst_centers, 32, coord_type='3d')
+
+            ### only the center grid point require to predict the offset vector
+            grid_cent_xyz = grid_xyz[grid_center_gt]
+            grid_center_offset = grid_cent_xyz - np.array(instance_centers)
+            grid_center_offset = grid_center_offset.squeeze()
+
+            ### merge the scene to the batch
+            batch_offsets.append(batch_offsets[-1] + xyz.shape[0])
+            batch_offsets = torch.tensor(batch_offsets, dtype=torch.int)
+
+            locs = torch.cat([torch.LongTensor(xyz.shape[0], 1).fill_(0), torch.from_numpy(xyz).long()],
+                             1)  # long (N, 1 + 3), the batch item idx is put in locs[:, 0]
+            locs_float = torch.from_numpy(xyz_middle).to(torch.float32)  # float (N, 3)
+            feats = (torch.from_numpy(rgb) + torch.randn(3) * 0.1)  # float (N, C)
+            # feats = torch.from_numpy(rgb)
+            labels = torch.from_numpy(label).long()  # long (N)
+            instance_labels = torch.from_numpy(instance_label).long()  # long (N)
+
+            instance_infos = torch.from_numpy(instance_infos).to(torch.float32)
+            instance_pointnum = torch.tensor(instance_pointnum, dtype=torch.int)
+            instance_centers = torch.from_numpy(np.asarray(instance_centers)).to(torch.float32)
+
+            instance_heatmap = instance_heatmap.to(torch.float32)
+            grid_center_gt = grid_center_gt.squeeze().to(torch.float32)
+            grid_center_offset = torch.from_numpy(grid_center_offset).to(torch.float32)
+            grid_xyz = torch.from_numpy(grid_xyz)
+            grid_instance_label = grid_instance_label.to(torch.float32)
+
+            spatial_shape = np.clip((locs.max(0)[0][1:] + 1).numpy(), self.full_scale[0], None)  # long (3)
+
+            ### voxelize
+            voxel_locs, p2v_map, v2p_map = pointgroup_ops.voxelization_idx(locs, self.batch_size, self.mode)
+
+            return {
+                'locs': locs,  # (N, 4)
+                'voxel_locs': voxel_locs,  # (nVoxel, 4)
+                'p2v_map': p2v_map,  # (N)
+                'v2p_map': v2p_map,  # (nVoxel, 19?)
+                'locs_float': locs_float,  # (N, 3)
+                'feats': feats,  # (N, 3)
+                'labels': labels,  # (N)
+                'instance_labels': instance_labels,  # (N)
+                'instance_info': instance_infos,  # (N, 9)
+                'instance_pointnum': instance_pointnum,  # (nInst)
+                'instance_centers': instance_centers,  # (nInst, 3)
+                'instance_heatmap': instance_heatmap,  # (nGrid)
+                'grid_center_gt': grid_center_gt,  # (nInst)
+                'grid_center_offset': grid_center_offset,  # (nInst, 3)
+                'grid_xyz': grid_xyz,  # (nGrid, 3)
+                'grid_instance_label': grid_instance_label,  # (nGrid)
+                'id': idx,
+                'offsets': batch_offsets,  # int (B+1)
+                'spatial_shape': spatial_shape,  # long (3)
+            }
+
         elif self.data_mode == 'test':
             if self.test_split == 'test':
-                xyz_origin, rgb = self.test_files[idx]
+                xyz_origin, rgb = self.data_files[idx]
             else:
                 print("Wrong test split: {}!".format(self.test_split))
                 exit(0)
