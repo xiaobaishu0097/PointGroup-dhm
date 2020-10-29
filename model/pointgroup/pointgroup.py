@@ -130,7 +130,7 @@ class PointGroup(nn.Module):
 
         input_c = cfg.input_channel
         m = cfg.m
-        classes = cfg.classes
+        classes = cfg.classes + 1
         block_reps = cfg.block_reps
         block_residual = cfg.block_residual
 

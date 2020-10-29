@@ -231,7 +231,7 @@ class Dataset:
             label = label[valid_idxs]
             instance_label = self.getCroppedInstLabel(instance_label, valid_idxs)
 
-            # label[label == -100] = 20
+            label[label == -100] = 20
             # label[instance_label == -100] = 20
 
             ### get instance information
@@ -265,7 +265,7 @@ class Dataset:
                 )
                 inst_heatmap = grid_infos['heatmap']
                 grid_inst_label = grid_infos['grid_instance_label']
-                grid_inst_label[grid_inst_label == 20] = -100
+                # grid_inst_label[grid_inst_label == 20] = -100
             else:
                 inst_heatmap = generate_heatmap(grid_xyz.astype(np.double), np.asarray(inst_center),
                                                 sigma=self.heatmap_sigma)
@@ -431,7 +431,7 @@ class Dataset:
                 )
                 inst_heatmap = grid_infos['heatmap']
                 grid_inst_label = grid_infos['grid_instance_label']
-                grid_inst_label[grid_inst_label == 20] = -100
+                # grid_inst_label[grid_inst_label == 20] = -100
             else:
                 inst_heatmap = generate_heatmap(grid_xyz.astype(np.double), np.asarray(inst_center),
                                                 sigma=self.heatmap_sigma)
@@ -447,7 +447,7 @@ class Dataset:
             grid_cent_offset = grid_cent_xyz - np.array(inst_center)
             grid_cent_offset = grid_cent_offset.squeeze()
 
-            # label[label == -100] = 20
+            label[label == -100] = 20
             # label[instance_label == -100] = 20
 
             ### merge the scene to the batch
