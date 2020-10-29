@@ -130,7 +130,7 @@ class PointGroup(nn.Module):
 
         input_c = cfg.input_channel
         m = cfg.m
-        classes = cfg.classes + 1
+        classes = cfg.classes
         block_reps = cfg.block_reps
         block_residual = cfg.block_residual
 
@@ -498,7 +498,7 @@ def model_fn_decorator(test=False):
     semantic_criterion = nn.CrossEntropyLoss(ignore_index=cfg.ignore_label).cuda()
     score_criterion = nn.BCELoss(reduction='none').cuda()
     center_criterion = WeightedFocalLoss(alpha=cfg.focal_loss_alpha, gamma=cfg.focal_loss_gamma).cuda()
-    center_semantic_criterion = nn.CrossEntropyLoss().cuda()
+    center_semantic_criterion = nn.CrossEntropyLoss(ignore_index=cfg.ignore_label).cuda()
     center_offset_criterion = nn.L1Loss().cuda()
 
     def test_model_fn(batch, model, epoch):

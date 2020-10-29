@@ -231,11 +231,11 @@ class Dataset:
             label = label[valid_idxs]
             instance_label = self.getCroppedInstLabel(instance_label, valid_idxs)
 
-            label[label == -100] = 20
+            # label[label == -100] = 20
             # label[instance_label == -100] = 20
 
             ### get instance information
-            inst_num, inst_infos = self.getInstanceInfo(xyz_middle, instance_label.astype(np.int32), label)
+            inst_num, inst_infos = self.getInstanceInfo(xyz_middle, instance_label.astype(np.int32), label.copy())
             inst_info = inst_infos["instance_info"]  # (n, 9), (cx, cy, cz, minx, miny, minz, maxx, maxy, maxz)
             inst_pointnum = inst_infos["instance_pointnum"]   # (nInst), list
             inst_center = inst_infos['instance_center']   # (nInst, 3) (cx, cy, cz)
@@ -265,6 +265,7 @@ class Dataset:
                 )
                 inst_heatmap = grid_infos['heatmap']
                 grid_inst_label = grid_infos['grid_instance_label']
+                grid_inst_label[grid_inst_label == 20] = -100
             else:
                 inst_heatmap = generate_heatmap(grid_xyz.astype(np.double), np.asarray(inst_center),
                                                 sigma=self.heatmap_sigma)
@@ -400,7 +401,7 @@ class Dataset:
             instance_label = self.getCroppedInstLabel(instance_label, valid_idxs)
 
             ### get instance information
-            inst_num, inst_infos = self.getInstanceInfo(xyz_middle, instance_label.astype(np.int32), label)
+            inst_num, inst_infos = self.getInstanceInfo(xyz_middle, instance_label.astype(np.int32), label.copy())
             inst_info = inst_infos["instance_info"]  # (n, 9), (cx, cy, cz, minx, miny, minz, maxx, maxy, maxz)
             inst_pointnum = inst_infos["instance_pointnum"]   # (nInst), list
             inst_center = inst_infos['instance_center']   # (nInst, 3) (cx, cy, cz)
@@ -430,6 +431,7 @@ class Dataset:
                 )
                 inst_heatmap = grid_infos['heatmap']
                 grid_inst_label = grid_infos['grid_instance_label']
+                grid_inst_label[grid_inst_label == 20] = -100
             else:
                 inst_heatmap = generate_heatmap(grid_xyz.astype(np.double), np.asarray(inst_center),
                                                 sigma=self.heatmap_sigma)
@@ -445,7 +447,7 @@ class Dataset:
             grid_cent_offset = grid_cent_xyz - np.array(inst_center)
             grid_cent_offset = grid_cent_offset.squeeze()
 
-            label[label == -100] = 20
+            # label[label == -100] = 20
             # label[instance_label == -100] = 20
 
             ### merge the scene to the batch
@@ -533,7 +535,7 @@ class Dataset:
 
             _, valid_idxs = self.crop(xyz)
             instance_label = self.getCroppedInstLabel(instance_label, valid_idxs)
-            _, inst_infos = self.getInstanceInfo(xyz_middle, instance_label.astype(np.int32), label)
+            _, inst_infos = self.getInstanceInfo(xyz_middle, instance_label.astype(np.int32), label.copy())
             inst_center = inst_infos['instance_center']
             inst_size = inst_infos['instance_size']
             inst_label = inst_infos['instance_label']
@@ -557,6 +559,7 @@ class Dataset:
                 )
                 inst_heatmap = grid_infos['heatmap']
                 grid_inst_label = grid_infos['grid_instance_label']
+                grid_inst_label[grid_inst_label == 20] = -100
             else:
                 inst_heatmap = generate_heatmap(grid_xyz.astype(np.double), np.asarray(inst_center),
                                                 sigma=self.heatmap_sigma)
