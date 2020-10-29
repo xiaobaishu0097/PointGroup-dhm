@@ -5,6 +5,7 @@ Written by Li Jiang
 
 import torch
 import torch.nn as nn
+from torch.utils.data import DataLoader
 import time
 import numpy as np
 import random
@@ -43,13 +44,14 @@ def test(model, model_fn, data_name, epoch):
 
     if cfg.dataset == 'scannetv2':
         if data_name == 'scannet':
-            from data.scannetv2_inst import Dataset
-            dataset = Dataset(test=True)
-            dataset.testLoader()
+            from data.scannetv2_inst import ScannetDatast
+            dataset_test = ScannetDatast(data_mode=cfg.split)
         else:
             print("Error: no data loader - " + data_name)
             exit(0)
-    dataloader = dataset.test_data_loader
+    sampler_test = torch.utils.data.SequentialSampler(dataset_test)
+
+    data_loader_test = DataLoader(dataset_test, 1, sampler=sampler_test, drop_last=False, num_workers=cfg.train_workers)
 
     maxpool3d = nn.MaxPool3d(3, stride=1, padding=1)
 
@@ -68,9 +70,9 @@ def test(model, model_fn, data_name, epoch):
         candidate_num = 100
 
         matches = {}
-        for i, batch in enumerate(dataloader):
+        for i, batch in enumerate(data_loader_test):
             N = batch['feats'].shape[0]
-            test_scene_name = dataset.test_file_names[int(batch['id'][0])].split('/')[-1][:12]
+            test_scene_name = dataset_test.test_file_names[int(batch['id'][0])].split('/')[-1][:12]
 
             start1 = time.time()
             preds = model_fn(batch, model, epoch)
@@ -91,12 +93,8 @@ def test(model, model_fn, data_name, epoch):
             # semantic_pred[~valid_index] = 0
 
             grid_center_preds = torch.sigmoid(preds['grid_center_preds'])
-            grid_center_gt = preds['grid_center_gt'].cpu()
-
             grid_center_semantic_preds = preds['grid_center_semantic_preds']
-
             grid_center_offset_preds = preds['grid_center_offset_preds']
-            grid_center_offset = preds['grid_center_offset']
 
             grid_pred_max = maxpool3d(grid_center_preds.reshape(1, 1, 32, 32, 32)).reshape(1, 32**3)
             cent_candidates_indexs = (grid_center_preds == grid_pred_max)
@@ -207,11 +205,9 @@ def test(model, model_fn, data_name, epoch):
                 os.makedirs(os.path.join(result_dir, 'pt_offsets'), exist_ok=True)
                 os.makedirs(os.path.join(result_dir, 'semantic_pred'), exist_ok=True)
                 grid_center_preds = grid_center_preds.cpu().numpy()
-                grid_center_gt = grid_center_gt.cpu().numpy()
                 pt_offsets = pt_offsets.cpu().numpy()
                 semantic_pred = semantic_pred.cpu().numpy()
                 np.save(os.path.join(result_dir, 'grid_center_preds', test_scene_name + '.npy'), grid_center_preds)
-                np.save(os.path.join(result_dir, 'grid_center_gt', test_scene_name + '.npy'), grid_center_gt)
                 np.save(os.path.join(result_dir, 'pt_offsets', test_scene_name + '.npy'), pt_offsets)
                 np.save(os.path.join(result_dir, 'semantic_pred', test_scene_name + '.npy'), semantic_pred)
 
@@ -232,7 +228,7 @@ def test(model, model_fn, data_name, epoch):
             start = time.time()
 
             ##### print
-            logger.info("instance iter: {}/{} point_num: {} time: total {:.2f}s inference {:.2f}s save {:.2f}s".format(batch['id'][0] + 1, len(dataset.test_files), N, end, end1, end3))
+            logger.info("instance iter: {}/{} point_num: {} time: total {:.2f}s inference {:.2f}s save {:.2f}s".format(batch['id'][0] + 1, len(dataset_test.data_files), N, end, end1, end3))
 
         ##### evaluation
         if cfg.eval:

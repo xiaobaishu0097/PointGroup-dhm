@@ -291,6 +291,24 @@ class PointGroup(nn.Module):
                 nn.ReLU(),
             )
             self.offset_linear = nn.Linear(m, 3, bias=True)
+        elif self.model_mode == 3:
+            ### convolutional occupancy networks decoder
+            self.decoder = decoder.LocalDecoder(
+                dim=3,
+                c_dim=32,
+                hidden_size=32,
+            )
+
+            self.point_offset = nn.Sequential(
+                nn.Linear(32, 32, bias=True),
+                nn.ReLU(),
+                nn.Linear(32, 3, bias=True),
+            )
+            self.point_semantic = nn.Sequential(
+                nn.Linear(32, 32, bias=True),
+                nn.ReLU(),
+                nn.Linear(32, classes, bias=True),
+            )
 
         #### fix parameter
         # module_map = {'input_conv': self.input_conv, 'unet': self.unet, 'output_layer': self.output_layer,
@@ -399,7 +417,7 @@ class PointGroup(nn.Module):
         '''
         ret = {}
 
-        encoded_feats = self.encoder(coords.unsqueeze(dim=0), rgb.unsqueeze(dim=0))
+        encoded_feats = self.encoder(coords, rgb)
         '''encoded_feats:{
         coord: coordinate of points (b, n, 3)
         index: index of points (b, 1, n)
@@ -470,6 +488,13 @@ class PointGroup(nn.Module):
             pt_offsets = self.offset_linear(pt_offsets)
             point_offset_preds = pt_offsets
 
+        elif self.model_mode == 3:
+            point_feats = self.decoder(encoded_feats['coord'], encoded_feats).squeeze(dim=0)
+            point_feats = point_feats + encoded_feats['point'].squeeze(dim=0)
+
+            point_offset_preds = self.point_offset(point_feats)
+            point_semantic_preds = self.point_semantic(point_feats)
+
         bs, c_dim, grid_size = encoded_feats['grid'].shape[0], encoded_feats['grid'].shape[1], encoded_feats['grid'].shape[2]
         grid_feats = encoded_feats['grid'].reshape(bs, c_dim, -1).permute(0, 2, 1)
 
@@ -496,7 +521,6 @@ def model_fn_decorator(test=False):
 
     #### criterion
     semantic_criterion = nn.CrossEntropyLoss(ignore_index=cfg.ignore_label).cuda()
-    score_criterion = nn.BCELoss(reduction='none').cuda()
     center_criterion = WeightedFocalLoss(alpha=cfg.focal_loss_alpha, gamma=cfg.focal_loss_gamma).cuda()
     center_semantic_criterion = nn.CrossEntropyLoss(ignore_index=cfg.ignore_label).cuda()
     center_offset_criterion = nn.L1Loss().cuda()
@@ -509,14 +533,6 @@ def model_fn_decorator(test=False):
 
         coords_float = batch['locs_float'].cuda()  # (N, 3), float32, cuda
         feats = batch['feats'].cuda()  # (N, C), float32, cuda
-
-        instance_info = batch['instance_info'].cuda()  # (N, 9), float32, cuda, (meanxyz, minxyz, maxxyz)
-        labels = batch['labels'].cuda()  # (N), long, cuda
-        instance_centers = batch['instance_centers'].cuda()
-        grid_center_gt = batch['grid_center_gt'].cuda()
-        grid_center_offset = batch['grid_center_offset'].cuda()
-        grid_instance_label = batch['grid_instance_label'].cuda()
-        grid_xyz = batch['grid_xyz'].cuda()
 
         batch_offsets = batch['offsets'].cuda()  # (B + 1), int, cuda
 
@@ -557,6 +573,12 @@ def model_fn_decorator(test=False):
         grid_center_offset_preds = grid_center_offset_preds.squeeze(dim=0)
 
         ### only be used during debugging
+        # instance_info = batch['instance_info'].cuda()  # (N, 9), float32, cuda, (meanxyz, minxyz, maxxyz)
+        # labels = batch['labels'].cuda()  # (N), long, cuda
+        # grid_center_gt = batch['grid_center_gt'].cuda()
+        # grid_center_offset = batch['grid_center_offset'].cuda()
+        # grid_instance_label = batch['grid_instance_label'].cuda()
+
         # point_offset_preds = instance_info[:, 0:3] - coords_float
 
         # point_semantic_preds = labels
@@ -577,16 +599,7 @@ def model_fn_decorator(test=False):
             preds['grid_center_preds'] = grid_center_preds
             preds['grid_center_semantic_preds'] = grid_center_semantic_preds
             preds['grid_center_offset_preds'] = grid_center_offset_preds
-            preds['grid_center_gt'] = grid_center_gt
-            preds['grid_center_offset'] = grid_center_offset
             preds['pt_coords'] = coords_float
-            preds['grid_xyz'] = grid_xyz
-            preds['instance_centers'] = instance_centers
-            # preds['semantic'] = semantic_scores
-            # preds['pt_offsets'] = pt_offsets
-            # if (epoch > cfg.prepare_epochs):
-            #     preds['score'] = scores
-            #     preds['proposals'] = (proposals_idx, proposals_offset)
 
         return preds
 
@@ -623,9 +636,7 @@ def model_fn_decorator(test=False):
 
         if cfg.use_coords:
             feats = torch.cat((feats, coords_float), 1)
-        # voxel_feats = pointgroup_ops.voxelization(feats, v2p_map, cfg.mode)  # (M, C), float, cuda
-        #
-        # input_ = spconv.SparseConvTensor(voxel_feats, voxel_coords.int(), spatial_shape, cfg.batch_size)
+
         input_ = {
             'pt_feats': feats,
             'v2p_map': v2p_map,
@@ -658,32 +669,16 @@ def model_fn_decorator(test=False):
 
         instance_heatmap = instance_heatmap.reshape((1, -1))
 
-        # grid_coords = normalize_3d_coordinate(
-        #     torch.cat((coords_float, instance_centers), dim=0).unsqueeze(dim=0).clone(), padding=0.1)
-        # center_indexs = coordinate2index(grid_coords, 32, coord_type='3d')[:, :, -instance_centers.shape[0]:]
-        # grid_gt_centers = torch.zeros_like(grid_centers).cuda()
-        # grid_gt_centers[:, center_indexs] = 1
-
-        # semantic_scores = ret['semantic_scores']  # (N, nClass) float32, cuda
-        # pt_offsets = ret['pt_offsets']  # (N, 3), float32, cuda
-        # if (epoch > cfg.prepare_epochs):
-        #     scores, proposals_idx, proposals_offset = ret['proposal_scores']
-            # scores: (nProposal, 1) float, cuda
-            # proposals_idx: (sumNPoint, 2), int, cpu, dim 0 for cluster_id, dim 1 for corresponding point idxs in N
-            # proposals_offset: (nProposal + 1), int, cpu
-
         loss_inp = {}
 
-        loss_inp['pt_offsets'] = (point_offset_preds, coords_float, instance_info, instance_labels)
-        loss_inp['semantic_scores'] = (point_semantic_preds, labels)
+        loss_inp['pt_offsets'] = (
+            point_offset_preds, coords_float.squeeze(dim=0), instance_info.squeeze(dim=0), instance_labels.squeeze(dim=0)
+        )
+        loss_inp['semantic_scores'] = (point_semantic_preds, labels.squeeze(dim=0))
 
         loss_inp['grid_centers'] = (grid_center_preds, instance_heatmap)
-        loss_inp['grid_center_semantics'] = (grid_center_semantic_preds, grid_instance_label)
+        loss_inp['grid_center_semantics'] = (grid_center_semantic_preds, grid_instance_label.squeeze(dim=0))
         loss_inp['grid_center_offsets'] = (grid_center_offset_preds, grid_center_offset)
-        # loss_inp['semantic_scores'] = (semantic_scores, labels)
-        # loss_inp['pt_offsets'] = (pt_offsets, coords_float, instance_info, instance_labels)
-        # if (epoch > cfg.prepare_epochs):
-        #     loss_inp['proposal_scores'] = (scores, proposals_idx, proposals_offset, instance_pointnum)
 
         loss, loss_out, infos = loss_fn(loss_inp, epoch)
 
@@ -695,11 +690,6 @@ def model_fn_decorator(test=False):
             preds['grid_center_gt'] = grid_center_gt
             preds['instance_heatmap'] = instance_heatmap
             preds['grid_center_offset'] = grid_center_offset
-            # preds['semantic'] = semantic_scores
-            # preds['pt_offsets'] = pt_offsets
-            # if (epoch > cfg.prepare_epochs):
-            #     preds['score'] = scores
-            #     preds['proposals'] = (proposals_idx, proposals_offset)
 
             visual_dict = {}
             visual_dict['loss'] = loss
@@ -717,25 +707,6 @@ def model_fn_decorator(test=False):
 
         loss_out = {}
         infos = {}
-
-        ### center loss
-        grid_center_preds, instance_heatmap = loss_inp['grid_centers']
-
-        center_loss = center_criterion(grid_center_preds, instance_heatmap)
-        loss_out['center_loss'] = (center_loss, instance_heatmap.shape[-1])
-
-        ### center semantic loss
-        grid_center_semantic_preds, grid_instance_label = loss_inp['grid_center_semantics']
-        grid_valid_index = instance_heatmap.squeeze(dim=0) > 0
-        center_semantic_loss = center_semantic_criterion(
-            grid_center_semantic_preds[grid_valid_index, :], grid_instance_label[grid_valid_index].to(torch.long)
-        )
-
-        ### center offset loss
-        grid_center_offset_preds, grid_center_offsets = loss_inp['grid_center_offsets']
-
-        center_offset_loss = center_offset_criterion(grid_center_offset_preds, grid_center_offsets)
-        loss_out['center_offset_loss'] = (center_offset_loss, grid_center_offsets.shape[0])
 
         '''semantic loss'''
         semantic_scores, semantic_labels = loss_inp['semantic_scores']
@@ -768,29 +739,26 @@ def model_fn_decorator(test=False):
         loss_out['offset_norm_loss'] = (offset_norm_loss, valid.sum())
         loss_out['offset_dir_loss'] = (offset_dir_loss, valid.sum())
 
-        # if (epoch > cfg.prepare_epochs):
-        #     '''score loss'''
-        #     scores, proposals_idx, proposals_offset, instance_pointnum = loss_inp['proposal_scores']
-        #     # scores: (nProposal, 1), float32
-        #     # proposals_idx: (sumNPoint, 2), int, cpu, dim 0 for cluster_id, dim 1 for corresponding point idxs in N
-        #     # proposals_offset: (nProposal + 1), int, cpu
-        #     # instance_pointnum: (total_nInst), int
-        #
-        #     ious = pointgroup_ops.get_iou(proposals_idx[:, 1].cuda(), proposals_offset.cuda(), instance_labels,
-        #                                   instance_pointnum)  # (nProposal, nInstance), float
-        #     gt_ious, gt_instance_idxs = ious.max(1)  # (nProposal) float, long
-        #     gt_scores = get_segmented_scores(gt_ious, cfg.fg_thresh, cfg.bg_thresh)
-        #
-        #     score_loss = score_criterion(torch.sigmoid(scores.view(-1)), gt_scores)
-        #     score_loss = score_loss.mean()
-        #
-        #     loss_out['score_loss'] = (score_loss, gt_ious.shape[0])
+        '''center loss'''
+        grid_center_preds, instance_heatmap = loss_inp['grid_centers']
+
+        center_loss = center_criterion(grid_center_preds, instance_heatmap)
+        loss_out['center_loss'] = (center_loss, instance_heatmap.shape[-1])
+
+        '''center semantic loss'''
+        grid_center_semantic_preds, grid_instance_label = loss_inp['grid_center_semantics']
+        grid_valid_index = instance_heatmap.squeeze(dim=0) > 0
+        center_semantic_loss = center_semantic_criterion(
+            grid_center_semantic_preds[grid_valid_index, :], grid_instance_label[grid_valid_index].to(torch.long)
+        )
+
+        '''center offset loss'''
+        grid_center_offset_preds, grid_center_offsets = loss_inp['grid_center_offsets']
+
+        center_offset_loss = center_offset_criterion(grid_center_offset_preds, grid_center_offsets)
+        loss_out['center_offset_loss'] = (center_offset_loss, grid_center_offsets.shape[0])
 
         '''total loss'''
-        # loss = cfg.loss_weight[0] * semantic_loss + cfg.loss_weight[1] * offset_norm_loss + cfg.loss_weight[
-        #     2] * offset_dir_loss
-        # if (epoch > cfg.prepare_epochs):
-        #     loss += (cfg.loss_weight[3] * score_loss)
         loss = cfg.loss_weight[0] * center_loss + cfg.loss_weight[1] * center_semantic_loss + \
                cfg.loss_weight[2] * center_offset_loss + cfg.loss_weight[2] * semantic_loss + \
                cfg.loss_weight[3] * offset_norm_loss + cfg.loss_weight[4] * offset_dir_loss

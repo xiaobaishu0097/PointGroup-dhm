@@ -26,15 +26,15 @@ STRUCTURE:
   block_reps: 2
   scatter_type: mean
   unet3d_num_levels: 3
-  model_mode: 0 # 0: weihao 1: heming 2: mehrdard
+  model_mode: 3 # 0: weihao 1: heming 2: mehrdard
 
   use_coords: True
 
 TRAIN:
-  epochs: 384
+  epochs: 256
   train_workers: 16 # data loader workers
   optim: Adam # Adam or SGD
-  lr: 0.01
+  lr: 0.001
   step_epoch: 384
   multiplier: 0.1
   momentum: 0.9
@@ -68,7 +68,7 @@ GROUP:
 
 TEST:
   split: val
-  test_epoch: 384
+  test_epoch: 256
   test_workers: 16
   test_seed: 567
 

@@ -3,6 +3,7 @@ GENERAL:
   manual_seed: 123
   model_dir: model/pointgroup/pointgroup.py
   dataset_dir: data/scannetv2_inst.py
+  distributed: True
 
 DATA:
   data_root: dataset
@@ -26,7 +27,7 @@ STRUCTURE:
   block_reps: 2
   scatter_type: max
   unet3d_num_levels: 3
-  model_mode: 0 # 0: weihao 1: heming 2: mehrdard
+  model_mode: 3 # 0: weihao 1: heming 2: mehrdard
 
   use_coords: True
 
@@ -35,7 +36,7 @@ TRAIN:
   train_workers: 16 # data loader workers
   optim: Adam # Adam or SGD
   lr: 0.001
-  step_epoch: 30
+  step_epoch: 32
   multiplier: 0.5
   momentum: 0.9
   weight_decay: 0.0001

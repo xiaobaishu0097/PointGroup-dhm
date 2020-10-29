@@ -5,6 +5,7 @@ Written by Li Jiang
 
 import torch
 import torch.optim as optim
+from torch.utils.data import DataLoader, DistributedSampler
 import time, sys, os, random
 from tensorboardX import SummaryWriter
 import numpy as np
@@ -148,14 +149,22 @@ if __name__ == '__main__':
     assert use_cuda
     model = model.cuda()
 
+    model_without_ddp = model
+    if cfg.distributed:
+        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[cfg.gpu])
+        model_without_ddp = model.module
+
     # logger.info(model)
     logger.info('#classifier parameters: {}'.format(sum([x.nelement() for x in model.parameters()])))
 
     ##### optimizer
     if cfg.optim == 'Adam':
-        optimizer = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=cfg.lr)
+        optimizer = optim.Adam(filter(lambda p: p.requires_grad, model_without_ddp.parameters()), lr=cfg.lr)
     elif cfg.optim == 'SGD':
-        optimizer = optim.SGD(filter(lambda p: p.requires_grad, model.parameters()), lr=cfg.lr, momentum=cfg.momentum, weight_decay=cfg.weight_decay)
+        optimizer = optim.SGD(
+            filter(lambda p: p.requires_grad, model_without_ddp.parameters()),
+            lr=cfg.lr, momentum=cfg.momentum, weight_decay=cfg.weight_decay
+        )
 
     ##### model_fn (criterion)
     model_fn = model_fn_decorator()
@@ -163,20 +172,31 @@ if __name__ == '__main__':
     ##### dataset
     if cfg.dataset == 'scannetv2':
         if data_name == 'scannet':
-            import data.scannetv2_inst
-            dataset = data.scannetv2_inst.Dataset()
-            dataset.trainLoader()
-            dataset.valLoader()
+            from data.scannetv2_inst import ScannetDatast
+            dataset_train = ScannetDatast(data_mode='train')
+            dataset_val = ScannetDatast(data_mode='val')
         else:
             print("Error: no data loader - " + data_name)
             exit(0)
+
+    if cfg.distributed:
+        sampler_train = DistributedSampler(dataset_train)
+        sampler_val = DistributedSampler(dataset_val, shuffle=False)
+    else:
+        sampler_train = torch.utils.data.RandomSampler(dataset_train)
+        sampler_val = torch.utils.data.SequentialSampler(dataset_val)
+
+    batch_sampler_train = torch.utils.data.BatchSampler(sampler_train, cfg.batch_size, drop_last=True)
+
+    data_loader_train = DataLoader(dataset_train, batch_sampler=batch_sampler_train, num_workers=cfg.train_workers)
+    data_loader_val = DataLoader(dataset_val, cfg.batch_size, sampler=sampler_val, drop_last=False, num_workers=cfg.train_workers)
 
     ##### resume
     start_epoch = utils.checkpoint_restore(model, cfg.exp_path, cfg.config.split('/')[-1][:-5], use_cuda)      # resume from the latest epoch, or specify the epoch to restore
 
     ##### train and val
     for epoch in range(start_epoch, cfg.epochs + 1):
-        train_epoch(dataset.train_data_loader, model, model_fn, optimizer, epoch)
+        train_epoch(data_loader_train, model, model_fn, optimizer, epoch)
 
         if utils.is_multiple(epoch, cfg.save_freq) or utils.is_power2(epoch):
-            eval_epoch(dataset.val_data_loader, model, model_fn, epoch)
+            eval_epoch(data_loader_val, model, model_fn, epoch)
