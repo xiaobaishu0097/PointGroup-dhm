@@ -232,7 +232,7 @@ class Dataset:
             instance_label = self.getCroppedInstLabel(instance_label, valid_idxs)
 
             label[label == -100] = 20
-            label[instance_label == -100] = 20
+            # label[instance_label == -100] = 20
 
             ### get instance information
             inst_num, inst_infos = self.getInstanceInfo(xyz_middle, instance_label.astype(np.int32), label)
@@ -446,7 +446,7 @@ class Dataset:
             grid_cent_offset = grid_cent_offset.squeeze()
 
             label[label == -100] = 20
-            label[instance_label == -100] = 20
+            # label[instance_label == -100] = 20
 
             ### merge the scene to the batch
             batch_offsets.append(batch_offsets[-1] + xyz.shape[0])

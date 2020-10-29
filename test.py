@@ -120,7 +120,7 @@ def test(model, model_fn, data_name, epoch):
             pt_inst_cent_dist = pt_inst_cent_dist * pt_inst_cov_mat
             ### set the minimum distance threshold between point and grid point
             valid_dist_thresh = pt_inst_cent_dist.min(dim=1)[0] > cfg.TEST_DIST_THRESH
-            pt_inst_cent = torch.nn.functional.one_hot(pt_inst_cent_dist.min(dim=1)[1], num_classes=100)
+            pt_inst_cent = torch.nn.functional.one_hot(pt_inst_cent_dist.min(dim=1)[1], num_classes=topk_index_.shape[0])
             pt_inst_cent[valid_dist_thresh, :] = 0
             ### set the minimum point number threshold for each center
             valid_inst_index = pt_inst_cent.sum(dim=0) > cfg.TEST_NPOINT_THRESH
