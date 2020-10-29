@@ -39,16 +39,17 @@ def get_parser():
         args_cfg.distributed = False
         return args_cfg
 
-    args_cfg.distributed = True
-
-    torch.cuda.set_device(args_cfg.gpu)
-    args_cfg.dist_backend = 'nccl'
-    print('| distributed init (rank {}): {}'.format(
-        args_cfg.rank, args_cfg.dist_url), flush=True)
-    torch.distributed.init_process_group(backend=args_cfg.dist_backend, init_method=args_cfg.dist_url,
-                                         world_size=args_cfg.world_size, rank=args_cfg.rank)
-    torch.distributed.barrier()
-    setup_for_distributed(args_cfg.rank == 0)
+    args_cfg.distributed = False
+    # args_cfg.distributed = True
+    #
+    # torch.cuda.set_device(args_cfg.gpu)
+    # args_cfg.dist_backend = 'nccl'
+    # print('| distributed init (rank {}): {}'.format(
+    #     args_cfg.rank, args_cfg.dist_url), flush=True)
+    # torch.distributed.init_process_group(backend=args_cfg.dist_backend, init_method=args_cfg.dist_url,
+    #                                      world_size=args_cfg.world_size, rank=args_cfg.rank)
+    # torch.distributed.barrier()
+    # setup_for_distributed(args_cfg.rank == 0)
 
     return args_cfg
 
