@@ -398,13 +398,14 @@ class PointGroup(nn.Module):
         elif self.model_mode == 1:
             voxel_feats = pointgroup_ops.voxelization(
                 encoded_feats['point'].squeeze(dim=0),
-                # input['pt_feats'],
-                input['v2p_map'],
+                # input['pt_feats'].squeeze(dim=0),
+                input['v2p_map'].squeeze(dim=0),
                 input['mode']
             )  # (M, C), float, cuda
 
             input_ = spconv.SparseConvTensor(
-                voxel_feats, input['voxel_coords'], input['spatial_shape'], input['batch_size']
+                voxel_feats, input['voxel_coords'].squeeze(dim=0),
+                np.array(input['spatial_shape'].squeeze(dim=0)), input['batch_size']
             )
             output = self.input_conv(input_)
             output = self.unet(output)
@@ -427,12 +428,13 @@ class PointGroup(nn.Module):
             voxel_feats = pointgroup_ops.voxelization(
                 encoded_feats['point'].squeeze(dim=0),
                 # input['pt_feats'],
-                input['v2p_map'],
+                input['v2p_map'].squeeze(dim=0),
                 input['mode']
             )  # (M, C), float, cuda
 
             input_ = spconv.SparseConvTensor(
-                voxel_feats, input['voxel_coords'], input['spatial_shape'], input['batch_size']
+                voxel_feats, input['voxel_coords'].squeeze(dim=0),
+                np.array(input['spatial_shape'].squeeze(dim=0)), input['batch_size']
             )
             output = self.input_conv(input_)
             output = self.unet(output)
@@ -505,7 +507,7 @@ def model_fn_decorator(test=False):
         rgb = feats
 
         if cfg.use_coords:
-            feats = torch.cat((feats, coords_float), 1)
+            feats = torch.cat((feats, coords_float), -1)
         # voxel_feats = pointgroup_ops.voxelization(feats, v2p_map, cfg.mode)  # (M, C), float, cuda
         #
         # input_ = spconv.SparseConvTensor(voxel_feats, voxel_coords.int(), spatial_shape, cfg.batch_size)
@@ -599,7 +601,7 @@ def model_fn_decorator(test=False):
         rgb = feats
 
         if cfg.use_coords:
-            feats = torch.cat((feats, coords_float), 1)
+            feats = torch.cat((feats, coords_float), -1)
 
         input_ = {
             'pt_feats': feats,
