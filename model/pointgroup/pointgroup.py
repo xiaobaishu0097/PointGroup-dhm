@@ -405,12 +405,13 @@ class PointGroup(nn.Module):
 
             input_ = spconv.SparseConvTensor(
                 voxel_feats, input['voxel_coords'].squeeze(dim=0),
-                np.array(input['spatial_shape'].squeeze(dim=0)), input['batch_size']
+                input['spatial_shape'].squeeze(dim=0).cpu().numpy(), input['batch_size']
             )
             output = self.input_conv(input_)
             output = self.unet(output)
             output = self.output_layer(output)
             output_feats = output.features[input_map.long()]
+            output_feats = output_feats.squeeze(dim=0)
 
             #### semantic segmentation
             semantic_scores = self.linear(output_feats)  # (N, nClass), float
@@ -434,7 +435,7 @@ class PointGroup(nn.Module):
 
             input_ = spconv.SparseConvTensor(
                 voxel_feats, input['voxel_coords'].squeeze(dim=0),
-                np.array(input['spatial_shape'].squeeze(dim=0)), input['batch_size']
+                input['spatial_shape'].squeeze(dim=0).cpu().numpy(), input['batch_size']
             )
             output = self.input_conv(input_)
             output = self.unet(output)
