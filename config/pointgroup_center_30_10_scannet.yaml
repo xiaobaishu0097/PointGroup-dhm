@@ -21,12 +21,12 @@ DATA:
 
 STRUCTURE:
   model_name: pointgroup
-  m: 16 # 16 or 32
+  m: 32 # 16 or 32
   block_residual: True
   block_reps: 2
   scatter_type: max
   unet3d_num_levels: 3
-  model_mode: 3 # 0: weihao 1: heming 2: mehrdard
+  model_mode: 0 # 0: weihao 1: heming 2: mehrdard
 
   use_coords: True
 
@@ -34,13 +34,13 @@ TRAIN:
   epochs: 384
   train_workers: 16 # data loader workers
   optim: Adam # Adam or SGD
-  lr: 0.01
+  lr: 0.001
   step_epoch: 384
   multiplier: 0.5
   momentum: 0.9
   weight_decay: 0.0001
   save_freq: 16  # also eval_freq
-  loss_weight: [1.0, 1.0, 0.1, 1.0, 1.0, 1.0] # center, center_semantic, center_offset, semantic, pt_offset_norm, pt_offset_dir
+  loss_weight: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0] # center, center_semantic, center_offset, semantic, pt_offset_norm, pt_offset_dir
   focal_loss_alpha: 0.25
   focal_loss_gamma: 2
   heatmap_sigma: 0
@@ -64,7 +64,7 @@ GROUP:
   cluster_shift_meanActive: 300
   cluster_npoint_thre: 50
 
-  prepare_epochs: 12800
+  prepare_epochs: 128
 
 TEST:
   split: val
