@@ -180,8 +180,9 @@ if __name__ == '__main__':
             exit(0)
 
     if cfg.distributed:
+        # TODO: update pytorch version and add shuffle parameter into DistributedSampler
         sampler_train = DistributedSampler(dataset_train)
-        sampler_val = DistributedSampler(dataset_val, shuffle=False)
+        sampler_val = DistributedSampler(dataset_val)
     else:
         sampler_train = torch.utils.data.RandomSampler(dataset_train)
         sampler_val = torch.utils.data.SequentialSampler(dataset_val)
@@ -196,6 +197,8 @@ if __name__ == '__main__':
 
     ##### train and val
     for epoch in range(start_epoch, cfg.epochs + 1):
+        if cfg.distributed:
+            sampler_train.set_epoch(epoch)
         train_epoch(data_loader_train, model, model_fn, optimizer, epoch)
 
         if utils.is_multiple(epoch, cfg.save_freq) or utils.is_power2(epoch):
