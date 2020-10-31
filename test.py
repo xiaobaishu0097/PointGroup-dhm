@@ -205,7 +205,6 @@ def test(model, model_fn, data_name, epoch):
             start3 = time.time()
             if cfg.save_grid_points:
                 os.makedirs(os.path.join(result_dir, 'grid_center_preds'), exist_ok=True)
-                os.makedirs(os.path.join(result_dir, 'grid_center_gt'), exist_ok=True)
                 os.makedirs(os.path.join(result_dir, 'pt_offsets'), exist_ok=True)
                 os.makedirs(os.path.join(result_dir, 'semantic_pred'), exist_ok=True)
                 grid_center_preds = grid_center_preds.cpu().numpy()

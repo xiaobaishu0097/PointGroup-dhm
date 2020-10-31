@@ -79,7 +79,7 @@ TEST:
   TEST_DIST_THRESH: 2
 
   eval: True
-  save_grid_points: False
+  save_grid_points: True
   save_semantic: False
   save_pt_offsets: False
   save_instance: False

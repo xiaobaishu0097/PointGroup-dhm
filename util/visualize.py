@@ -135,7 +135,7 @@ def get_coords_color(opt):
         gaussian_pro = generate_adaptive_heatmap(
             torch.tensor(grid_xyz), torch.tensor(inst_centers), torch.tensor(inst_sizes),
             min_radius=np.linalg.norm(grid_size)
-        )
+        )['heatmap']
 
         # norm_inst_centers = normalize_3d_coordinate(
         #     torch.cat((torch.from_numpy(xyz), torch.from_numpy(np.asarray(inst_centers))), dim=0).unsqueeze(

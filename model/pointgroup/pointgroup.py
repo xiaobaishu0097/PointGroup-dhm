@@ -558,6 +558,7 @@ def model_fn_decorator(test=False):
 
     #### criterion
     semantic_criterion = nn.CrossEntropyLoss(ignore_index=cfg.ignore_label).cuda()
+    offset_norm_criterion = nn.SmoothL1Loss().cuda()
     center_criterion = WeightedFocalLoss(alpha=cfg.focal_loss_alpha, gamma=cfg.focal_loss_gamma).cuda()
     center_semantic_criterion = nn.CrossEntropyLoss(ignore_index=cfg.ignore_label).cuda()
     center_offset_criterion = nn.L1Loss().cuda()
@@ -617,15 +618,15 @@ def model_fn_decorator(test=False):
         # grid_instance_label = batch['grid_instance_label'].squeeze(dim=0).cuda()
 
         # point_offset_preds = instance_info[:, 0:3] - coords_float
-
+        #
         # point_semantic_preds = labels
-
+        #
         # fake_grid_center = torch.zeros_like(grid_center_preds)
         # fake_grid_center[0, grid_center_gt.long()] = 1
         # grid_center_preds = fake_grid_center
-
+        #
         # grid_center_offset_preds[grid_center_gt.long(), :] = grid_center_offset
-
+        #
         # grid_center_semantic_preds = grid_instance_label
         # grid_instance_label[grid_instance_label == -100] = 20
 
@@ -765,10 +766,12 @@ def model_fn_decorator(test=False):
         # instance_labels: (N), long
 
         gt_offsets = instance_info[:, 0:3] - coords  # (N, 3)
-        pt_diff = pt_offsets - gt_offsets  # (N, 3)
-        pt_dist = torch.sum(torch.abs(pt_diff), dim=-1)  # (N)
+        pt_valid_index = instance_labels != cfg.ignore_label
+        offset_norm_loss = offset_norm_criterion(pt_offsets[pt_valid_index], gt_offsets[pt_valid_index])
+        # pt_diff = pt_offsets - gt_offsets  # (N, 3)
+        # pt_dist = torch.sum(torch.abs(pt_diff), dim=-1)  # (N)
         valid = (instance_labels != cfg.ignore_label).float()
-        offset_norm_loss = torch.sum(pt_dist * valid) / (torch.sum(valid) + 1e-6)
+        # offset_norm_loss = torch.sum(pt_dist * valid) / (torch.sum(valid) + 1e-6)
 
         gt_offsets_norm = torch.norm(gt_offsets, p=2, dim=1)  # (N), float
         gt_offsets_ = gt_offsets / (gt_offsets_norm.unsqueeze(-1) + 1e-8)

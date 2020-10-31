@@ -151,7 +151,7 @@ if __name__ == '__main__':
 
     model_without_ddp = model
     if cfg.distributed:
-        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[cfg.gpu])
+        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[cfg.gpu], find_unused_parameters=True)
         model_without_ddp = model.module
 
     # logger.info(model)
@@ -193,7 +193,7 @@ if __name__ == '__main__':
     data_loader_val = DataLoader(dataset_val, cfg.batch_size, sampler=sampler_val, drop_last=False, num_workers=cfg.train_workers)
 
     ##### resume
-    start_epoch = utils.checkpoint_restore(model, cfg.exp_path, cfg.config.split('/')[-1][:-5], use_cuda)      # resume from the latest epoch, or specify the epoch to restore
+    start_epoch = utils.checkpoint_restore(model_without_ddp, cfg.exp_path, cfg.config.split('/')[-1][:-5], use_cuda)      # resume from the latest epoch, or specify the epoch to restore
 
     ##### train and val
     for epoch in range(start_epoch, cfg.epochs + 1):
