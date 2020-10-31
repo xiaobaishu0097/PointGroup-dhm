@@ -92,6 +92,7 @@ def test(model, model_fn, data_name, epoch):
             valid_index = (semantic_pred != 20)
 
             # semantic_pred = semantic_scores
+            # semantic_pred[semantic_pred == -100] = 20
             # valid_index = (semantic_pred != 20)
             # semantic_pred[~valid_index] = 0
 

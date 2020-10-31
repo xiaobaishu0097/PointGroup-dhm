@@ -27,7 +27,7 @@ STRUCTURE:
   block_reps: 2
   scatter_type: max
   unet3d_num_levels: 3
-  model_mode: 0 # 0: weihao 1: heming 2: mehrdard
+  model_mode: 4 # 0: weihao 1: heming 2: mehrdard
 
   use_coords: True
 

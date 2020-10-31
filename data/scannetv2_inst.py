@@ -317,7 +317,7 @@ class ScannetDatast(Dataset):
             xyz_origin, rgb, label, instance_label = self.data_files[idx]
 
             ### jitter / flip x / rotation
-            xyz_middle = self.dataAugment(xyz_origin, True, True, True)
+            xyz_middle = self.dataAugment(xyz_origin, False, True, True)
             # xyz_middle = self.dataAugment(xyz_origin, False, False, False)
 
             ### scale

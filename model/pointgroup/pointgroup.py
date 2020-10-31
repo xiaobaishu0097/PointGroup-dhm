@@ -275,15 +275,43 @@ class PointGroup(nn.Module):
                 nn.Linear(32, classes, bias=True),
             )
 
+        elif self.model_mode == 4:
+            m = 16
+            self.input_conv = spconv.SparseSequential(
+                spconv.SubMConv3d(6, m, kernel_size=3, padding=1, bias=False, indice_key='subm1')
+            )
+
+            self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
+                               indice_key_id=1)
+
+            self.output_layer = spconv.SparseSequential(
+                norm_fn(m),
+                nn.ReLU()
+            )
+            #### semantic segmentation
+            self.linear = nn.Linear(m, classes)  # bias(default): True
+
+            #### offset
+            self.offset = nn.Sequential(
+                nn.Linear(m, m, bias=True),
+                norm_fn(m),
+                nn.ReLU(),
+            )
+            self.offset_linear = nn.Linear(m, 3, bias=True)
+
         #### fix parameter
         # module_map = {'input_conv': self.input_conv, 'unet': self.unet, 'output_layer': self.output_layer,
         #               'linear': self.linear, 'offset': self.offset, 'offset_linear': self.offset_linear,
         #               'score_unet': self.score_unet, 'score_outputlayer': self.score_outputlayer,
         #               'score_linear': self.score_linear}
-        module_map = {}
-        # module_map = {'input_conv': self.input_conv, 'unet': self.unet, 'output_layer': self.output_layer,
-        #               'linear': self.linear, 'offset': self.offset, 'offset_linear': self.offset_linear,}
-
+        # module_map = {}
+        if self.model_mode == 4:
+            module_map = {'input_conv': self.input_conv, 'unet': self.unet, 'output_layer': self.output_layer,
+                          'linear': self.linear, 'offset': self.offset, 'offset_linear': self.offset_linear,
+                          'module.encoder': self.encoder, 'module.grid_center_pred': self.grid_center_pred,
+                        'module.grid_center_semantic': self.grid_center_semantic, 'module.grid_center_offset': self.grid_center_offset}
+        else:
+            module_map = {}
 
         for m in self.fix_module:
             mod = module_map[m]
@@ -291,8 +319,21 @@ class PointGroup(nn.Module):
                 param.requires_grad = False
 
         #### load pretrain weights
-        # self.pretrain_path = '/home/dhm/Auxiliary_Code/PointGroup/exp/scannetv2/pointgroup/pointgroup_run1_scannet/pointgroup_run1_scannet-000000384.pth'
-        # self.pretrain_module = ['input_conv', 'unet', 'output_layer', 'linear', 'offset', 'offset_linear']
+        if self.model_mode == 4:
+            self.pretrain_path = '/home/dhm/Auxiliary_Code/PointGroup/exp/scannetv2/pointgroup/pointgroup_run1_scannet/pointgroup_run1_scannet-000000384.pth'
+            self.pretrain_module = ['input_conv', 'unet', 'output_layer', 'linear', 'offset', 'offset_linear']
+            pretrain_dict = torch.load(self.pretrain_path)
+            for m in self.pretrain_module:
+                print(
+                    "Load pretrained " + m + ": %d/%d" % utils.load_model_param(module_map[m], pretrain_dict, prefix=m))
+
+            self.pretrain_path = '/home/dhm/Code/Pointgroup_dhm/exp/scannetv2/pointgroup/pointgroup_center_30_10_scannet/pointgroup_center_30_10_scannet-000000384.pth'
+            self.pretrain_module = ['module.encoder', 'module.grid_center_pred', 'module.grid_center_semantic', 'module.grid_center_offset']
+            pretrain_dict = torch.load(self.pretrain_path)
+            for m in self.pretrain_module:
+                print(
+                    "Load pretrained " + m + ": %d/%d" % utils.load_model_param(module_map[m], pretrain_dict, prefix=m))
+
         if self.pretrain_path is not None:
             pretrain_dict = torch.load(self.pretrain_path)
             for m in self.pretrain_module:
@@ -462,6 +503,35 @@ class PointGroup(nn.Module):
             point_offset_preds = self.point_offset(point_feats)
             point_semantic_preds = self.point_semantic(point_feats)
 
+        elif self.model_mode == 4:
+            voxel_feats = pointgroup_ops.voxelization(
+                # encoded_feats['point'].squeeze(dim=0),
+                input['pt_feats'].squeeze(dim=0),
+                input['v2p_map'].squeeze(dim=0),
+                input['mode']
+            )  # (M, C), float, cuda
+
+            input_ = spconv.SparseConvTensor(
+                voxel_feats, input['voxel_coords'].squeeze(dim=0),
+                input['spatial_shape'].squeeze(dim=0).cpu().numpy(), input['batch_size']
+            )
+            output = self.input_conv(input_)
+            output = self.unet(output)
+            output = self.output_layer(output)
+            output_feats = output.features[input_map.long()]
+            output_feats = output_feats.squeeze(dim=0)
+
+            #### semantic segmentation
+            semantic_scores = self.linear(output_feats)  # (N, nClass), float
+            point_semantic_preds = semantic_scores
+
+            # ret['semantic_scores'] = semantic_scores
+
+            #### offset
+            pt_offsets = self.offset(output_feats) # (N, 3), float32
+            pt_offsets = self.offset_linear(pt_offsets)
+            point_offset_preds = pt_offsets
+
         bs, c_dim, grid_size = encoded_feats['grid'].shape[0], encoded_feats['grid'].shape[1], encoded_feats['grid'].shape[2]
         grid_feats = encoded_feats['grid'].reshape(bs, c_dim, -1).permute(0, 2, 1)
 
@@ -540,23 +610,24 @@ def model_fn_decorator(test=False):
         grid_center_offset_preds = grid_center_offset_preds.squeeze(dim=0)
 
         ### only be used during debugging
-        # instance_info = batch['instance_info'].cuda()  # (N, 9), float32, cuda, (meanxyz, minxyz, maxxyz)
-        # labels = batch['labels'].cuda()  # (N), long, cuda
-        # grid_center_gt = batch['grid_center_gt'].cuda()
-        # grid_center_offset = batch['grid_center_offset'].cuda()
-        # grid_instance_label = batch['grid_instance_label'].cuda()
+        # instance_info = batch['instance_info'].squeeze(dim=0).cuda()  # (N, 9), float32, cuda, (meanxyz, minxyz, maxxyz)
+        # labels = batch['labels'].squeeze(dim=0).cuda()  # (N), long, cuda
+        # grid_center_gt = batch['grid_center_gt'].squeeze(dim=0).cuda()
+        # grid_center_offset = batch['grid_center_offset'].squeeze(dim=0).cuda()
+        # grid_instance_label = batch['grid_instance_label'].squeeze(dim=0).cuda()
 
         # point_offset_preds = instance_info[:, 0:3] - coords_float
 
         # point_semantic_preds = labels
-        #
+
         # fake_grid_center = torch.zeros_like(grid_center_preds)
         # fake_grid_center[0, grid_center_gt.long()] = 1
         # grid_center_preds = fake_grid_center
-        #
+
         # grid_center_offset_preds[grid_center_gt.long(), :] = grid_center_offset
-        #
+
         # grid_center_semantic_preds = grid_instance_label
+        # grid_instance_label[grid_instance_label == -100] = 20
 
         ##### preds
         with torch.no_grad():
