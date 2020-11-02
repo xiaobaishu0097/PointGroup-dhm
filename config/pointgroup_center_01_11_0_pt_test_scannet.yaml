@@ -27,7 +27,7 @@ STRUCTURE:
   block_reps: 2
   scatter_type: max
   unet3d_num_levels: 3
-  model_mode: 1 # 0: weihao 1: heming 2: mehrdard
+  model_mode: 0 # 0: weihao 1: heming 2: mehrdard
 
   use_coords: True
 
@@ -46,7 +46,7 @@ TRAIN:
   focal_loss_gamma: 2
   heatmap_sigma: 0
   min_IoU: 0.5
-  offset_norm_criterion: triplet # l1 or l2
+  offset_norm_criterion: l2 # l1 or l2
   triplet_margin: 0.3
   triplet_p: 1
 
@@ -68,11 +68,11 @@ GROUP:
   cluster_shift_meanActive: 300
   cluster_npoint_thre: 50
 
-  prepare_epochs: 128
+  prepare_epochs: 384
 
 TEST:
   split: val
-  test_epoch: 1
+  test_epoch: 256
   test_workers: 16
   test_seed: 567
 

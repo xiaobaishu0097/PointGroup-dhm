@@ -161,29 +161,29 @@ class PointGroup(nn.Module):
 
         #### pointnet++ encoder
         self.encoder = pointnet.LocalPoolPointnet(
-            c_dim=32, dim=6, hidden_dim=32, scatter_type=cfg.scatter_type,
-            unet3d=True, unet3d_kwargs={"num_levels": cfg.unet3d_num_levels, "f_maps": 32, "in_channels": 32, "out_channels": 32},
+            c_dim=m, dim=6, hidden_dim=m, scatter_type=cfg.scatter_type,
+            unet3d=True, unet3d_kwargs={"num_levels": cfg.unet3d_num_levels, "f_maps": m, "in_channels": m, "out_channels": m},
             grid_resolution=32, plane_type='grid',
             padding=0.1, n_blocks=5
         )
 
         #### center prediction
         self.grid_center_pred = nn.Sequential(
-            nn.Linear(32, 32),
+            nn.Linear(m, m),
             nn.ReLU(),
-            nn.Linear(32, 1)
+            nn.Linear(m, 1)
         )
 
         self.grid_center_semantic = nn.Sequential(
-            nn.Linear(32, 32),
+            nn.Linear(m, m),
             nn.ReLU(),
-            nn.Linear(32, classes)
+            nn.Linear(m, classes)
         )
 
         self.grid_center_offset = nn.Sequential(
-            nn.Linear(32, 32),
+            nn.Linear(m, m),
             nn.ReLU(),
-            nn.Linear(32, 3)
+            nn.Linear(m, 3)
         )
 
         if self.model_mode == 0:
@@ -204,7 +204,7 @@ class PointGroup(nn.Module):
 
         elif self.model_mode == 1:
             self.input_conv = spconv.SparseSequential(
-                spconv.SubMConv3d(32, m, kernel_size=3, padding=1, bias=False, indice_key='subm1')
+                spconv.SubMConv3d(m, m, kernel_size=3, padding=1, bias=False, indice_key='subm1')
             )
 
             self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
@@ -228,11 +228,11 @@ class PointGroup(nn.Module):
             ### convolutional occupancy networks decoder
             self.decoder = decoder.LocalDecoder(
                 dim=3,
-                c_dim=32,
-                hidden_size=32,
+                c_dim=m,
+                hidden_size=m,
             )
             self.input_conv = spconv.SparseSequential(
-                spconv.SubMConv3d(32, m, kernel_size=3, padding=1, bias=False, indice_key='subm1')
+                spconv.SubMConv3d(m, m, kernel_size=3, padding=1, bias=False, indice_key='subm1')
             )
 
             self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
@@ -558,7 +558,12 @@ def model_fn_decorator(test=False):
 
     #### criterion
     semantic_criterion = nn.CrossEntropyLoss(ignore_index=cfg.ignore_label).cuda()
-    offset_norm_criterion = nn.SmoothL1Loss().cuda()
+    if cfg.offset_norm_criterion == 'l1':
+        offset_norm_criterion = nn.SmoothL1Loss().cuda()
+    elif cfg.offset_norm_criterion == 'l2':
+        offset_norm_criterion = nn.MSELoss().cuda()
+    elif cfg.offset_norm_criterion == 'triplet':
+        offset_norm_criterion = nn.TripletMarginLoss(margin=cfg.triplet_margin, p=cfg.triplet_p).cuda()
     center_criterion = WeightedFocalLoss(alpha=cfg.focal_loss_alpha, gamma=cfg.focal_loss_gamma).cuda()
     center_semantic_criterion = nn.CrossEntropyLoss(ignore_index=cfg.ignore_label).cuda()
     center_offset_criterion = nn.L1Loss().cuda()
@@ -712,7 +717,8 @@ def model_fn_decorator(test=False):
         loss_inp = {}
 
         loss_inp['pt_offsets'] = (
-            point_offset_preds, coords_float.squeeze(dim=0), instance_info.squeeze(dim=0), instance_labels.squeeze(dim=0)
+            point_offset_preds, coords_float.squeeze(dim=0), instance_info.squeeze(dim=0),
+            instance_centers.squeeze(dim=0), instance_labels.squeeze(dim=0)
         )
         loss_inp['semantic_scores'] = (point_semantic_preds, labels.squeeze(dim=0))
 
@@ -759,7 +765,7 @@ def model_fn_decorator(test=False):
         loss_out['semantic_loss'] = (semantic_loss, semantic_scores.shape[0])
 
         '''offset loss'''
-        pt_offsets, coords, instance_info, instance_labels = loss_inp['pt_offsets']
+        pt_offsets, coords, instance_info, instance_center, instance_labels = loss_inp['pt_offsets']
         # pt_offsets: (N, 3), float, cuda
         # coords: (N, 3), float32
         # instance_info: (N, 9), float32 tensor (meanxyz, minxyz, maxxyz)
@@ -767,7 +773,22 @@ def model_fn_decorator(test=False):
 
         gt_offsets = instance_info[:, 0:3] - coords  # (N, 3)
         pt_valid_index = instance_labels != cfg.ignore_label
-        offset_norm_loss = offset_norm_criterion(pt_offsets[pt_valid_index], gt_offsets[pt_valid_index])
+        if cfg.offset_norm_criterion == 'l1' or cfg.offset_norm_criterion == 'l2':
+            offset_norm_loss = offset_norm_criterion(pt_offsets[pt_valid_index], gt_offsets[pt_valid_index])
+        elif cfg.offset_norm_criterion == 'triplet':
+            positive_offset = instance_info[:, 0:3].unsqueeze(dim=1).repeat(1, instance_center.shape[0], 1)
+            negative_offset = instance_center.unsqueeze(dim=0).repeat(coords.shape[0], 1, 1)
+            positive_offset_index = (negative_offset == positive_offset) == torch.ones(3, dtype=torch.uint8).cuda()
+            negative_offset[positive_offset_index] = 100
+            negative_offset = negative_offset - positive_offset
+            negative_offset_index = torch.norm(
+                gt_offsets.unsqueeze(dim=1).repeat(1, instance_center.shape[0], 1) - negative_offset, dim=2
+            ).topk(1, dim=1, largest=False)[1][:, 0]
+            negative_offset = instance_center[negative_offset_index] - coords
+
+            offset_norm_loss = offset_norm_criterion(
+                pt_offsets[pt_valid_index], gt_offsets[pt_valid_index], negative_offset[pt_valid_index]
+            )
         # pt_diff = pt_offsets - gt_offsets  # (N, 3)
         # pt_dist = torch.sum(torch.abs(pt_diff), dim=-1)  # (N)
         valid = (instance_labels != cfg.ignore_label).float()

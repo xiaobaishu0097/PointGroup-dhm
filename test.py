@@ -108,10 +108,15 @@ def test(model, model_fn, data_name, epoch):
 
             inst_cent_cand_xyz = (grid_xyz[topk_index_] + grid_center_offset_preds[topk_index_]).unsqueeze(dim=0)
             pt_cent_xyz = (pt_coords + pt_offsets).permute(1, 0, 2)
+            # l2 distance
             pt_inst_cent_dist = torch.norm(
                 pt_cent_xyz.repeat(1, inst_cent_cand_xyz.shape[1], 1) - inst_cent_cand_xyz.repeat(pt_cent_xyz.shape[0], 1, 1),
                 dim=2
             )
+            # l1 distance
+            # pt_inst_cent_dist = torch.sum(torch.abs(
+            #     pt_cent_xyz.repeat(1, inst_cent_cand_xyz.shape[1], 1) - inst_cent_cand_xyz.repeat(pt_cent_xyz.shape[0], 1, 1)
+            # ), dim=2)
             ### set the category restristion during instance generation
             inst_identity_mat = torch.nn.functional.one_hot(
                 grid_center_semantic_preds[topk_index_].to(torch.long), num_classes=cfg.classes+1

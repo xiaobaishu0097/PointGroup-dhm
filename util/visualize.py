@@ -218,7 +218,7 @@ def get_coords_color(opt):
 
     elif (opt.task == 'semantic_pred'):
         assert opt.room_split != 'train'
-        semantic_file = os.path.join(opt.result_root, opt.room_split, 'semantic', opt.room_name + '.npy')
+        semantic_file = os.path.join(opt.result_root, opt.room_split, 'semantic_pred', opt.room_name + '.npy')
         assert os.path.isfile(semantic_file), 'No semantic result - {}.'.format(semantic_file)
         label_pred = np.load(semantic_file).astype(np.int)  # 0~19
         label_pred_rgb = np.array(itemgetter(*SEMANTIC_NAMES[label_pred])(CLASS_COLOR))
