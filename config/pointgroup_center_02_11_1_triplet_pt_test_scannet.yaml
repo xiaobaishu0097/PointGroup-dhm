@@ -41,13 +41,13 @@ TRAIN:
   momentum: 0.9
   weight_decay: 0.0001
   save_freq: 16  # also eval_freq
-  loss_weight: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0] # center, center_semantic, center_offset, semantic, pt_offset_norm, pt_offset_dir
+  loss_weight: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0] # center, center_semantic, center_offset, semantic, pt_offset_norm, pt_offset_dir
   focal_loss_alpha: 0.25
   focal_loss_gamma: 2
   heatmap_sigma: 0
   min_IoU: 0.5
   offset_norm_criterion: triplet # l1 or l2
-  triplet_margin: 0.0
+  triplet_margin: 0.5
   triplet_p: 1
 
   fg_thresh: 0.75
