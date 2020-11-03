@@ -776,18 +776,28 @@ def model_fn_decorator(test=False):
         if cfg.offset_norm_criterion == 'l1' or cfg.offset_norm_criterion == 'l2':
             offset_norm_loss = offset_norm_criterion(pt_offsets[pt_valid_index], gt_offsets[pt_valid_index])
         elif cfg.offset_norm_criterion == 'triplet':
+            shifted_coords = coords + pt_offsets
+            gt_coords = instance_info[:, :3]
+
             positive_offset = instance_info[:, 0:3].unsqueeze(dim=1).repeat(1, instance_center.shape[0], 1)
             negative_offset = instance_center.unsqueeze(dim=0).repeat(coords.shape[0], 1, 1)
-            positive_offset_index = (negative_offset == positive_offset) == torch.ones(3, dtype=torch.bool).cuda()
+            positive_offset_index = (negative_offset == positive_offset).to(torch.uint8) == torch.ones(3, dtype=torch.uint8).cuda()
             negative_offset[positive_offset_index] = 100
             negative_offset = negative_offset - positive_offset
             negative_offset_index = torch.norm(
                 gt_offsets.unsqueeze(dim=1).repeat(1, instance_center.shape[0], 1) - negative_offset, dim=2
             ).topk(1, dim=1, largest=False)[1][:, 0]
-            negative_offset = instance_center[negative_offset_index] - coords
 
+            ### calculate triplet loss based predicted offset vector and gt offset vector
+            # negative_offset = instance_center[negative_offset_index] - coords
+            # offset_norm_loss = offset_norm_criterion(
+            #     pt_offsets[pt_valid_index], gt_offsets[pt_valid_index], negative_offset[pt_valid_index]
+            # )
+
+            ### calculate triplet loss based shifted coordinates and center coordinates
+            negative_offset = instance_center[negative_offset_index]
             offset_norm_loss = offset_norm_criterion(
-                pt_offsets[pt_valid_index], gt_offsets[pt_valid_index], negative_offset[pt_valid_index]
+                shifted_coords[pt_valid_index], gt_coords[pt_valid_index], negative_offset[pt_valid_index]
             )
         # pt_diff = pt_offsets - gt_offsets  # (N, 3)
         # pt_dist = torch.sum(torch.abs(pt_diff), dim=-1)  # (N)
