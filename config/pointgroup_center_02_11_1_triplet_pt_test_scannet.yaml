@@ -47,7 +47,7 @@ TRAIN:
   heatmap_sigma: 0
   min_IoU: 0.5
   offset_norm_criterion: triplet # l1 or l2
-  triplet_margin: 0.25
+  triplet_margin: 0.0
   triplet_p: 1
 
   fg_thresh: 0.75
@@ -72,7 +72,7 @@ GROUP:
 
 TEST:
   split: val
-  test_epoch: 256
+  test_epoch: 144
   test_workers: 16
   test_seed: 567
 
