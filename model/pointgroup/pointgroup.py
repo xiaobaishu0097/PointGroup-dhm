@@ -778,7 +778,7 @@ def model_fn_decorator(test=False):
         elif cfg.offset_norm_criterion == 'triplet':
             positive_offset = instance_info[:, 0:3].unsqueeze(dim=1).repeat(1, instance_center.shape[0], 1)
             negative_offset = instance_center.unsqueeze(dim=0).repeat(coords.shape[0], 1, 1)
-            positive_offset_index = (negative_offset == positive_offset) == torch.ones(3, dtype=torch.uint8).cuda()
+            positive_offset_index = (negative_offset == positive_offset) == torch.ones(3, dtype=torch.bool).cuda()
             negative_offset[positive_offset_index] = 100
             negative_offset = negative_offset - positive_offset
             negative_offset_index = torch.norm(
