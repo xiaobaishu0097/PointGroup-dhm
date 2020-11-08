@@ -277,9 +277,14 @@ class PointGroup(nn.Module):
 
         elif self.model_mode == 4:
             m = 16
-            self.input_conv = spconv.SparseSequential(
-                spconv.SubMConv3d(6, m, kernel_size=3, padding=1, bias=False, indice_key='subm1')
-            )
+            if cfg.use_coords:
+                self.input_conv = spconv.SparseSequential(
+                    spconv.SubMConv3d(6, m, kernel_size=3, padding=1, bias=False, indice_key='subm1')
+                )
+            else:
+                self.input_conv = spconv.SparseSequential(
+                    spconv.SubMConv3d(3, m, kernel_size=3, padding=1, bias=False, indice_key='subm1')
+                )
 
             self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
                                indice_key_id=1)
