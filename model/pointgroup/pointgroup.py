@@ -803,10 +803,10 @@ def model_fn_decorator(test=False):
             semi_negative_sample_index = torch.ones(shifted_coords.shape[0], dtype=torch.uint8).cuda()
             # ignore points whose distance from the second closest point is larger than the triplet margin
             semi_negative_sample_index[
-                (positive_distance - negative_distance.topk(2, dim=1, largest=False)[0][:, 1]) > cfg.triplet_margin] = 0
+                (negative_distance.topk(1, dim=1, largest=False)[0][:, -1] - positive_distance) > cfg.triplet_margin] = 0
             # ignore points close to the true instance center
             semi_negative_sample_index[
-                (positive_distance - negative_distance.topk(2, dim=1, largest=False)[0][:, 1]) == 0] = 0
+                (negative_distance.topk(1, dim=1, largest=False)[0][:, -1] - positive_distance) == 0] = 0
             # ignore points with -100 instance label
             semi_negative_sample_index[instance_labels == cfg.ignore_label] = 0
 
