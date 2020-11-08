@@ -319,20 +319,20 @@ class PointGroup(nn.Module):
                 param.requires_grad = False
 
         #### load pretrain weights
-        if self.model_mode == 4:
-            self.pretrain_path = '/home/dhm/Auxiliary_Code/PointGroup/exp/scannetv2/pointgroup/pointgroup_run1_scannet/pointgroup_run1_scannet-000000384.pth'
-            self.pretrain_module = ['input_conv', 'unet', 'output_layer', 'linear', 'offset', 'offset_linear']
-            pretrain_dict = torch.load(self.pretrain_path)
-            for m in self.pretrain_module:
-                print(
-                    "Load pretrained " + m + ": %d/%d" % utils.load_model_param(module_map[m], pretrain_dict, prefix=m))
-
-            self.pretrain_path = '/home/dhm/Code/Pointgroup_dhm/exp/scannetv2/pointgroup/pointgroup_center_30_10_scannet/pointgroup_center_30_10_scannet-000000384.pth'
-            self.pretrain_module = ['module.encoder', 'module.grid_center_pred', 'module.grid_center_semantic', 'module.grid_center_offset']
-            pretrain_dict = torch.load(self.pretrain_path)
-            for m in self.pretrain_module:
-                print(
-                    "Load pretrained " + m + ": %d/%d" % utils.load_model_param(module_map[m], pretrain_dict, prefix=m))
+        # if self.model_mode == 4:
+        #     self.pretrain_path = '/home/dhm/Auxiliary_Code/PointGroup/exp/scannetv2/pointgroup/pointgroup_run1_scannet/pointgroup_run1_scannet-000000384.pth'
+        #     self.pretrain_module = ['input_conv', 'unet', 'output_layer', 'linear', 'offset', 'offset_linear']
+        #     pretrain_dict = torch.load(self.pretrain_path)
+        #     for m in self.pretrain_module:
+        #         print(
+        #             "Load pretrained " + m + ": %d/%d" % utils.load_model_param(module_map[m], pretrain_dict, prefix=m))
+        #
+        #     self.pretrain_path = '/home/dhm/Code/Pointgroup_dhm/exp/scannetv2/pointgroup/pointgroup_center_30_10_scannet/pointgroup_center_30_10_scannet-000000384.pth'
+        #     self.pretrain_module = ['module.encoder', 'module.grid_center_pred', 'module.grid_center_semantic', 'module.grid_center_offset']
+        #     pretrain_dict = torch.load(self.pretrain_path)
+        #     for m in self.pretrain_module:
+        #         print(
+        #             "Load pretrained " + m + ": %d/%d" % utils.load_model_param(module_map[m], pretrain_dict, prefix=m))
 
         if self.pretrain_path is not None:
             pretrain_dict = torch.load(self.pretrain_path)
