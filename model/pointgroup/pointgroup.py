@@ -787,7 +787,7 @@ def model_fn_decorator(test=False):
 
             # positive_offset = instance_info[:, 0:3].unsqueeze(dim=1).repeat(1, instance_center.shape[0], 1)
             # negative_offset = instance_center.unsqueeze(dim=0).repeat(coords.shape[0], 1, 1)
-            # positive_offset_index = (negative_offset == positive_offset).to(torch.uint8) == torch.ones(3, dtype=torch.uint8).cuda()
+            # positive_offset_index = (negative_offset == positive_offset).to(torch.bool) == torch.ones(3, dtype=torch.bool).cuda()
             # negative_offset[positive_offset_index] = 100
             # negative_offset = negative_offset - positive_offset
             # negative_offset_index = torch.norm(
@@ -805,7 +805,7 @@ def model_fn_decorator(test=False):
             negative_offset_index = (
                     negative_distance - positive_distance.unsqueeze(dim=1).repeat(1, instance_center.shape[0])
             ).min(dim=1)[1]
-            semi_negative_sample_index = torch.ones(shifted_coords.shape[0], dtype=torch.uint8).cuda()
+            semi_negative_sample_index = torch.ones(shifted_coords.shape[0], dtype=torch.bool).cuda()
             # ignore points whose distance from the second closest point is larger than the triplet margin
             semi_negative_sample_index[
                 (negative_distance.topk(1, dim=1, largest=False)[0][:, -1] - positive_distance) > cfg.triplet_margin] = 0
