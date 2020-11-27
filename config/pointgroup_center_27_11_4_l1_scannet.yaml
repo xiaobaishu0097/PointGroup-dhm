@@ -27,7 +27,7 @@ STRUCTURE:
   block_reps: 2
   scatter_type: max
   unet3d_num_levels: 3
-  model_mode: 4 # 0: weihao 1: heming 2: mehrdard
+  model_mode: 1
 
   use_coords: True
 
@@ -37,7 +37,7 @@ TRAIN:
   optim: Adam # Adam or SGD
   lr: 0.001
   step_epoch: 32
-  multiplier: 0.5
+  multiplier: 0.8
   momentum: 0.9
   weight_decay: 0.0001
   save_freq: 16  # also eval_freq
@@ -46,11 +46,11 @@ TRAIN:
   focal_loss_gamma: 2
   heatmap_sigma: 0
   min_IoU: 0.5
-  offset_norm_criterion: triplet # l1 or l2
+  offset_norm_criterion: l1 # l1 or l2 or triplet
   triplet_margin: 0.3
   triplet_p: 1
 
-  constrastive_loss: True
+  constrastive_loss: False
 
   fg_thresh: 0.75
   bg_thresh: 0.25
@@ -74,14 +74,14 @@ GROUP:
 
 TEST:
   split: val
-  test_epoch: 1
+  test_epoch: 384
   test_workers: 16
   test_seed: 567
 
   TEST_NMS_THRESH: 0.3
   TEST_SCORE_THRESH: 0.09
   TEST_NPOINT_THRESH: 100
-  TEST_DIST_THRESH: 2
+  TEST_DIST_THRESH: 5
 
   eval: True
   save_grid_points: True

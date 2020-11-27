@@ -835,6 +835,11 @@ def model_fn_decorator(test=False):
             if torch.isnan(offset_norm_triplet_loss):
                 offset_norm_triplet_loss = torch.tensor(0, dtype=torch.float).cuda()
             loss_out['offset_norm_triplet_loss'] = (offset_norm_triplet_loss, semi_negative_sample_index.to(torch.float32).sum())
+
+        # if cfg.constrastive_loss:
+        #     shifted_coords = coords + pt_offsets
+
+
         # pt_diff = pt_offsets - gt_offsets  # (N, 3)
         # pt_dist = torch.sum(torch.abs(pt_diff), dim=-1)  # (N)
         valid = (instance_labels != cfg.ignore_label).float()
