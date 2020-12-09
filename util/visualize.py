@@ -101,7 +101,7 @@ def get_coords_color(opt):
         pt_offsets_file = os.path.join(opt.result_root, opt.room_split, 'pt_offsets', opt.room_name + '.npy')
         assert os.path.isfile(pt_offsets_file), 'No grid points result - {}.'.format(pt_offsets_file)
         pt_offsets = np.load(pt_offsets_file)
-        xyz = xyz + pt_offsets
+        xyz = xyz + 1 * pt_offsets
 
         inst_centers = []
         inst_sizes = []

@@ -148,6 +148,7 @@ class PointGroup(nn.Module):
 
         self.model_mode = cfg.model_mode
         self.reso_grid = 32
+        self.cluster_sets = cfg.cluster_sets
 
         norm_fn = functools.partial(nn.BatchNorm1d, eps=1e-4, momentum=0.1)
 
@@ -159,164 +160,286 @@ class PointGroup(nn.Module):
         if cfg.use_coords:
             input_c += 3
 
-        #### pointnet++ encoder
-        self.encoder = pointnet.LocalPoolPointnet(
-            c_dim=m, dim=6, hidden_dim=m, scatter_type=cfg.scatter_type,
-            unet3d=True, unet3d_kwargs={"num_levels": cfg.unet3d_num_levels, "f_maps": m, "in_channels": m, "out_channels": m},
-            grid_resolution=32, plane_type='grid',
-            padding=0.1, n_blocks=5
+        ### Our target model, based on Panoptic Deeplab
+        if self.model_mode == 0 or self.model_mode == 'Zheng_panoptic_wpointnet_PointGroup':
+            #### PointNet backbone encoder
+            self.pointnet_backbone_encoder = pointnet.LocalPoolPointnet(
+                c_dim=m, dim=6, hidden_dim=m, scatter_type=cfg.scatter_type,
+                unet3d=True,
+                unet3d_kwargs={"num_levels": cfg.unet3d_num_levels, "f_maps": m, "in_channels": m, "out_channels": m},
+                grid_resolution=32, plane_type='grid',
+                padding=0.1, n_blocks=5
+            )
+
+            ### point prediction branch
+            ### sparse 3D U-Net
+            self.input_conv = spconv.SparseSequential(
+                spconv.SubMConv3d(m, m, kernel_size=3, padding=1, bias=False, indice_key='subm1')
+            )
+
+            self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
+                               indice_key_id=1)
+
+            self.output_layer = spconv.SparseSequential(
+                norm_fn(m),
+                nn.ReLU()
+            )
+
+            ### centre prediction branch
+            ### convolutional occupancy networks decoder
+            self.centre_decoder = decoder.LocalDecoder(
+                dim=3,
+                c_dim=32,
+                hidden_size=32,
+            )
+
+        ### only the upper branch of our target model
+        elif self.model_mode == 'Zheng_upper_wpointnet_PointGroup':
+            #### PointNet backbone encoder
+            self.pointnet_backbone_encoder = pointnet.LocalPoolPointnet(
+                c_dim=m, dim=6, hidden_dim=m, scatter_type=cfg.scatter_type,
+                unet3d=False,
+                grid_resolution=32, plane_type='grid',
+                padding=0.1, n_blocks=5
+            )
+
+            ### point prediction branch
+            ### sparse 3D U-Net
+            self.input_conv = spconv.SparseSequential(
+                spconv.SubMConv3d(m, m, kernel_size=3, padding=1, bias=False, indice_key='subm1')
+            )
+
+            self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
+                               indice_key_id=1)
+
+            self.output_layer = spconv.SparseSequential(
+                norm_fn(m),
+                nn.ReLU()
+            )
+
+        ### Our target model without PointNet encoder
+        ### Ablation study: figure out the performance improvement of PointNet encoder
+        elif self.model_mode == 'Zheng_panoptic_wopointnet_PointGroup':
+            ### point prediction branch
+            ### sparse 3D U-Net
+            self.input_conv = spconv.SparseSequential(
+                spconv.SubMConv3d(input_c, m, kernel_size=3, padding=1, bias=False, indice_key='subm1')
+            )
+
+            self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
+                               indice_key_id=1)
+
+            self.output_layer = spconv.SparseSequential(
+                norm_fn(m),
+                nn.ReLU()
+            )
+
+            ### centre prediction branch
+            #### PointNet encoder
+            self.pointnet_centre_encoder = pointnet.LocalPoolPointnet(
+                c_dim=m, dim=6, hidden_dim=m, scatter_type=cfg.scatter_type,
+                unet3d=True,
+                unet3d_kwargs={"num_levels": cfg.unet3d_num_levels, "f_maps": m, "in_channels": m, "out_channels": m},
+                grid_resolution=32, plane_type='grid',
+                padding=0.1, n_blocks=5
+            )
+
+            ### convolutional occupancy networks decoder
+            self.centre_decoder = decoder.LocalDecoder(
+                dim=3,
+                c_dim=32,
+                hidden_size=32,
+            )
+
+        ### only the upper branch of our target model without PointNet encoder
+        elif self.model_mode == 'Zheng_upper_wopointnet_PointGroup':
+            ### point prediction branch
+            ### sparse 3D U-Net
+            self.input_conv = spconv.SparseSequential(
+                spconv.SubMConv3d(input_c, m, kernel_size=3, padding=1, bias=False, indice_key='subm1')
+            )
+
+            self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
+                               indice_key_id=1)
+
+            self.output_layer = spconv.SparseSequential(
+                norm_fn(m),
+                nn.ReLU()
+            )
+
+        ### same network architecture as PointGroup
+        elif self.model_mode == 'Du_original_PointGroup':
+            self.input_conv = spconv.SparseSequential(
+                spconv.SubMConv3d(input_c, m, kernel_size=3, padding=1, bias=False, indice_key='subm1')
+            )
+
+            self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
+                               indice_key_id=1)
+
+            self.output_layer = spconv.SparseSequential(
+                norm_fn(m),
+                nn.ReLU()
+            )
+
+            #### score branch
+            self.score_unet = UBlock([m, 2 * m], norm_fn, 2, block, indice_key_id=1)
+            self.score_outputlayer = spconv.SparseSequential(
+                norm_fn(m),
+                nn.ReLU()
+            )
+            self.score_linear = nn.Linear(m, 1)
+
+        # elif self.model_mode == 1:
+        #     self.input_conv = spconv.SparseSequential(
+        #         spconv.SubMConv3d(m, m, kernel_size=3, padding=1, bias=False, indice_key='subm1')
+        #     )
+        #
+        #     self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
+        #                        indice_key_id=1)
+        #
+        #     self.output_layer = spconv.SparseSequential(
+        #         norm_fn(m),
+        #         nn.ReLU()
+        #     )
+        #     #### semantic segmentation
+        #     self.linear = nn.Linear(m, classes)  # bias(default): True
+        #
+        #     #### offset
+        #     self.offset = nn.Sequential(
+        #         nn.Linear(m, m, bias=True),
+        #         norm_fn(m),
+        #         nn.ReLU(),
+        #     )
+        #     self.offset_linear = nn.Linear(m, 3, bias=True)
+        # elif self.model_mode == 2:
+        #     ### convolutional occupancy networks decoder
+        #     self.decoder = decoder.LocalDecoder(
+        #         dim=3,
+        #         c_dim=m,
+        #         hidden_size=m,
+        #     )
+        #     self.input_conv = spconv.SparseSequential(
+        #         spconv.SubMConv3d(m, m, kernel_size=3, padding=1, bias=False, indice_key='subm1')
+        #     )
+        #
+        #     self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
+        #                        indice_key_id=1)
+        #
+        #     self.output_layer = spconv.SparseSequential(
+        #         norm_fn(m),
+        #         nn.ReLU()
+        #     )
+        #
+        #     self.unet3d = UNet3D(num_levels=cfg.unet3d_num_levels, f_maps=32, in_channels=32, out_channels=32)
+        #
+        #     #### semantic segmentation
+        #     self.linear = nn.Linear(m, classes)  # bias(default): True
+        #
+        #     #### offset
+        #     self.offset = nn.Sequential(
+        #         nn.Linear(m, m, bias=True),
+        #         norm_fn(m),
+        #         nn.ReLU(),
+        #     )
+        #     self.offset_linear = nn.Linear(m, 3, bias=True)
+        #
+        # elif self.model_mode == 3:
+        #     ### convolutional occupancy networks decoder
+        #     self.decoder = decoder.LocalDecoder(
+        #         dim=3,
+        #         c_dim=32,
+        #         hidden_size=32,
+        #     )
+        #
+        #     self.point_offset = nn.Sequential(
+        #         nn.Linear(32, 32, bias=True),
+        #         nn.ReLU(),
+        #         nn.Linear(32, 3, bias=True),
+        #     )
+        #     self.point_semantic = nn.Sequential(
+        #         nn.Linear(32, 32, bias=True),
+        #         nn.ReLU(),
+        #         nn.Linear(32, classes, bias=True),
+        #     )
+        #
+        # elif self.model_mode == 4:
+        #     m = 16
+        #     if cfg.use_coords:
+        #         self.input_conv = spconv.SparseSequential(
+        #             spconv.SubMConv3d(6, m, kernel_size=3, padding=1, bias=False, indice_key='subm1')
+        #         )
+        #     else:
+        #         self.input_conv = spconv.SparseSequential(
+        #             spconv.SubMConv3d(3, m, kernel_size=3, padding=1, bias=False, indice_key='subm1')
+        #         )
+        #
+        #     self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
+        #                        indice_key_id=1)
+        #
+        #     self.output_layer = spconv.SparseSequential(
+        #         norm_fn(m),
+        #         nn.ReLU()
+        #     )
+        #     #### semantic segmentation
+        #     self.linear = nn.Linear(m, classes)  # bias(default): True
+        #
+        #     #### offset
+        #     self.offset = nn.Sequential(
+        #         nn.Linear(m, m, bias=True),
+        #         norm_fn(m),
+        #         nn.ReLU(),
+        #     )
+        #     self.offset_linear = nn.Linear(m, 3, bias=True)
+
+        self.apply(self.set_bn_init)
+
+        ### point prediction
+        self.point_offset = nn.Sequential(
+            nn.Linear(m, m, bias=True),
+            norm_fn(m),
+            nn.ReLU(),
+            nn.Linear(m, 3, bias=True),
         )
 
-        #### center prediction
-        self.grid_center_pred = nn.Sequential(
+        self.point_semantic = nn.Linear(m, classes)
+
+        #### centre prediction
+        ## centre probability
+        self.centre_pred = nn.Sequential(
             nn.Linear(m, m),
             nn.ReLU(),
             nn.Linear(m, 1)
         )
 
-        self.grid_center_semantic = nn.Sequential(
+        ## centre semantic
+        self.centre_semantic = nn.Sequential(
             nn.Linear(m, m),
             nn.ReLU(),
             nn.Linear(m, classes)
         )
 
-        self.grid_center_offset = nn.Sequential(
+        ## centre offset
+        self.centre_offset = nn.Sequential(
             nn.Linear(m, m),
             nn.ReLU(),
             nn.Linear(m, 3)
         )
 
-        if self.model_mode == 0:
-            ### convolutional occupancy networks decoder
-            self.decoder = decoder.LocalDecoder(
-                dim=3,
-                c_dim=32,
-                hidden_size=32,
-            )
-
-            self.point_offset = nn.Sequential(
-                nn.Linear(32, 32, bias=True),
-                norm_fn(32),
-                nn.ReLU(),
-                nn.Linear(32, 3, bias=True),
-            )
-            self.point_semantic = nn.Linear(32, classes)
-
-        elif self.model_mode == 1:
-            self.input_conv = spconv.SparseSequential(
-                spconv.SubMConv3d(m, m, kernel_size=3, padding=1, bias=False, indice_key='subm1')
-            )
-
-            self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
-                               indice_key_id=1)
-
-            self.output_layer = spconv.SparseSequential(
-                norm_fn(m),
-                nn.ReLU()
-            )
-            #### semantic segmentation
-            self.linear = nn.Linear(m, classes)  # bias(default): True
-
-            #### offset
-            self.offset = nn.Sequential(
-                nn.Linear(m, m, bias=True),
-                norm_fn(m),
-                nn.ReLU(),
-            )
-            self.offset_linear = nn.Linear(m, 3, bias=True)
-        elif self.model_mode == 2:
-            ### convolutional occupancy networks decoder
-            self.decoder = decoder.LocalDecoder(
-                dim=3,
-                c_dim=m,
-                hidden_size=m,
-            )
-            self.input_conv = spconv.SparseSequential(
-                spconv.SubMConv3d(m, m, kernel_size=3, padding=1, bias=False, indice_key='subm1')
-            )
-
-            self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
-                               indice_key_id=1)
-
-            self.output_layer = spconv.SparseSequential(
-                norm_fn(m),
-                nn.ReLU()
-            )
-
-            self.unet3d = UNet3D(num_levels=cfg.unet3d_num_levels, f_maps=32, in_channels=32, out_channels=32)
-
-            #### semantic segmentation
-            self.linear = nn.Linear(m, classes)  # bias(default): True
-
-            #### offset
-            self.offset = nn.Sequential(
-                nn.Linear(m, m, bias=True),
-                norm_fn(m),
-                nn.ReLU(),
-            )
-            self.offset_linear = nn.Linear(m, 3, bias=True)
-
-        elif self.model_mode == 3:
-            ### convolutional occupancy networks decoder
-            self.decoder = decoder.LocalDecoder(
-                dim=3,
-                c_dim=32,
-                hidden_size=32,
-            )
-
-            self.point_offset = nn.Sequential(
-                nn.Linear(32, 32, bias=True),
-                nn.ReLU(),
-                nn.Linear(32, 3, bias=True),
-            )
-            self.point_semantic = nn.Sequential(
-                nn.Linear(32, 32, bias=True),
-                nn.ReLU(),
-                nn.Linear(32, classes, bias=True),
-            )
-
-        elif self.model_mode == 4:
-            m = 16
-            if cfg.use_coords:
-                self.input_conv = spconv.SparseSequential(
-                    spconv.SubMConv3d(6, m, kernel_size=3, padding=1, bias=False, indice_key='subm1')
-                )
-            else:
-                self.input_conv = spconv.SparseSequential(
-                    spconv.SubMConv3d(3, m, kernel_size=3, padding=1, bias=False, indice_key='subm1')
-                )
-
-            self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
-                               indice_key_id=1)
-
-            self.output_layer = spconv.SparseSequential(
-                norm_fn(m),
-                nn.ReLU()
-            )
-            #### semantic segmentation
-            self.linear = nn.Linear(m, classes)  # bias(default): True
-
-            #### offset
-            self.offset = nn.Sequential(
-                nn.Linear(m, m, bias=True),
-                norm_fn(m),
-                nn.ReLU(),
-            )
-            self.offset_linear = nn.Linear(m, 3, bias=True)
-
         #### fix parameter
+        module_map = {}
+
         # module_map = {'input_conv': self.input_conv, 'unet': self.unet, 'output_layer': self.output_layer,
         #               'linear': self.linear, 'offset': self.offset, 'offset_linear': self.offset_linear,
         #               'score_unet': self.score_unet, 'score_outputlayer': self.score_outputlayer,
         #               'score_linear': self.score_linear}
-        # module_map = {}
-        if self.model_mode == 4:
-            module_map = {'input_conv': self.input_conv, 'unet': self.unet, 'output_layer': self.output_layer,
-                          'linear': self.linear, 'offset': self.offset, 'offset_linear': self.offset_linear,
-                          'module.encoder': self.encoder, 'module.grid_center_pred': self.grid_center_pred,
-                        'module.grid_center_semantic': self.grid_center_semantic, 'module.grid_center_offset': self.grid_center_offset}
-        else:
-            module_map = {}
+
+        # if self.model_mode == 'Du_original_PointGroup':
+        #     module_map = {'input_conv': self.input_conv, 'unet': self.unet, 'output_layer': self.output_layer,
+        #                   'linear': self.linear, 'offset': self.offset, 'offset_linear': self.offset_linear,
+        #                   'module.encoder': self.encoder, 'module.grid_center_pred': self.grid_center_pred,
+        #                 'module.grid_center_semantic': self.grid_center_semantic, 'module.grid_center_offset': self.grid_center_offset}
+        # else:
+        #     module_map = {}
 
         for m in self.fix_module:
             mod = module_map[m]
@@ -427,24 +550,18 @@ class PointGroup(nn.Module):
         '''
         ret = {}
 
-        encoded_feats = self.encoder(coords, rgb)
-        '''encoded_feats:{
-        coord: coordinate of points (b, n, 3)
-        index: index of points (b, 1, n)
-        point: feature of points (b, n, 32)
-        grid: grid features (b, c, grid_dim, grid_dim, grid_dim)
-        }
-        '''
-
         if self.model_mode == 0:
-            point_feats = self.decoder(encoded_feats['coord'], encoded_feats).squeeze(dim=0)
+            encoded_feats = self.pointnet_backbone_encoder(coords, rgb)
+            '''encoded_feats:{
+            coord: coordinate of points (b, n, 3)
+            index: index of points (b, 1, n)
+            point: feature of points (b, n, 32)
+            grid: grid features (b, c, grid_dim, grid_dim, grid_dim)
+            }
+            '''
 
-            point_offset_preds = self.point_offset(point_feats)
-            point_semantic_preds = self.point_semantic(point_feats)
-        elif self.model_mode == 1:
             voxel_feats = pointgroup_ops.voxelization(
                 encoded_feats['point'].squeeze(dim=0),
-                # input['pt_feats'].squeeze(dim=0),
                 input['v2p_map'].squeeze(dim=0),
                 input['mode']
             )  # (M, C), float, cuda
@@ -459,22 +576,42 @@ class PointGroup(nn.Module):
             output_feats = output.features[input_map.long()]
             output_feats = output_feats.squeeze(dim=0)
 
-            #### semantic segmentation
-            semantic_scores = self.linear(output_feats)  # (N, nClass), float
+            ### point prediction
+            #### point semantic label prediction
+            semantic_scores = self.point_semantic(output_feats)  # (N, nClass), float
             point_semantic_preds = semantic_scores
 
-            # ret['semantic_scores'] = semantic_scores
+            #### point offset prediction
+            point_offset_preds = self.point_offset(output_feats)  # (N, 3), float32
 
-            #### offset
-            pt_offsets = self.offset(output_feats) # (N, 3), float32
-            pt_offsets = self.offset_linear(pt_offsets)
-            point_offset_preds = pt_offsets
+            ### centre prediction
+            bs, c_dim, grid_size = encoded_feats['grid'].shape[0], encoded_feats['grid'].shape[1], \
+                                   encoded_feats['grid'].shape[2]
+            grid_feats = encoded_feats['grid'].reshape(bs, c_dim, -1).permute(0, 2, 1)
 
-            # ret['pt_offsets'] = pt_offsets
-        elif self.model_mode == 2:
+            centre_preds = self.centre_pred(grid_feats)
+            centre_semantic_preds = self.centre_semantic(grid_feats)
+            centre_offset_preds = self.centre_offset(grid_feats)
+
+            ret['point_semantic_preds'] = point_semantic_preds
+            ret['point_offset_preds'] = point_offset_preds
+
+            ret['centre_preds'] = centre_preds
+            ret['centre_semantic_preds'] = centre_semantic_preds
+            ret['centre_offset_preds'] = centre_offset_preds
+
+        elif self.model_mode == 'Zheng_panoptic_wpointnet_PointGroup':
+            encoded_feats = self.pointnet_backbone_encoder(coords, rgb)
+            '''encoded_feats:{
+            coord: coordinate of points (b, n, 3)
+            index: index of points (b, 1, n)
+            point: feature of points (b, n, 32)
+            grid: grid features (b, c, grid_dim, grid_dim, grid_dim)
+            }
+            '''
+
             voxel_feats = pointgroup_ops.voxelization(
                 encoded_feats['point'].squeeze(dim=0),
-                # input['pt_feats'],
                 input['v2p_map'].squeeze(dim=0),
                 input['mode']
             )  # (M, C), float, cuda
@@ -487,30 +624,107 @@ class PointGroup(nn.Module):
             output = self.unet(output)
             output = self.output_layer(output)
             output_feats = output.features[input_map.long()]
+            output_feats = output_feats.squeeze(dim=0)
 
-            grid_feats = self.generate_grid_features(encoded_feats['coord'], encoded_feats['point'] + output_feats.unsqueeze(dim=0))
-            grid_feats = self.unet3d(grid_feats)
-            encoded_feats['grid'] = grid_feats
+            ### point prediction
+            #### point semantic label prediction
+            semantic_scores = self.point_semantic(output_feats)  # (N, nClass), float
+            point_semantic_preds = semantic_scores
+            #### point offset prediction
+            point_offset_preds = self.point_offset(output_feats)  # (N, 3), float32
 
-            #### semantic segmentation
-            semantic_scores = self.linear(output_feats)  # (N, nClass), float
+            ### centre prediction
+            bs, c_dim, grid_size = encoded_feats['grid'].shape[0], encoded_feats['grid'].shape[1], \
+                                   encoded_feats['grid'].shape[2]
+            grid_feats = encoded_feats['grid'].reshape(bs, c_dim, -1).permute(0, 2, 1)
+
+            centre_preds = self.centre_pred(grid_feats)
+            centre_semantic_preds = self.centre_semantic(grid_feats)
+            centre_offset_preds = self.centre_offset(grid_feats)
+
+            # if (epoch > self.prepare_epochs):
+            #     #### get prooposal clusters
+            #     object_idxs = torch.nonzero(point_semantic_preds > 1).view(-1)
+            #
+            #     batch_idxs_ = batch_idxs[object_idxs]
+            #     batch_offsets_ = utils.get_batch_offsets(batch_idxs_, input['batch_size'])
+            #     coords_ = coords[object_idxs]
+            #     pt_offsets_ = point_offset_preds[object_idxs]
+            #
+            #     semantic_preds_cpu = point_semantic_preds[object_idxs].int().cpu()
+            #
+            #     if self.cluster_sets == 'Q':
+            #         idx_shift, start_len_shift = pointgroup_ops.ballquery_batch_p(coords_ + pt_offsets_, batch_idxs_,
+            #                                                                       batch_offsets_, self.cluster_radius,
+            #                                                                       self.cluster_shift_meanActive)
+            #         proposals_idx_shift, proposals_offset_shift = pointgroup_ops.bfs_cluster(semantic_preds_cpu,
+            #                                                                                  idx_shift.cpu(),
+            #                                                                                  start_len_shift.cpu(),
+            #                                                                                  self.cluster_npoint_thre)
+            #         proposals_idx_shift[:, 1] = object_idxs[proposals_idx_shift[:, 1].long()].int()
+            #         # proposals_idx_shift: (sumNPoint, 2), int, dim 0 for cluster_id, dim 1 for corresponding point idxs in N
+            #         # proposals_offset_shift: (nProposal + 1), int
+            #
+            #
+            #     if self.cluster_sets == 'P':
+            #         idx, start_len = pointgroup_ops.ballquery_batch_p(coords_, batch_idxs_, batch_offsets_, self.cluster_radius,
+            #                                                           self.cluster_meanActive)
+            #         proposals_idx, proposals_offset = pointgroup_ops.bfs_cluster(semantic_preds_cpu, idx.cpu(), start_len.cpu(),
+            #                                                                      self.cluster_npoint_thre)
+            #         proposals_idx[:, 1] = object_idxs[proposals_idx[:, 1].long()].int()
+            #         # proposals_idx: (sumNPoint, 2), int, dim 0 for cluster_id, dim 1 for corresponding point idxs in N
+            #         # proposals_offset: (nProposal + 1), int
+            #
+            #     proposals_idx_shift[:, 0] += (proposals_offset.size(0) - 1)
+            #     proposals_offset_shift += proposals_offset[-1]
+            #     proposals_idx = torch.cat((proposals_idx, proposals_idx_shift), dim=0)
+            #     proposals_offset = torch.cat((proposals_offset, proposals_offset_shift[1:]))
+            #
+            #     #### proposals voxelization again
+            #     input_feats, inp_map = self.clusters_voxelization(proposals_idx, proposals_offset, output_feats, coords,
+            #                                                       self.score_fullscale, self.score_scale, self.mode)
+            #
+            #     ret['proposal_scores'] = (scores, proposals_idx, proposals_offset)
+
+            ret['point_semantic_preds'] = point_semantic_preds
+            ret['point_offset_preds'] = point_offset_preds
+
+            ret['centre_preds'] = centre_preds
+            ret['centre_semantic_preds'] = centre_semantic_preds
+            ret['centre_offset_preds'] = centre_offset_preds
+
+        elif self.model_mode == 'Zheng_upper_wpointnet_PointGroup':
+            encoded_feats = self.pointnet_backbone_encoder(coords, rgb)
+
+            voxel_feats = pointgroup_ops.voxelization(
+                encoded_feats['point'].squeeze(dim=0),
+                input['v2p_map'].squeeze(dim=0),
+                input['mode']
+            )  # (M, C), float, cuda
+
+            input_ = spconv.SparseConvTensor(
+                voxel_feats, input['voxel_coords'].squeeze(dim=0),
+                input['spatial_shape'].squeeze(dim=0).cpu().numpy(), input['batch_size']
+            )
+            output = self.input_conv(input_)
+            output = self.unet(output)
+            output = self.output_layer(output)
+            output_feats = output.features[input_map.long()]
+            output_feats = output_feats.squeeze(dim=0)
+
+            ### point prediction
+            #### point semantic label prediction
+            semantic_scores = self.point_semantic(output_feats)  # (N, nClass), float
             point_semantic_preds = semantic_scores
 
-            #### offset
-            pt_offsets = self.offset(output_feats)  # (N, 3), float32
-            pt_offsets = self.offset_linear(pt_offsets)
-            point_offset_preds = pt_offsets
+            #### point offset prediction
+            point_offset_preds = self.point_offset(output_feats)  # (N, 3), float32
 
-        elif self.model_mode == 3:
-            point_feats = self.decoder(encoded_feats['coord'], encoded_feats).squeeze(dim=0)
-            point_feats = point_feats + encoded_feats['point'].squeeze(dim=0)
+            ret['point_semantic_preds'] = point_semantic_preds
+            ret['point_offset_preds'] = point_offset_preds
 
-            point_offset_preds = self.point_offset(point_feats)
-            point_semantic_preds = self.point_semantic(point_feats)
-
-        elif self.model_mode == 4:
+        elif self.model_mode == 'Zheng_panoptic_wopointnet_PointGroup':
             voxel_feats = pointgroup_ops.voxelization(
-                # encoded_feats['point'].squeeze(dim=0),
                 input['pt_feats'].squeeze(dim=0),
                 input['v2p_map'].squeeze(dim=0),
                 input['mode']
@@ -526,33 +740,266 @@ class PointGroup(nn.Module):
             output_feats = output.features[input_map.long()]
             output_feats = output_feats.squeeze(dim=0)
 
-            #### semantic segmentation
-            semantic_scores = self.linear(output_feats)  # (N, nClass), float
+            ### point prediction
+            #### point semantic label prediction
+            semantic_scores = self.point_semantic(output_feats)  # (N, nClass), float
             point_semantic_preds = semantic_scores
 
-            # ret['semantic_scores'] = semantic_scores
+            #### point offset prediction
+            point_offset_preds = self.point_offset(output_feats)  # (N, 3), float32
 
-            #### offset
-            pt_offsets = self.offset(output_feats) # (N, 3), float32
-            pt_offsets = self.offset_linear(pt_offsets)
-            point_offset_preds = pt_offsets
+            ### centre prediction
+            encoded_feats = self.pointnet_centre_encoder(coords, rgb)
+            bs, c_dim, grid_size = encoded_feats['grid'].shape[0], encoded_feats['grid'].shape[1], \
+                                   encoded_feats['grid'].shape[2]
+            grid_feats = encoded_feats['grid'].reshape(bs, c_dim, -1).permute(0, 2, 1)
 
-        bs, c_dim, grid_size = encoded_feats['grid'].shape[0], encoded_feats['grid'].shape[1], encoded_feats['grid'].shape[2]
-        grid_feats = encoded_feats['grid'].reshape(bs, c_dim, -1).permute(0, 2, 1)
+            centre_preds = self.centre_pred(grid_feats)
+            centre_semantic_preds = self.centre_semantic(grid_feats)
+            centre_offset_preds = self.centre_offset(grid_feats)
 
-        ### grid point center probabilty prediction
-        grid_center_preds = self.grid_center_pred(grid_feats)
+            ret['point_semantic_preds'] = point_semantic_preds
+            ret['point_offset_preds'] = point_offset_preds
 
-        grid_center_semantic_preds = self.grid_center_semantic(grid_feats)
+            ret['centre_preds'] = centre_preds
+            ret['centre_semantic_preds'] = centre_semantic_preds
+            ret['centre_offset_preds'] = centre_offset_preds
 
-        ### grid point center offset vector prediction
-        grid_center_offset_preds = self.grid_center_offset(grid_feats)
+        elif self.model_mode == 'Zheng_upper_wopointnet_PointGroup':
+            voxel_feats = pointgroup_ops.voxelization(
+                input['pt_feats'].squeeze(dim=0),
+                input['v2p_map'].squeeze(dim=0),
+                input['mode']
+            )  # (M, C), float, cuda
 
-        ret['point_semantic_preds'] = point_semantic_preds
-        ret['point_offset_preds'] = point_offset_preds
-        ret['grid_center_preds'] = grid_center_preds
-        ret['grid_center_semantic_preds'] = grid_center_semantic_preds
-        ret['grid_center_offset_preds'] = grid_center_offset_preds
+            input_ = spconv.SparseConvTensor(
+                voxel_feats, input['voxel_coords'].squeeze(dim=0),
+                input['spatial_shape'].squeeze(dim=0).cpu().numpy(), input['batch_size']
+            )
+            output = self.input_conv(input_)
+            output = self.unet(output)
+            output = self.output_layer(output)
+            output_feats = output.features[input_map.long()]
+            output_feats = output_feats.squeeze(dim=0)
+
+            ### point prediction
+            #### point semantic label prediction
+            semantic_scores = self.point_semantic(output_feats)  # (N, nClass), float
+            point_semantic_preds = semantic_scores
+
+            #### point offset prediction
+            point_offset_preds = self.point_offset(output_feats)  # (N, 3), float32
+
+            ret['point_semantic_preds'] = point_semantic_preds
+            ret['point_offset_preds'] = point_offset_preds
+
+        elif self.model_mode == 'Du_original_PointGroup':
+            voxel_feats = pointgroup_ops.voxelization(
+                input['pt_feats'].squeeze(dim=0),
+                input['v2p_map'].squeeze(dim=0),
+                input['mode']
+            )  # (M, C), float, cuda
+
+            input_ = spconv.SparseConvTensor(
+                voxel_feats, input['voxel_coords'].squeeze(dim=0),
+                input['spatial_shape'].squeeze(dim=0).cpu().numpy(), input['batch_size']
+            )
+            output = self.input_conv(input_)
+            output = self.unet(output)
+            output = self.output_layer(output)
+            output_feats = output.features[input_map.long()]
+            output_feats = output_feats.squeeze(dim=0)
+
+            ### point prediction
+            #### point semantic label prediction
+            semantic_scores = self.point_semantic(output_feats)  # (N, nClass), float
+            point_semantic_preds = semantic_scores
+
+            #### point offset prediction
+            point_offset_preds = self.point_offset(output_feats)  # (N, 3), float32
+
+            if (epoch > self.prepare_epochs):
+                #### get prooposal clusters
+                object_idxs = torch.nonzero(point_semantic_preds > 1).view(-1)
+
+                batch_idxs_ = batch_idxs[object_idxs]
+                batch_offsets_ = utils.get_batch_offsets(batch_idxs_, input['batch_size'])
+                coords_ = coords[object_idxs]
+                pt_offsets_ = point_offset_preds[object_idxs]
+
+                semantic_preds_cpu = point_semantic_preds[object_idxs].int().cpu()
+
+                idx_shift, start_len_shift = pointgroup_ops.ballquery_batch_p(coords_ + pt_offsets_, batch_idxs_,
+                                                                              batch_offsets_, self.cluster_radius,
+                                                                              self.cluster_shift_meanActive)
+                proposals_idx_shift, proposals_offset_shift = pointgroup_ops.bfs_cluster(semantic_preds_cpu,
+                                                                                         idx_shift.cpu(),
+                                                                                         start_len_shift.cpu(),
+                                                                                         self.cluster_npoint_thre)
+                proposals_idx_shift[:, 1] = object_idxs[proposals_idx_shift[:, 1].long()].int()
+                # proposals_idx_shift: (sumNPoint, 2), int, dim 0 for cluster_id, dim 1 for corresponding point idxs in N
+                # proposals_offset_shift: (nProposal + 1), int
+
+                idx, start_len = pointgroup_ops.ballquery_batch_p(coords_, batch_idxs_, batch_offsets_, self.cluster_radius,
+                                                                  self.cluster_meanActive)
+                proposals_idx, proposals_offset = pointgroup_ops.bfs_cluster(semantic_preds_cpu, idx.cpu(), start_len.cpu(),
+                                                                             self.cluster_npoint_thre)
+                proposals_idx[:, 1] = object_idxs[proposals_idx[:, 1].long()].int()
+                # proposals_idx: (sumNPoint, 2), int, dim 0 for cluster_id, dim 1 for corresponding point idxs in N
+                # proposals_offset: (nProposal + 1), int
+
+                proposals_idx_shift[:, 0] += (proposals_offset.size(0) - 1)
+                proposals_offset_shift += proposals_offset[-1]
+                proposals_idx = torch.cat((proposals_idx, proposals_idx_shift), dim=0)
+                proposals_offset = torch.cat((proposals_offset, proposals_offset_shift[1:]))
+
+                #### proposals voxelization again
+                input_feats, inp_map = self.clusters_voxelization(proposals_idx, proposals_offset, output_feats, coords,
+                                                                  self.score_fullscale, self.score_scale, self.mode)
+
+                #### score
+                score = self.score_unet(input_feats)
+                score = self.score_outputlayer(score)
+                score_feats = score.features[inp_map.long()]  # (sumNPoint, C)
+                score_feats = pointgroup_ops.roipool(score_feats, proposals_offset.cuda())  # (nProposal, C)
+                scores = self.score_linear(score_feats)  # (nProposal, 1)
+
+                ret['proposal_scores'] = (scores, proposals_idx, proposals_offset)
+
+            ret['point_semantic_preds'] = point_semantic_preds
+            ret['point_offset_preds'] = point_offset_preds
+
+
+        # if self.model_mode == 0 or self.model_mode == 'Zheng_panoptic_wpointnet_PointGroup':
+        #     voxel_feats = pointgroup_ops.voxelization(
+        #         encoded_feats['point'].squeeze(dim=0),
+        #         # input['pt_feats'].squeeze(dim=0),
+        #         input['v2p_map'].squeeze(dim=0),
+        #         input['mode']
+        #     )  # (M, C), float, cuda
+        #
+        #     input_ = spconv.SparseConvTensor(
+        #         voxel_feats, input['voxel_coords'].squeeze(dim=0),
+        #         input['spatial_shape'].squeeze(dim=0).cpu().numpy(), input['batch_size']
+        #     )
+        #     output = self.input_conv(input_)
+        #     output = self.unet(output)
+        #     output = self.output_layer(output)
+        #     output_feats = output.features[input_map.long()]
+        #     output_feats = output_feats.squeeze(dim=0)
+        #
+        #     #### semantic segmentation
+        #     point_semantic_preds = self.linear(output_feats)  # (N, nClass), float
+        #
+        #     #### offset
+        #     pt_offsets = self.offset(output_feats) # (N, 3), float32
+        #     pt_offsets = self.offset_linear(pt_offsets)
+        #     point_offset_preds = pt_offsets
+        #
+        #     # ret['pt_offsets'] = pt_offsets
+        #
+        # if self.model_mode == 0:
+        #     point_feats = self.decoder(encoded_feats['coord'], encoded_feats).squeeze(dim=0)
+        #
+        #     point_offset_preds = self.point_offset(point_feats)
+        #     point_semantic_preds = self.point_semantic(point_feats)
+        # elif self.model_mode == 1 or self.model_mode == 'Zheng_panoptic_wpointnet_PointGroup':
+        #     voxel_feats = pointgroup_ops.voxelization(
+        #         encoded_feats['point'].squeeze(dim=0),
+        #         # input['pt_feats'].squeeze(dim=0),
+        #         input['v2p_map'].squeeze(dim=0),
+        #         input['mode']
+        #     )  # (M, C), float, cuda
+        #
+        #     input_ = spconv.SparseConvTensor(
+        #         voxel_feats, input['voxel_coords'].squeeze(dim=0),
+        #         input['spatial_shape'].squeeze(dim=0).cpu().numpy(), input['batch_size']
+        #     )
+        #     output = self.input_conv(input_)
+        #     output = self.unet(output)
+        #     output = self.output_layer(output)
+        #     output_feats = output.features[input_map.long()]
+        #     output_feats = output_feats.squeeze(dim=0)
+        #
+        #     #### semantic segmentation
+        #     semantic_scores = self.linear(output_feats)  # (N, nClass), float
+        #     point_semantic_preds = semantic_scores
+        #
+        #     # ret['semantic_scores'] = semantic_scores
+        #
+        #     #### offset
+        #     pt_offsets = self.offset(output_feats) # (N, 3), float32
+        #     pt_offsets = self.offset_linear(pt_offsets)
+        #     point_offset_preds = pt_offsets
+        #
+        #     # ret['pt_offsets'] = pt_offsets
+        # elif self.model_mode == 2:
+        #     voxel_feats = pointgroup_ops.voxelization(
+        #         encoded_feats['point'].squeeze(dim=0),
+        #         # input['pt_feats'],
+        #         input['v2p_map'].squeeze(dim=0),
+        #         input['mode']
+        #     )  # (M, C), float, cuda
+        #
+        #     input_ = spconv.SparseConvTensor(
+        #         voxel_feats, input['voxel_coords'].squeeze(dim=0),
+        #         input['spatial_shape'].squeeze(dim=0).cpu().numpy(), input['batch_size']
+        #     )
+        #     output = self.input_conv(input_)
+        #     output = self.unet(output)
+        #     output = self.output_layer(output)
+        #     output_feats = output.features[input_map.long()]
+        #
+        #     grid_feats = self.generate_grid_features(encoded_feats['coord'], encoded_feats['point'] + output_feats.unsqueeze(dim=0))
+        #     grid_feats = self.unet3d(grid_feats)
+        #     encoded_feats['grid'] = grid_feats
+        #
+        #     #### semantic segmentation
+        #     semantic_scores = self.linear(output_feats)  # (N, nClass), float
+        #     point_semantic_preds = semantic_scores
+        #
+        #     #### offset
+        #     pt_offsets = self.offset(output_feats)  # (N, 3), float32
+        #     pt_offsets = self.offset_linear(pt_offsets)
+        #     point_offset_preds = pt_offsets
+        #
+        # elif self.model_mode == 3:
+        #     point_feats = self.decoder(encoded_feats['coord'], encoded_feats).squeeze(dim=0)
+        #     point_feats = point_feats + encoded_feats['point'].squeeze(dim=0)
+        #
+        #     point_offset_preds = self.point_offset(point_feats)
+        #     point_semantic_preds = self.point_semantic(point_feats)
+        #
+        # elif self.model_mode == 4:
+        #     voxel_feats = pointgroup_ops.voxelization(
+        #         # encoded_feats['point'].squeeze(dim=0),
+        #         input['pt_feats'].squeeze(dim=0),
+        #         input['v2p_map'].squeeze(dim=0),
+        #         input['mode']
+        #     )  # (M, C), float, cuda
+        #
+        #     input_ = spconv.SparseConvTensor(
+        #         voxel_feats, input['voxel_coords'].squeeze(dim=0),
+        #         input['spatial_shape'].squeeze(dim=0).cpu().numpy(), input['batch_size']
+        #     )
+        #     output = self.input_conv(input_)
+        #     output = self.unet(output)
+        #     output = self.output_layer(output)
+        #     output_feats = output.features[input_map.long()]
+        #     output_feats = output_feats.squeeze(dim=0)
+        #
+        #     #### semantic segmentation
+        #     semantic_scores = self.linear(output_feats)  # (N, nClass), float
+        #     point_semantic_preds = semantic_scores
+        #
+        #     # ret['semantic_scores'] = semantic_scores
+        #
+        #     #### offset
+        #     pt_offsets = self.offset(output_feats) # (N, 3), float32
+        #     pt_offsets = self.offset_linear(pt_offsets)
+        #     point_offset_preds = pt_offsets
+
+
 
         return ret
 
@@ -563,9 +1010,9 @@ def model_fn_decorator(test=False):
 
     #### criterion
     semantic_criterion = nn.CrossEntropyLoss(ignore_index=cfg.ignore_label).cuda()
-    if cfg.offset_norm_criterion == 'l1':
-        offset_norm_criterion = nn.SmoothL1Loss().cuda()
-    elif cfg.offset_norm_criterion == 'l2':
+    # if cfg.offset_norm_criterion == 'l1':
+    #     offset_norm_criterion = nn.SmoothL1Loss().cuda()
+    if cfg.offset_norm_criterion == 'l2':
         offset_norm_criterion = nn.MSELoss().cuda()
     elif cfg.offset_norm_criterion == 'triplet':
         offset_norm_criterion = nn.SmoothL1Loss().cuda()
@@ -779,7 +1226,12 @@ def model_fn_decorator(test=False):
 
         gt_offsets = instance_info[:, 0:3] - coords  # (N, 3)
         pt_valid_index = instance_labels != cfg.ignore_label
-        if cfg.offset_norm_criterion == 'l1' or cfg.offset_norm_criterion == 'l2':
+        if cfg.offset_norm_criterion == 'l1':
+            pt_diff = pt_offsets - gt_offsets  # (N, 3)
+            pt_dist = torch.sum(torch.abs(pt_diff), dim=-1)  # (N)
+            valid = (instance_labels != cfg.ignore_label).float()
+            offset_norm_loss = torch.sum(pt_dist * valid) / (torch.sum(valid) + 1e-6)
+        if cfg.offset_norm_criterion == 'l2':
             offset_norm_loss = offset_norm_criterion(pt_offsets[pt_valid_index], gt_offsets[pt_valid_index])
         elif cfg.offset_norm_criterion == 'triplet':
             ### offset l1 distance loss: learn to move towards the true instance center
@@ -865,9 +1317,12 @@ def model_fn_decorator(test=False):
             '''center semantic loss'''
             grid_center_semantic_preds, grid_instance_label = loss_inp['grid_center_semantics']
             grid_valid_index = instance_heatmap.squeeze(dim=0) > 0
-            center_semantic_loss = center_semantic_criterion(
-                grid_center_semantic_preds[grid_valid_index, :], grid_instance_label[grid_valid_index].to(torch.long)
-            )
+            if sum(grid_valid_index) != 0:
+                center_semantic_loss = center_semantic_criterion(
+                    grid_center_semantic_preds[grid_valid_index, :], grid_instance_label[grid_valid_index].to(torch.long)
+                )
+            else:
+                center_semantic_loss = 0
 
             loss_out['center_semantic_loss'] = (center_semantic_loss, grid_instance_label.shape[0])
 
