@@ -1215,15 +1215,16 @@ def model_fn_decorator(test=False):
 
         scores, proposals_idx, proposals_offset = ret['proposal_scores']
 
-        centre_preds = ret['centre_preds']
-        centre_preds = centre_preds.reshape(1, -1)
+        if 'centre_preds' in ret.keys():
+            centre_preds = ret['centre_preds']
+            centre_preds = centre_preds.reshape(1, -1)
 
-        centre_semantic_preds = ret['centre_semantic_preds']
-        centre_semantic_preds = centre_semantic_preds.squeeze(dim=0)
-        centre_semantic_preds = centre_semantic_preds.max(dim=1)[1]
+            centre_semantic_preds = ret['centre_semantic_preds']
+            centre_semantic_preds = centre_semantic_preds.squeeze(dim=0)
+            centre_semantic_preds = centre_semantic_preds.max(dim=1)[1]
 
-        centre_offset_preds = ret['centre_offset_preds'] # (1, 32**3, 3)
-        centre_offset_preds = centre_offset_preds.squeeze(dim=0)
+            centre_offset_preds = ret['centre_offset_preds'] # (1, 32**3, 3)
+            centre_offset_preds = centre_offset_preds.squeeze(dim=0)
 
         ### only be used during debugging
         # instance_info = batch['instance_info'].squeeze(dim=0).cuda()  # (N, 9), float32, cuda, (meanxyz, minxyz, maxxyz)
@@ -1250,9 +1251,10 @@ def model_fn_decorator(test=False):
             preds = {}
             preds['pt_offsets'] = point_offset_preds
             preds['semantic'] = point_semantic_preds
-            preds['centre_preds'] = centre_preds
-            preds['centre_semantic_preds'] = centre_semantic_preds
-            preds['centre_offset_preds'] = centre_offset_preds
+            if 'centre_preds' in ret.keys():
+                preds['centre_preds'] = centre_preds
+                preds['centre_semantic_preds'] = centre_semantic_preds
+                preds['centre_offset_preds'] = centre_offset_preds
             preds['pt_coords'] = coords_float
             if (epoch == cfg.test_epoch):
                 preds['score'] = scores
