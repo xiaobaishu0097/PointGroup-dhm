@@ -25,7 +25,7 @@ STRUCTURE:
   m: 32 # 16 or 32
   block_residual: True
   block_reps: 2
-  scatter_type: max
+  scatter_type: 0
   unet3d_num_levels: 3
   model_mode: 1
 

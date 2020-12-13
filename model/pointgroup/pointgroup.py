@@ -141,6 +141,7 @@ class PointGroup(nn.Module):
         self.mode = cfg.score_mode
 
         self.prepare_epochs = cfg.prepare_epochs
+        self.test_epoch = cfg.test_epoch
 
         self.pretrain_path = cfg.pretrain_path
         self.pretrain_module = cfg.pretrain_module
@@ -550,6 +551,8 @@ class PointGroup(nn.Module):
         '''
         ret = {}
 
+        batch_idxs = batch_idxs.squeeze()
+
         if self.model_mode == 0:
             encoded_feats = self.pointnet_backbone_encoder(coords, rgb)
             '''encoded_feats:{
@@ -579,8 +582,8 @@ class PointGroup(nn.Module):
             ### point prediction
             #### point semantic label prediction
             semantic_scores = self.point_semantic(output_feats)  # (N, nClass), float
-            point_semantic_preds = semantic_scores
-
+            # point_semantic_preds = semantic_scores
+            point_semantic_preds = semantic_scores.max(1)[1]
             #### point offset prediction
             point_offset_preds = self.point_offset(output_feats)  # (N, 3), float32
 
@@ -629,7 +632,8 @@ class PointGroup(nn.Module):
             ### point prediction
             #### point semantic label prediction
             semantic_scores = self.point_semantic(output_feats)  # (N, nClass), float
-            point_semantic_preds = semantic_scores
+            # point_semantic_preds = semantic_scores
+            point_semantic_preds = semantic_scores.max(1)[1]
             #### point offset prediction
             point_offset_preds = self.point_offset(output_feats)  # (N, 3), float32
 
@@ -642,49 +646,53 @@ class PointGroup(nn.Module):
             centre_semantic_preds = self.centre_semantic(grid_feats)
             centre_offset_preds = self.centre_offset(grid_feats)
 
-            # if (epoch > self.prepare_epochs):
-            #     #### get prooposal clusters
-            #     object_idxs = torch.nonzero(point_semantic_preds > 1).view(-1)
-            #
-            #     batch_idxs_ = batch_idxs[object_idxs]
-            #     batch_offsets_ = utils.get_batch_offsets(batch_idxs_, input['batch_size'])
-            #     coords_ = coords[object_idxs]
-            #     pt_offsets_ = point_offset_preds[object_idxs]
-            #
-            #     semantic_preds_cpu = point_semantic_preds[object_idxs].int().cpu()
-            #
-            #     if self.cluster_sets == 'Q':
-            #         idx_shift, start_len_shift = pointgroup_ops.ballquery_batch_p(coords_ + pt_offsets_, batch_idxs_,
-            #                                                                       batch_offsets_, self.cluster_radius,
-            #                                                                       self.cluster_shift_meanActive)
-            #         proposals_idx_shift, proposals_offset_shift = pointgroup_ops.bfs_cluster(semantic_preds_cpu,
-            #                                                                                  idx_shift.cpu(),
-            #                                                                                  start_len_shift.cpu(),
-            #                                                                                  self.cluster_npoint_thre)
-            #         proposals_idx_shift[:, 1] = object_idxs[proposals_idx_shift[:, 1].long()].int()
-            #         # proposals_idx_shift: (sumNPoint, 2), int, dim 0 for cluster_id, dim 1 for corresponding point idxs in N
-            #         # proposals_offset_shift: (nProposal + 1), int
-            #
-            #
-            #     if self.cluster_sets == 'P':
-            #         idx, start_len = pointgroup_ops.ballquery_batch_p(coords_, batch_idxs_, batch_offsets_, self.cluster_radius,
-            #                                                           self.cluster_meanActive)
-            #         proposals_idx, proposals_offset = pointgroup_ops.bfs_cluster(semantic_preds_cpu, idx.cpu(), start_len.cpu(),
-            #                                                                      self.cluster_npoint_thre)
-            #         proposals_idx[:, 1] = object_idxs[proposals_idx[:, 1].long()].int()
-            #         # proposals_idx: (sumNPoint, 2), int, dim 0 for cluster_id, dim 1 for corresponding point idxs in N
-            #         # proposals_offset: (nProposal + 1), int
-            #
-            #     proposals_idx_shift[:, 0] += (proposals_offset.size(0) - 1)
-            #     proposals_offset_shift += proposals_offset[-1]
-            #     proposals_idx = torch.cat((proposals_idx, proposals_idx_shift), dim=0)
-            #     proposals_offset = torch.cat((proposals_offset, proposals_offset_shift[1:]))
-            #
-            #     #### proposals voxelization again
-            #     input_feats, inp_map = self.clusters_voxelization(proposals_idx, proposals_offset, output_feats, coords,
-            #                                                       self.score_fullscale, self.score_scale, self.mode)
-            #
-            #     ret['proposal_scores'] = (scores, proposals_idx, proposals_offset)
+            if (epoch == self.test_epoch):
+                #### get prooposal clusters
+                object_idxs = torch.nonzero(point_semantic_preds > 1).view(-1)
+                coords = coords.squeeze()
+
+                batch_idxs_ = batch_idxs[object_idxs]
+                batch_offsets_ = utils.get_batch_offsets(batch_idxs_, input['batch_size'])
+                coords_ = coords[object_idxs]
+                pt_offsets_ = point_offset_preds[object_idxs]
+
+                semantic_preds_cpu = point_semantic_preds[object_idxs].int().cpu()
+
+                if self.cluster_sets == 'Q':
+                    idx_shift, start_len_shift = pointgroup_ops.ballquery_batch_p(coords_ + pt_offsets_, batch_idxs_,
+                                                                                  batch_offsets_, self.cluster_radius,
+                                                                                  self.cluster_shift_meanActive)
+                    proposals_idx_shift, proposals_offset_shift = pointgroup_ops.bfs_cluster(semantic_preds_cpu,
+                                                                                             idx_shift.cpu(),
+                                                                                             start_len_shift.cpu(),
+                                                                                             self.cluster_npoint_thre)
+                    proposals_idx_shift[:, 1] = object_idxs[proposals_idx_shift[:, 1].long()].int()
+                    # proposals_idx_shift: (sumNPoint, 2), int, dim 0 for cluster_id, dim 1 for corresponding point idxs in N
+                    # proposals_offset_shift: (nProposal + 1), int
+
+                    proposals_idx = proposals_idx_shift
+                    proposals_offset = proposals_offset_shift
+                    scores = torch.ones(proposals_offset_shift.shape[0] - 1, 1).to(point_offset_preds.device)
+
+                elif self.cluster_sets == 'P':
+                    idx, start_len = pointgroup_ops.ballquery_batch_p(coords_, batch_idxs_, batch_offsets_, self.cluster_radius,
+                                                                      self.cluster_meanActive)
+                    proposals_idx, proposals_offset = pointgroup_ops.bfs_cluster(semantic_preds_cpu, idx.cpu(), start_len.cpu(),
+                                                                                 self.cluster_npoint_thre)
+                    proposals_idx[:, 1] = object_idxs[proposals_idx[:, 1].long()].int()
+                    # proposals_idx: (sumNPoint, 2), int, dim 0 for cluster_id, dim 1 for corresponding point idxs in N
+                    # proposals_offset: (nProposal + 1), int
+
+                    proposals_idx = proposals_idx
+                    proposals_offset = proposals_offset
+                    scores = torch.ones(proposals_offset.shape[0] - 1, 1).to(point_offset_preds.device)
+
+                # proposals_idx_shift[:, 0] += (proposals_offset.size(0) - 1)
+                # proposals_offset_shift += proposals_offset[-1]
+                # proposals_idx = torch.cat((proposals_idx, proposals_idx_shift), dim=0)
+                # proposals_offset = torch.cat((proposals_offset, proposals_offset_shift[1:]))
+
+                ret['proposal_scores'] = (scores, proposals_idx, proposals_offset)
 
             ret['point_semantic_preds'] = point_semantic_preds
             ret['point_offset_preds'] = point_offset_preds
@@ -715,10 +723,59 @@ class PointGroup(nn.Module):
             ### point prediction
             #### point semantic label prediction
             semantic_scores = self.point_semantic(output_feats)  # (N, nClass), float
-            point_semantic_preds = semantic_scores
+            # point_semantic_preds = semantic_scores
+            point_semantic_preds = semantic_scores.max(1)[1]
 
             #### point offset prediction
             point_offset_preds = self.point_offset(output_feats)  # (N, 3), float32
+
+            if (epoch == self.test_epoch):
+                #### get prooposal clusters
+                object_idxs = torch.nonzero(point_semantic_preds > 1).view(-1)
+                coords = coords.squeeze()
+
+                batch_idxs_ = batch_idxs[object_idxs]
+                batch_offsets_ = utils.get_batch_offsets(batch_idxs_, input['batch_size'])
+                coords_ = coords[object_idxs]
+                pt_offsets_ = point_offset_preds[object_idxs]
+
+                semantic_preds_cpu = point_semantic_preds[object_idxs].int().cpu()
+
+                if self.cluster_sets == 'Q':
+                    idx_shift, start_len_shift = pointgroup_ops.ballquery_batch_p(coords_ + pt_offsets_, batch_idxs_,
+                                                                                  batch_offsets_, self.cluster_radius,
+                                                                                  self.cluster_shift_meanActive)
+                    proposals_idx_shift, proposals_offset_shift = pointgroup_ops.bfs_cluster(semantic_preds_cpu,
+                                                                                             idx_shift.cpu(),
+                                                                                             start_len_shift.cpu(),
+                                                                                             self.cluster_npoint_thre)
+                    proposals_idx_shift[:, 1] = object_idxs[proposals_idx_shift[:, 1].long()].int()
+                    # proposals_idx_shift: (sumNPoint, 2), int, dim 0 for cluster_id, dim 1 for corresponding point idxs in N
+                    # proposals_offset_shift: (nProposal + 1), int
+
+                    proposals_idx = proposals_idx_shift
+                    proposals_offset = proposals_offset_shift
+                    scores = torch.ones(proposals_offset_shift.shape[0] - 1, 1).to(point_offset_preds.device)
+
+                elif self.cluster_sets == 'P':
+                    idx, start_len = pointgroup_ops.ballquery_batch_p(coords_, batch_idxs_, batch_offsets_, self.cluster_radius,
+                                                                      self.cluster_meanActive)
+                    proposals_idx, proposals_offset = pointgroup_ops.bfs_cluster(semantic_preds_cpu, idx.cpu(), start_len.cpu(),
+                                                                                 self.cluster_npoint_thre)
+                    proposals_idx[:, 1] = object_idxs[proposals_idx[:, 1].long()].int()
+                    # proposals_idx: (sumNPoint, 2), int, dim 0 for cluster_id, dim 1 for corresponding point idxs in N
+                    # proposals_offset: (nProposal + 1), int
+
+                    proposals_idx = proposals_idx
+                    proposals_offset = proposals_offset
+                    scores = torch.ones(proposals_offset.shape[0] - 1, 1).to(point_offset_preds.device)
+
+                # proposals_idx_shift[:, 0] += (proposals_offset.size(0) - 1)
+                # proposals_offset_shift += proposals_offset[-1]
+                # proposals_idx = torch.cat((proposals_idx, proposals_idx_shift), dim=0)
+                # proposals_offset = torch.cat((proposals_offset, proposals_offset_shift[1:]))
+
+                ret['proposal_scores'] = (scores, proposals_idx, proposals_offset)
 
             ret['point_semantic_preds'] = point_semantic_preds
             ret['point_offset_preds'] = point_offset_preds
@@ -743,7 +800,8 @@ class PointGroup(nn.Module):
             ### point prediction
             #### point semantic label prediction
             semantic_scores = self.point_semantic(output_feats)  # (N, nClass), float
-            point_semantic_preds = semantic_scores
+            # point_semantic_preds = semantic_scores
+            point_semantic_preds = semantic_scores.max(1)[1]
 
             #### point offset prediction
             point_offset_preds = self.point_offset(output_feats)  # (N, 3), float32
@@ -757,6 +815,54 @@ class PointGroup(nn.Module):
             centre_preds = self.centre_pred(grid_feats)
             centre_semantic_preds = self.centre_semantic(grid_feats)
             centre_offset_preds = self.centre_offset(grid_feats)
+
+            if (epoch == self.test_epoch):
+                #### get prooposal clusters
+                object_idxs = torch.nonzero(point_semantic_preds > 1).view(-1)
+                coords = coords.squeeze()
+
+                batch_idxs_ = batch_idxs[object_idxs]
+                batch_offsets_ = utils.get_batch_offsets(batch_idxs_, input['batch_size'])
+                coords_ = coords[object_idxs]
+                pt_offsets_ = point_offset_preds[object_idxs]
+
+                semantic_preds_cpu = point_semantic_preds[object_idxs].int().cpu()
+
+                if self.cluster_sets == 'Q':
+                    idx_shift, start_len_shift = pointgroup_ops.ballquery_batch_p(coords_ + pt_offsets_, batch_idxs_,
+                                                                                  batch_offsets_, self.cluster_radius,
+                                                                                  self.cluster_shift_meanActive)
+                    proposals_idx_shift, proposals_offset_shift = pointgroup_ops.bfs_cluster(semantic_preds_cpu,
+                                                                                             idx_shift.cpu(),
+                                                                                             start_len_shift.cpu(),
+                                                                                             self.cluster_npoint_thre)
+                    proposals_idx_shift[:, 1] = object_idxs[proposals_idx_shift[:, 1].long()].int()
+                    # proposals_idx_shift: (sumNPoint, 2), int, dim 0 for cluster_id, dim 1 for corresponding point idxs in N
+                    # proposals_offset_shift: (nProposal + 1), int
+
+                    proposals_idx = proposals_idx_shift
+                    proposals_offset = proposals_offset_shift
+                    scores = torch.ones(proposals_offset_shift.shape[0] - 1, 1).to(point_offset_preds.device)
+
+                elif self.cluster_sets == 'P':
+                    idx, start_len = pointgroup_ops.ballquery_batch_p(coords_, batch_idxs_, batch_offsets_, self.cluster_radius,
+                                                                      self.cluster_meanActive)
+                    proposals_idx, proposals_offset = pointgroup_ops.bfs_cluster(semantic_preds_cpu, idx.cpu(), start_len.cpu(),
+                                                                                 self.cluster_npoint_thre)
+                    proposals_idx[:, 1] = object_idxs[proposals_idx[:, 1].long()].int()
+                    # proposals_idx: (sumNPoint, 2), int, dim 0 for cluster_id, dim 1 for corresponding point idxs in N
+                    # proposals_offset: (nProposal + 1), int
+
+                    proposals_idx = proposals_idx
+                    proposals_offset = proposals_offset
+                    scores = torch.ones(proposals_offset.shape[0] - 1, 1).to(point_offset_preds.device)
+
+                # proposals_idx_shift[:, 0] += (proposals_offset.size(0) - 1)
+                # proposals_offset_shift += proposals_offset[-1]
+                # proposals_idx = torch.cat((proposals_idx, proposals_idx_shift), dim=0)
+                # proposals_offset = torch.cat((proposals_offset, proposals_offset_shift[1:]))
+
+                ret['proposal_scores'] = (scores, proposals_idx, proposals_offset)
 
             ret['point_semantic_preds'] = point_semantic_preds
             ret['point_offset_preds'] = point_offset_preds
@@ -785,10 +891,59 @@ class PointGroup(nn.Module):
             ### point prediction
             #### point semantic label prediction
             semantic_scores = self.point_semantic(output_feats)  # (N, nClass), float
-            point_semantic_preds = semantic_scores
+            # point_semantic_preds = semantic_scores
+            point_semantic_preds = semantic_scores.max(1)[1]
 
             #### point offset prediction
             point_offset_preds = self.point_offset(output_feats)  # (N, 3), float32
+
+            if (epoch == self.test_epoch):
+                #### get prooposal clusters
+                object_idxs = torch.nonzero(point_semantic_preds > 1).view(-1)
+                coords = coords.squeeze()
+
+                batch_idxs_ = batch_idxs[object_idxs]
+                batch_offsets_ = utils.get_batch_offsets(batch_idxs_, input['batch_size'])
+                coords_ = coords[object_idxs]
+                pt_offsets_ = point_offset_preds[object_idxs]
+
+                semantic_preds_cpu = point_semantic_preds[object_idxs].int().cpu()
+
+                if self.cluster_sets == 'Q':
+                    idx_shift, start_len_shift = pointgroup_ops.ballquery_batch_p(coords_ + pt_offsets_, batch_idxs_,
+                                                                                  batch_offsets_, self.cluster_radius,
+                                                                                  self.cluster_shift_meanActive)
+                    proposals_idx_shift, proposals_offset_shift = pointgroup_ops.bfs_cluster(semantic_preds_cpu,
+                                                                                             idx_shift.cpu(),
+                                                                                             start_len_shift.cpu(),
+                                                                                             self.cluster_npoint_thre)
+                    proposals_idx_shift[:, 1] = object_idxs[proposals_idx_shift[:, 1].long()].int()
+                    # proposals_idx_shift: (sumNPoint, 2), int, dim 0 for cluster_id, dim 1 for corresponding point idxs in N
+                    # proposals_offset_shift: (nProposal + 1), int
+
+                    proposals_idx = proposals_idx_shift
+                    proposals_offset = proposals_offset_shift
+                    scores = torch.ones(proposals_offset_shift.shape[0] - 1, 1).to(point_offset_preds.device)
+
+                elif self.cluster_sets == 'P':
+                    idx, start_len = pointgroup_ops.ballquery_batch_p(coords_, batch_idxs_, batch_offsets_, self.cluster_radius,
+                                                                      self.cluster_meanActive)
+                    proposals_idx, proposals_offset = pointgroup_ops.bfs_cluster(semantic_preds_cpu, idx.cpu(), start_len.cpu(),
+                                                                                 self.cluster_npoint_thre)
+                    proposals_idx[:, 1] = object_idxs[proposals_idx[:, 1].long()].int()
+                    # proposals_idx: (sumNPoint, 2), int, dim 0 for cluster_id, dim 1 for corresponding point idxs in N
+                    # proposals_offset: (nProposal + 1), int
+
+                    proposals_idx = proposals_idx
+                    proposals_offset = proposals_offset
+                    scores = torch.ones(proposals_offset.shape[0] - 1, 1).to(point_offset_preds.device)
+
+                # proposals_idx_shift[:, 0] += (proposals_offset.size(0) - 1)
+                # proposals_offset_shift += proposals_offset[-1]
+                # proposals_idx = torch.cat((proposals_idx, proposals_idx_shift), dim=0)
+                # proposals_offset = torch.cat((proposals_offset, proposals_offset_shift[1:]))
+
+                ret['proposal_scores'] = (scores, proposals_idx, proposals_offset)
 
             ret['point_semantic_preds'] = point_semantic_preds
             ret['point_offset_preds'] = point_offset_preds
@@ -1050,7 +1205,7 @@ def model_fn_decorator(test=False):
             'batch_size': cfg.batch_size,
         }
 
-        ret = model(input_, p2v_map, coords_float, rgb, coords[:, 0].int(), batch_offsets, epoch)
+        ret = model(input_, p2v_map, coords_float, rgb, coords[:, :, 0].int(), batch_offsets, epoch)
 
         point_offset_preds = ret['point_offset_preds']
         point_offset_preds = point_offset_preds.squeeze()
@@ -1058,15 +1213,17 @@ def model_fn_decorator(test=False):
         point_semantic_preds = ret['point_semantic_preds']
         point_semantic_preds = point_semantic_preds.squeeze()
 
-        grid_center_preds = ret['grid_center_preds']
-        grid_center_preds = grid_center_preds.reshape(1, -1)
+        scores, proposals_idx, proposals_offset = ret['proposal_scores']
 
-        grid_center_semantic_preds = ret['grid_center_semantic_preds']
-        grid_center_semantic_preds = grid_center_semantic_preds.squeeze(dim=0)
-        grid_center_semantic_preds = grid_center_semantic_preds.max(dim=1)[1]
+        centre_preds = ret['centre_preds']
+        centre_preds = centre_preds.reshape(1, -1)
 
-        grid_center_offset_preds = ret['grid_center_offset_preds'] # (1, 32**3, 3)
-        grid_center_offset_preds = grid_center_offset_preds.squeeze(dim=0)
+        centre_semantic_preds = ret['centre_semantic_preds']
+        centre_semantic_preds = centre_semantic_preds.squeeze(dim=0)
+        centre_semantic_preds = centre_semantic_preds.max(dim=1)[1]
+
+        centre_offset_preds = ret['centre_offset_preds'] # (1, 32**3, 3)
+        centre_offset_preds = centre_offset_preds.squeeze(dim=0)
 
         ### only be used during debugging
         # instance_info = batch['instance_info'].squeeze(dim=0).cuda()  # (N, 9), float32, cuda, (meanxyz, minxyz, maxxyz)
@@ -1093,10 +1250,14 @@ def model_fn_decorator(test=False):
             preds = {}
             preds['pt_offsets'] = point_offset_preds
             preds['semantic'] = point_semantic_preds
-            preds['grid_center_preds'] = grid_center_preds
-            preds['grid_center_semantic_preds'] = grid_center_semantic_preds
-            preds['grid_center_offset_preds'] = grid_center_offset_preds
+            preds['centre_preds'] = centre_preds
+            preds['centre_semantic_preds'] = centre_semantic_preds
+            preds['centre_offset_preds'] = centre_offset_preds
             preds['pt_coords'] = coords_float
+            if (epoch == cfg.test_epoch):
+                preds['score'] = scores
+                preds['proposals'] = (proposals_idx, proposals_offset)
+
 
         return preds
 

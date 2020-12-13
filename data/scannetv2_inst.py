@@ -73,6 +73,11 @@ class ScannetDatast(Dataset):
 
             logger.info('Testing samples ({}): {}'.format(self.test_split, len(self.data_files)))
 
+        self.data_max_length = 0
+        for i in self.data_files:
+            if self.data_max_length < len(i[0]):
+                self.data_max_length = len(i[0])
+
     def __len__(self):
         return len(self.data_files)
 
