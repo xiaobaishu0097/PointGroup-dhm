@@ -89,8 +89,8 @@ def test(model, model_fn, data_name, epoch):
                 pt_coords = preds['pt_coords']
 
                 semantic_scores = preds['semantic']  # (N, nClass=20) float32, cuda
-                # semantic_pred = semantic_scores.max(1)[1]  # (N) long, cuda
-                semantic_pred = semantic_scores  # (N) long, cuda
+                semantic_pred = semantic_scores.max(1)[1]  # (N) long, cuda
+                # semantic_pred = semantic_scores  # (N) long, cuda
                 # valid_index = (semantic_pred != 20)
                 valid_index = (semantic_pred > 1)
 

@@ -437,8 +437,8 @@ class PointGroup(nn.Module):
         # if self.model_mode == 'Du_original_PointGroup':
         #     module_map = {'input_conv': self.input_conv, 'unet': self.unet, 'output_layer': self.output_layer,
         #                   'linear': self.linear, 'offset': self.offset, 'offset_linear': self.offset_linear,
-        #                   'module.encoder': self.encoder, 'module.grid_center_pred': self.grid_center_pred,
-        #                 'module.grid_center_semantic': self.grid_center_semantic, 'module.grid_center_offset': self.grid_center_offset}
+        #                   'module.encoder': self.encoder, 'module.grid_centre_pred': self.grid_centre_pred,
+        #                 'module.grid_centre_semantic': self.grid_centre_semantic, 'module.grid_centre_offset': self.grid_center_offset}
         # else:
         #     module_map = {}
 
@@ -694,7 +694,7 @@ class PointGroup(nn.Module):
 
                 ret['proposal_scores'] = (scores, proposals_idx, proposals_offset)
 
-            ret['point_semantic_preds'] = point_semantic_preds
+            ret['point_semantic_scores'] = semantic_scores
             ret['point_offset_preds'] = point_offset_preds
 
             ret['centre_preds'] = centre_preds
@@ -777,7 +777,7 @@ class PointGroup(nn.Module):
 
                 ret['proposal_scores'] = (scores, proposals_idx, proposals_offset)
 
-            ret['point_semantic_preds'] = point_semantic_preds
+            ret['point_semantic_scores'] = semantic_scores
             ret['point_offset_preds'] = point_offset_preds
 
         elif self.model_mode == 'Zheng_panoptic_wopointnet_PointGroup':
@@ -864,7 +864,7 @@ class PointGroup(nn.Module):
 
                 ret['proposal_scores'] = (scores, proposals_idx, proposals_offset)
 
-            ret['point_semantic_preds'] = point_semantic_preds
+            ret['point_semantic_scores'] = semantic_scores
             ret['point_offset_preds'] = point_offset_preds
 
             ret['centre_preds'] = centre_preds
@@ -945,7 +945,7 @@ class PointGroup(nn.Module):
 
                 ret['proposal_scores'] = (scores, proposals_idx, proposals_offset)
 
-            ret['point_semantic_preds'] = point_semantic_preds
+            ret['point_semantic_scores'] = semantic_scores
             ret['point_offset_preds'] = point_offset_preds
 
         elif self.model_mode == 'Du_original_PointGroup':
@@ -1021,140 +1021,8 @@ class PointGroup(nn.Module):
 
                 ret['proposal_scores'] = (scores, proposals_idx, proposals_offset)
 
-            ret['point_semantic_preds'] = point_semantic_preds
+            ret['point_semantic_scores'] = semantic_scores
             ret['point_offset_preds'] = point_offset_preds
-
-
-        # if self.model_mode == 0 or self.model_mode == 'Zheng_panoptic_wpointnet_PointGroup':
-        #     voxel_feats = pointgroup_ops.voxelization(
-        #         encoded_feats['point'].squeeze(dim=0),
-        #         # input['pt_feats'].squeeze(dim=0),
-        #         input['v2p_map'].squeeze(dim=0),
-        #         input['mode']
-        #     )  # (M, C), float, cuda
-        #
-        #     input_ = spconv.SparseConvTensor(
-        #         voxel_feats, input['voxel_coords'].squeeze(dim=0),
-        #         input['spatial_shape'].squeeze(dim=0).cpu().numpy(), input['batch_size']
-        #     )
-        #     output = self.input_conv(input_)
-        #     output = self.unet(output)
-        #     output = self.output_layer(output)
-        #     output_feats = output.features[input_map.long()]
-        #     output_feats = output_feats.squeeze(dim=0)
-        #
-        #     #### semantic segmentation
-        #     point_semantic_preds = self.linear(output_feats)  # (N, nClass), float
-        #
-        #     #### offset
-        #     pt_offsets = self.offset(output_feats) # (N, 3), float32
-        #     pt_offsets = self.offset_linear(pt_offsets)
-        #     point_offset_preds = pt_offsets
-        #
-        #     # ret['pt_offsets'] = pt_offsets
-        #
-        # if self.model_mode == 0:
-        #     point_feats = self.decoder(encoded_feats['coord'], encoded_feats).squeeze(dim=0)
-        #
-        #     point_offset_preds = self.point_offset(point_feats)
-        #     point_semantic_preds = self.point_semantic(point_feats)
-        # elif self.model_mode == 1 or self.model_mode == 'Zheng_panoptic_wpointnet_PointGroup':
-        #     voxel_feats = pointgroup_ops.voxelization(
-        #         encoded_feats['point'].squeeze(dim=0),
-        #         # input['pt_feats'].squeeze(dim=0),
-        #         input['v2p_map'].squeeze(dim=0),
-        #         input['mode']
-        #     )  # (M, C), float, cuda
-        #
-        #     input_ = spconv.SparseConvTensor(
-        #         voxel_feats, input['voxel_coords'].squeeze(dim=0),
-        #         input['spatial_shape'].squeeze(dim=0).cpu().numpy(), input['batch_size']
-        #     )
-        #     output = self.input_conv(input_)
-        #     output = self.unet(output)
-        #     output = self.output_layer(output)
-        #     output_feats = output.features[input_map.long()]
-        #     output_feats = output_feats.squeeze(dim=0)
-        #
-        #     #### semantic segmentation
-        #     semantic_scores = self.linear(output_feats)  # (N, nClass), float
-        #     point_semantic_preds = semantic_scores
-        #
-        #     # ret['semantic_scores'] = semantic_scores
-        #
-        #     #### offset
-        #     pt_offsets = self.offset(output_feats) # (N, 3), float32
-        #     pt_offsets = self.offset_linear(pt_offsets)
-        #     point_offset_preds = pt_offsets
-        #
-        #     # ret['pt_offsets'] = pt_offsets
-        # elif self.model_mode == 2:
-        #     voxel_feats = pointgroup_ops.voxelization(
-        #         encoded_feats['point'].squeeze(dim=0),
-        #         # input['pt_feats'],
-        #         input['v2p_map'].squeeze(dim=0),
-        #         input['mode']
-        #     )  # (M, C), float, cuda
-        #
-        #     input_ = spconv.SparseConvTensor(
-        #         voxel_feats, input['voxel_coords'].squeeze(dim=0),
-        #         input['spatial_shape'].squeeze(dim=0).cpu().numpy(), input['batch_size']
-        #     )
-        #     output = self.input_conv(input_)
-        #     output = self.unet(output)
-        #     output = self.output_layer(output)
-        #     output_feats = output.features[input_map.long()]
-        #
-        #     grid_feats = self.generate_grid_features(encoded_feats['coord'], encoded_feats['point'] + output_feats.unsqueeze(dim=0))
-        #     grid_feats = self.unet3d(grid_feats)
-        #     encoded_feats['grid'] = grid_feats
-        #
-        #     #### semantic segmentation
-        #     semantic_scores = self.linear(output_feats)  # (N, nClass), float
-        #     point_semantic_preds = semantic_scores
-        #
-        #     #### offset
-        #     pt_offsets = self.offset(output_feats)  # (N, 3), float32
-        #     pt_offsets = self.offset_linear(pt_offsets)
-        #     point_offset_preds = pt_offsets
-        #
-        # elif self.model_mode == 3:
-        #     point_feats = self.decoder(encoded_feats['coord'], encoded_feats).squeeze(dim=0)
-        #     point_feats = point_feats + encoded_feats['point'].squeeze(dim=0)
-        #
-        #     point_offset_preds = self.point_offset(point_feats)
-        #     point_semantic_preds = self.point_semantic(point_feats)
-        #
-        # elif self.model_mode == 4:
-        #     voxel_feats = pointgroup_ops.voxelization(
-        #         # encoded_feats['point'].squeeze(dim=0),
-        #         input['pt_feats'].squeeze(dim=0),
-        #         input['v2p_map'].squeeze(dim=0),
-        #         input['mode']
-        #     )  # (M, C), float, cuda
-        #
-        #     input_ = spconv.SparseConvTensor(
-        #         voxel_feats, input['voxel_coords'].squeeze(dim=0),
-        #         input['spatial_shape'].squeeze(dim=0).cpu().numpy(), input['batch_size']
-        #     )
-        #     output = self.input_conv(input_)
-        #     output = self.unet(output)
-        #     output = self.output_layer(output)
-        #     output_feats = output.features[input_map.long()]
-        #     output_feats = output_feats.squeeze(dim=0)
-        #
-        #     #### semantic segmentation
-        #     semantic_scores = self.linear(output_feats)  # (N, nClass), float
-        #     point_semantic_preds = semantic_scores
-        #
-        #     # ret['semantic_scores'] = semantic_scores
-        #
-        #     #### offset
-        #     pt_offsets = self.offset(output_feats) # (N, 3), float32
-        #     pt_offsets = self.offset_linear(pt_offsets)
-        #     point_offset_preds = pt_offsets
-
-
 
         return ret
 
@@ -1172,9 +1040,9 @@ def model_fn_decorator(test=False):
     elif cfg.offset_norm_criterion == 'triplet':
         offset_norm_criterion = nn.SmoothL1Loss().cuda()
         offset_norm_triplet_criterion = nn.TripletMarginLoss(margin=cfg.triplet_margin, p=cfg.triplet_p).cuda()
-    center_criterion = WeightedFocalLoss(alpha=cfg.focal_loss_alpha, gamma=cfg.focal_loss_gamma).cuda()
-    center_semantic_criterion = nn.CrossEntropyLoss(ignore_index=cfg.ignore_label).cuda()
-    center_offset_criterion = nn.L1Loss().cuda()
+    centre_criterion = WeightedFocalLoss(alpha=cfg.focal_loss_alpha, gamma=cfg.focal_loss_gamma).cuda()
+    centre_semantic_criterion = nn.CrossEntropyLoss(ignore_index=cfg.ignore_label).cuda()
+    centre_offset_criterion = nn.L1Loss().cuda()
 
     def test_model_fn(batch, model, epoch):
         coords = batch['locs'].cuda()  # (N, 1 + 3), long, cuda, dimension 0 for batch_idx
@@ -1210,8 +1078,8 @@ def model_fn_decorator(test=False):
         point_offset_preds = ret['point_offset_preds']
         point_offset_preds = point_offset_preds.squeeze()
 
-        point_semantic_preds = ret['point_semantic_preds']
-        point_semantic_preds = point_semantic_preds.squeeze()
+        point_semantic_scores = ret['point_semantic_scores']
+        point_semantic_scores = point_semantic_scores.squeeze()
 
         scores, proposals_idx, proposals_offset = ret['proposal_scores']
 
@@ -1229,28 +1097,28 @@ def model_fn_decorator(test=False):
         ### only be used during debugging
         # instance_info = batch['instance_info'].squeeze(dim=0).cuda()  # (N, 9), float32, cuda, (meanxyz, minxyz, maxxyz)
         # labels = batch['labels'].squeeze(dim=0).cuda()  # (N), long, cuda
-        # grid_center_gt = batch['grid_center_gt'].squeeze(dim=0).cuda()
-        # grid_center_offset = batch['grid_center_offset'].squeeze(dim=0).cuda()
+        # grid_centre_gt = batch['grid_centre_gt'].squeeze(dim=0).cuda()
+        # grid_centre_offset = batch['grid_centre_offset'].squeeze(dim=0).cuda()
         # grid_instance_label = batch['grid_instance_label'].squeeze(dim=0).cuda()
 
         # point_offset_preds = instance_info[:, 0:3] - coords_float
         #
         # point_semantic_preds = labels
         #
-        # fake_grid_center = torch.zeros_like(grid_center_preds)
-        # fake_grid_center[0, grid_center_gt.long()] = 1
-        # grid_center_preds = fake_grid_center
+        # fake_grid_centre = torch.zeros_like(grid_centre_preds)
+        # fake_grid_centre[0, grid_centre_gt.long()] = 1
+        # grid_centre_preds = fake_grid_centre
         #
-        # grid_center_offset_preds[grid_center_gt.long(), :] = grid_center_offset
+        # grid_centre_offset_preds[grid_centre_gt.long(), :] = grid_centre_offset
         #
-        # grid_center_semantic_preds = grid_instance_label
+        # grid_centre_semantic_preds = grid_instance_label
         # grid_instance_label[grid_instance_label == -100] = 20
 
         ##### preds
         with torch.no_grad():
             preds = {}
             preds['pt_offsets'] = point_offset_preds
-            preds['semantic'] = point_semantic_preds
+            preds['semantic'] = point_semantic_scores
             if 'centre_preds' in ret.keys():
                 preds['centre_preds'] = centre_preds
                 preds['centre_semantic_preds'] = centre_semantic_preds
@@ -1281,10 +1149,10 @@ def model_fn_decorator(test=False):
 
         instance_info = batch['instance_info'].cuda()  # (N, 9), float32, cuda, (meanxyz, minxyz, maxxyz)
         instance_pointnum = batch['instance_pointnum'].cuda()  # (total_nInst), int, cuda
-        instance_centers = batch['instance_centers'].cuda()
+        instance_centres = batch['instance_centres'].cuda()
 
         instance_heatmap = batch['instance_heatmap'].cuda()
-        grid_center_gt = batch['grid_center_gt'].cuda()
+        grid_centre_gt = batch['grid_centre_gt'].cuda()
         centre_offset_labels = batch['centre_offset_labels'].cuda()
         centre_semantic_labels = batch['centre_semantic_labels'].cuda()
 
@@ -1311,8 +1179,8 @@ def model_fn_decorator(test=False):
         point_offset_preds = ret['point_offset_preds']
         point_offset_preds = point_offset_preds.squeeze()
 
-        point_semantic_preds = ret['point_semantic_preds']
-        point_semantic_preds = point_semantic_preds.squeeze()
+        point_semantic_scores = ret['point_semantic_scores']
+        point_semantic_scores = point_semantic_scores.squeeze()
 
         if 'centre_preds' in ret.keys():
             centre_preds = ret['centre_preds'] # (1, 32**3)
@@ -1323,10 +1191,10 @@ def model_fn_decorator(test=False):
 
             centre_offset_preds = ret['centre_offset_preds'] # (1, 32**3, 3)
             centre_offset_preds = centre_offset_preds.squeeze(dim=0)
-            centre_offset_preds = centre_offset_preds[grid_center_gt.long(), :] # (nInst, 3)
+            centre_offset_preds = centre_offset_preds[grid_centre_gt.long(), :] # (nInst, 3)
 
         # instance_heatmap = torch.zeros((32**3)).cuda()
-        # instance_heatmap[grid_center_gt.long()] = 1
+        # instance_heatmap[grid_centre_gt.long()] = 1
 
         instance_heatmap = instance_heatmap.reshape((1, -1))
 
@@ -1334,9 +1202,9 @@ def model_fn_decorator(test=False):
 
         loss_inp['pt_offsets'] = (
             point_offset_preds, coords_float.squeeze(dim=0), instance_info.squeeze(dim=0),
-            instance_centers.squeeze(dim=0), instance_labels.squeeze(dim=0)
+            instance_centres.squeeze(dim=0), instance_labels.squeeze(dim=0)
         )
-        loss_inp['semantic_scores'] = (point_semantic_preds, labels.squeeze(dim=0))
+        loss_inp['semantic_scores'] = (point_semantic_scores, labels.squeeze(dim=0))
 
         if 'centre_preds' in ret.keys():
             loss_inp['centre_preds'] = (centre_preds, instance_heatmap)
@@ -1349,7 +1217,7 @@ def model_fn_decorator(test=False):
         with torch.no_grad():
             preds = {}
             preds['pt_offsets'] = point_offset_preds
-            preds['semantic_scores'] = point_semantic_preds
+            preds['semantic_scores'] = point_semantic_scores
             if 'centre_preds' in ret.keys():
                 preds['centre_preds'] = centre_preds
                 preds['centre_semantic_preds'] = centre_semantic_preds
@@ -1381,7 +1249,7 @@ def model_fn_decorator(test=False):
         loss_out['semantic_loss'] = (semantic_loss, semantic_scores.shape[0])
 
         '''offset loss'''
-        pt_offsets, coords, instance_info, instance_center, instance_labels = loss_inp['pt_offsets']
+        pt_offsets, coords, instance_info, instance_centre, instance_labels = loss_inp['pt_offsets']
         # pt_offsets: (N, 3), float, cuda
         # coords: (N, 3), float32
         # instance_info: (N, 9), float32 tensor (meanxyz, minxyz, maxxyz)
@@ -1397,16 +1265,16 @@ def model_fn_decorator(test=False):
         if cfg.offset_norm_criterion == 'l2':
             offset_norm_loss = offset_norm_criterion(pt_offsets[pt_valid_index], gt_offsets[pt_valid_index])
         elif cfg.offset_norm_criterion == 'triplet':
-            ### offset l1 distance loss: learn to move towards the true instance center
+            ### offset l1 distance loss: learn to move towards the true instance centre
             offset_norm_loss = offset_norm_criterion(pt_offsets[pt_valid_index], gt_offsets[pt_valid_index])
 
-            # positive_offset = instance_info[:, 0:3].unsqueeze(dim=1).repeat(1, instance_center.shape[0], 1)
-            # negative_offset = instance_center.unsqueeze(dim=0).repeat(coords.shape[0], 1, 1)
+            # positive_offset = instance_info[:, 0:3].unsqueeze(dim=1).repeat(1, instance_centre.shape[0], 1)
+            # negative_offset = instance_centre.unsqueeze(dim=0).repeat(coords.shape[0], 1, 1)
             # positive_offset_index = (negative_offset == positive_offset).to(torch.bool) == torch.ones(3, dtype=torch.bool).cuda()
             # negative_offset[positive_offset_index] = 100
             # negative_offset = negative_offset - positive_offset
             # negative_offset_index = torch.norm(
-            #     gt_offsets.unsqueeze(dim=1).repeat(1, instance_center.shape[0], 1) - negative_offset, dim=2
+            #     gt_offsets.unsqueeze(dim=1).repeat(1, instance_centre.shape[0], 1) - negative_offset, dim=2
             # ).min(dim=1)[1][:, 0]
 
             ### offset triplet loss: learn to leave the second closest point
@@ -1414,11 +1282,11 @@ def model_fn_decorator(test=False):
             shifted_coords = coords + pt_offsets
             positive_offsets = shifted_coords - instance_info[:, 0:3]
             positive_distance = torch.norm(positive_offsets, dim=1)
-            negative_offsets = shifted_coords.unsqueeze(dim=1).repeat(1, instance_center.shape[0], 1) - \
-                               instance_center.unsqueeze(dim=0).repeat(shifted_coords.shape[0], 1, 1)
+            negative_offsets = shifted_coords.unsqueeze(dim=1).repeat(1, instance_centre.shape[0], 1) - \
+                               instance_centre.unsqueeze(dim=0).repeat(shifted_coords.shape[0], 1, 1)
             negative_distance = torch.norm(negative_offsets, dim=2)
             negative_offset_index = (
-                    negative_distance - positive_distance.unsqueeze(dim=1).repeat(1, instance_center.shape[0])
+                    negative_distance - positive_distance.unsqueeze(dim=1).repeat(1, instance_centre.shape[0])
             ).min(dim=1)[1]
             semi_negative_sample_index = torch.ones(shifted_coords.shape[0], dtype=torch.bool).cuda()
             # ignore points whose distance from the second closest point is larger than the triplet margin
@@ -1433,14 +1301,14 @@ def model_fn_decorator(test=False):
             semi_negative_sample_index[instance_labels == cfg.ignore_label] = 0
 
             ### calculate triplet loss based predicted offset vector and gt offset vector
-            # negative_offset = instance_center[negative_offset_index] - coords
+            # negative_offset = instance_centre[negative_offset_index] - coords
             # offset_norm_triplet_loss = offset_norm_triplet_criterion(
             #     pt_offsets[semi_negative_sample_index], gt_offsets[semi_negative_sample_index],
             #     negative_offset[semi_negative_sample_index]
             # )
 
-            ### calculate triplet loss based shifted coordinates and center coordinates
-            negative_coords = instance_center[negative_offset_index]
+            ### calculate triplet loss based shifted coordinates and centre coordinates
+            negative_coords = instance_centre[negative_offset_index]
             gt_coords = instance_info[:, 0:3]
             offset_norm_triplet_loss = offset_norm_triplet_criterion(
                 shifted_coords[semi_negative_sample_index], gt_coords[semi_negative_sample_index],
@@ -1471,17 +1339,17 @@ def model_fn_decorator(test=False):
         loss_out['offset_dir_loss'] = (offset_dir_loss, valid.sum())
 
         if 'centre_preds' in loss_inp.keys():
-            '''center loss'''
+            '''centre loss'''
             centre_preds, instance_heatmap = loss_inp['centre_preds']
 
-            centre_loss = center_criterion(centre_preds, instance_heatmap)
+            centre_loss = centre_criterion(centre_preds, instance_heatmap)
             loss_out['centre_loss'] = (centre_loss, instance_heatmap.shape[-1])
 
-            '''center semantic loss'''
-            centre_semantic_preds, grid_instance_label = loss_inp['grid_center_semantics']
+            '''centre semantic loss'''
+            centre_semantic_preds, grid_instance_label = loss_inp['centre_semantic_preds']
             grid_valid_index = instance_heatmap.squeeze(dim=0) > 0
             if sum(grid_valid_index) != 0:
-                centre_semantic_loss = center_semantic_criterion(
+                centre_semantic_loss = centre_semantic_criterion(
                     centre_semantic_preds[grid_valid_index, :], grid_instance_label[grid_valid_index].to(torch.long)
                 )
             else:
@@ -1489,11 +1357,11 @@ def model_fn_decorator(test=False):
 
             loss_out['centre_semantic_loss'] = (centre_semantic_loss, grid_instance_label.shape[0])
 
-            '''center offset loss'''
-            centre_offset_preds, grid_center_offsets = loss_inp['centre_offset_preds']
+            '''centre offset loss'''
+            centre_offset_preds, grid_centre_offsets = loss_inp['centre_offset_preds']
 
-            centre_offset_loss = center_offset_criterion(centre_offset_preds, grid_center_offsets)
-            loss_out['centre_offset_loss'] = (centre_offset_loss, grid_center_offsets.shape[0])
+            centre_offset_loss = centre_offset_criterion(centre_offset_preds, grid_centre_offsets)
+            loss_out['centre_offset_loss'] = (centre_offset_loss, grid_centre_offsets.shape[0])
 
         '''total loss'''
         loss = cfg.loss_weight[3] * semantic_loss + cfg.loss_weight[4] * offset_norm_loss + \
