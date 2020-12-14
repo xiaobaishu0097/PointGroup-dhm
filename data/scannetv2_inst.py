@@ -42,12 +42,14 @@ class ScannetDatast(Dataset):
         self.data_mode = data_mode
 
         if self.data_mode == 'train':
-            self.file_names = sorted(
-                glob.glob(os.path.join(self.data_root, self.dataset, 'train', '*' + self.filename_suffix))
-            )
-            self.data_files = [torch.load(i) for i in self.file_names]
-            # train_file_names = sorted(glob.glob(os.path.join(self.data_root, self.dataset, 'val', '*' + self.filename_suffix)))
-            # self.data_files = [torch.load(train_file_names[0])]
+            if not cfg.overfitting:
+                self.file_names = sorted(
+                    glob.glob(os.path.join(self.data_root, self.dataset, 'train', '*' + self.filename_suffix))
+                )
+                self.data_files = [torch.load(i) for i in self.file_names]
+            else:
+                train_file_names = sorted(glob.glob(os.path.join(self.data_root, self.dataset, 'val', '*' + self.filename_suffix)))
+                self.data_files = [torch.load(train_file_names[0])]
 
             logger.info('Training samples: {}'.format(len(self.data_files)))
 
@@ -64,12 +66,14 @@ class ScannetDatast(Dataset):
             self.test_workers = cfg.test_workers
             cfg.batch_size = 1
 
-            self.file_names = sorted(
-                glob.glob(os.path.join(self.data_root, self.dataset, self.test_split, '*' + self.filename_suffix))
-            )
-            self.data_files = [torch.load(i) for i in self.file_names]
-            # self.test_file_names = sorted(glob.glob(os.path.join(self.data_root, self.dataset, 'val', '*' + self.filename_suffix)))
-            # self.test_files = [torch.load(self.test_file_names[0])]
+            if not cfg.overfitting:
+                self.file_names = sorted(
+                    glob.glob(os.path.join(self.data_root, self.dataset, self.test_split, '*' + self.filename_suffix))
+                )
+                self.data_files = [torch.load(i) for i in self.file_names]
+            else:
+                self.test_file_names = sorted(glob.glob(os.path.join(self.data_root, self.dataset, 'val', '*' + self.filename_suffix)))
+                self.test_files = [torch.load(self.test_file_names[0])]
 
             logger.info('Testing samples ({}): {}'.format(self.test_split, len(self.data_files)))
 

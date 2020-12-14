@@ -51,6 +51,7 @@ TRAIN:
   offset_norm_criterion: l1 # l1 or l2 or triplet
   triplet_margin: 0.3
   triplet_p: 1
+  overfitting: True
 
   constrastive_loss: True
 
