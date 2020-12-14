@@ -296,6 +296,7 @@ class ScannetDatast(Dataset):
             ### voxelize
             voxel_locs, p2v_map, v2p_map = pointgroup_ops.voxelization_idx(locs, self.batch_size, self.mode)
 
+            #TODO: uniform variable names
             return {
                 'locs': locs,  # (N, 4)
                 'voxel_locs': voxel_locs,  # (nVoxel, 4)
@@ -310,9 +311,9 @@ class ScannetDatast(Dataset):
                 'instance_centers': instance_centers,  # (nInst, 3)
                 'instance_heatmap': instance_heatmap,  # (nGrid)
                 'grid_center_gt': grid_center_gt,  # (nInst)
-                'grid_center_offset': grid_center_offset,  # (nInst, 3)
+                'centre_offset_labels': grid_center_offset,  # (nInst, 3)
                 'grid_xyz': grid_xyz,  # (nGrid, 3)
-                'grid_instance_label': grid_instance_label,  # (nGrid)
+                'centre_semantic_labels': grid_instance_label,  # (nGrid)
                 'id': idx,
                 'offsets': batch_offsets,  # int (B+1)
                 'spatial_shape': spatial_shape,  # long (3)

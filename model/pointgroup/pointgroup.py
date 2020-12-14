@@ -1285,8 +1285,8 @@ def model_fn_decorator(test=False):
 
         instance_heatmap = batch['instance_heatmap'].cuda()
         grid_center_gt = batch['grid_center_gt'].cuda()
-        grid_center_offset = batch['grid_center_offset'].cuda()
-        grid_instance_label = batch['grid_instance_label'].cuda()
+        centre_offset_labels = batch['centre_offset_labels'].cuda()
+        centre_semantic_labels = batch['centre_semantic_labels'].cuda()
 
         batch_offsets = batch['offsets'].cuda()  # (B + 1), int, cuda
 
@@ -1306,7 +1306,7 @@ def model_fn_decorator(test=False):
             'batch_size': cfg.batch_size,
         }
 
-        ret = model(input_, p2v_map, coords_float, rgb, coords[:, 0].int(), batch_offsets, epoch)
+        ret = model(input_, p2v_map, coords_float, rgb, coords[:, :, 0].int(), batch_offsets, epoch)
 
         point_offset_preds = ret['point_offset_preds']
         point_offset_preds = point_offset_preds.squeeze()
@@ -1314,16 +1314,16 @@ def model_fn_decorator(test=False):
         point_semantic_preds = ret['point_semantic_preds']
         point_semantic_preds = point_semantic_preds.squeeze()
 
-        if epoch > cfg.prepare_epochs:
-            grid_center_preds = ret['grid_center_preds'] # (1, 32**3)
-            grid_center_preds = grid_center_preds.reshape(1, -1)
+        if 'centre_preds' in ret.keys():
+            centre_preds = ret['centre_preds'] # (1, 32**3)
+            centre_preds = centre_preds.reshape(1, -1)
 
-            grid_center_semantic_preds = ret['grid_center_semantic_preds']
-            grid_center_semantic_preds = grid_center_semantic_preds.squeeze(dim=0)
+            centre_semantic_preds = ret['centre_semantic_preds']
+            centre_semantic_preds = centre_semantic_preds.squeeze(dim=0)
 
-            grid_center_offset_preds = ret['grid_center_offset_preds'] # (1, 32**3, 3)
-            grid_center_offset_preds = grid_center_offset_preds.squeeze(dim=0)
-            grid_center_offset_preds = grid_center_offset_preds[grid_center_gt.long(), :] # (nInst, 3)
+            centre_offset_preds = ret['centre_offset_preds'] # (1, 32**3, 3)
+            centre_offset_preds = centre_offset_preds.squeeze(dim=0)
+            centre_offset_preds = centre_offset_preds[grid_center_gt.long(), :] # (nInst, 3)
 
         # instance_heatmap = torch.zeros((32**3)).cuda()
         # instance_heatmap[grid_center_gt.long()] = 1
@@ -1338,10 +1338,10 @@ def model_fn_decorator(test=False):
         )
         loss_inp['semantic_scores'] = (point_semantic_preds, labels.squeeze(dim=0))
 
-        if epoch > cfg.prepare_epochs:
-            loss_inp['grid_centers'] = (grid_center_preds, instance_heatmap)
-            loss_inp['grid_center_semantics'] = (grid_center_semantic_preds, grid_instance_label.squeeze(dim=0))
-            loss_inp['grid_center_offsets'] = (grid_center_offset_preds, grid_center_offset)
+        if 'centre_preds' in ret.keys():
+            loss_inp['centre_preds'] = (centre_preds, instance_heatmap)
+            loss_inp['centre_semantic_preds'] = (centre_semantic_preds, centre_semantic_labels.squeeze(dim=0))
+            loss_inp['centre_offset_preds'] = (centre_offset_preds, centre_offset_labels)
 
         loss, loss_out, infos = loss_fn(loss_inp, epoch)
 
@@ -1350,10 +1350,10 @@ def model_fn_decorator(test=False):
             preds = {}
             preds['pt_offsets'] = point_offset_preds
             preds['semantic_scores'] = point_semantic_preds
-            if epoch > cfg.prepare_epochs:
-                preds['grid_center_preds'] = grid_center_preds
-                preds['grid_center_semantics'] = grid_center_semantic_preds
-                preds['grid_center_offset_preds'] = grid_center_offset_preds
+            if 'centre_preds' in ret.keys():
+                preds['centre_preds'] = centre_preds
+                preds['centre_semantic_preds'] = centre_semantic_preds
+                preds['centre_offset_preds'] = centre_offset_preds
 
             visual_dict = {}
             visual_dict['loss'] = loss
@@ -1470,30 +1470,30 @@ def model_fn_decorator(test=False):
         loss_out['offset_norm_loss'] = (offset_norm_loss, valid.sum())
         loss_out['offset_dir_loss'] = (offset_dir_loss, valid.sum())
 
-        if epoch > cfg.prepare_epochs:
+        if 'centre_preds' in loss_inp.keys():
             '''center loss'''
-            grid_center_preds, instance_heatmap = loss_inp['grid_centers']
+            centre_preds, instance_heatmap = loss_inp['centre_preds']
 
-            center_loss = center_criterion(grid_center_preds, instance_heatmap)
-            loss_out['center_loss'] = (center_loss, instance_heatmap.shape[-1])
+            centre_loss = center_criterion(centre_preds, instance_heatmap)
+            loss_out['centre_loss'] = (centre_loss, instance_heatmap.shape[-1])
 
             '''center semantic loss'''
-            grid_center_semantic_preds, grid_instance_label = loss_inp['grid_center_semantics']
+            centre_semantic_preds, grid_instance_label = loss_inp['grid_center_semantics']
             grid_valid_index = instance_heatmap.squeeze(dim=0) > 0
             if sum(grid_valid_index) != 0:
-                center_semantic_loss = center_semantic_criterion(
-                    grid_center_semantic_preds[grid_valid_index, :], grid_instance_label[grid_valid_index].to(torch.long)
+                centre_semantic_loss = center_semantic_criterion(
+                    centre_semantic_preds[grid_valid_index, :], grid_instance_label[grid_valid_index].to(torch.long)
                 )
             else:
-                center_semantic_loss = 0
+                centre_semantic_loss = 0
 
-            loss_out['center_semantic_loss'] = (center_semantic_loss, grid_instance_label.shape[0])
+            loss_out['centre_semantic_loss'] = (centre_semantic_loss, grid_instance_label.shape[0])
 
             '''center offset loss'''
-            grid_center_offset_preds, grid_center_offsets = loss_inp['grid_center_offsets']
+            centre_offset_preds, grid_center_offsets = loss_inp['centre_offset_preds']
 
-            center_offset_loss = center_offset_criterion(grid_center_offset_preds, grid_center_offsets)
-            loss_out['center_offset_loss'] = (center_offset_loss, grid_center_offsets.shape[0])
+            centre_offset_loss = center_offset_criterion(centre_offset_preds, grid_center_offsets)
+            loss_out['centre_offset_loss'] = (centre_offset_loss, grid_center_offsets.shape[0])
 
         '''total loss'''
         loss = cfg.loss_weight[3] * semantic_loss + cfg.loss_weight[4] * offset_norm_loss + \
@@ -1501,8 +1501,8 @@ def model_fn_decorator(test=False):
         if cfg.offset_norm_criterion == 'triplet':
             loss += cfg.loss_weight[6] * offset_norm_triplet_loss
         if epoch > cfg.prepare_epochs:
-            loss += cfg.loss_weight[0] * center_loss + cfg.loss_weight[1] * center_semantic_loss + \
-                    cfg.loss_weight[2] * center_offset_loss
+            loss += cfg.loss_weight[0] * centre_loss + cfg.loss_weight[1] * centre_semantic_loss + \
+                    cfg.loss_weight[2] * centre_offset_loss
 
         return loss, loss_out, infos
 

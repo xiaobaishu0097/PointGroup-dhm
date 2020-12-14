@@ -27,7 +27,7 @@ STRUCTURE:
   block_reps: 2
   scatter_type: max
   unet3d_num_levels: 3
-  model_mode: Du_original_PointGroup
+  model_mode: Zheng_panoptic_wpointnet_PointGroup
   # 0 or Zheng_panoptic_wpointnet_PointGroup or Zheng_upper_wpointnet_PointGroup or Zheng_panoptic_wopointnet_PointGroup
   # or Zheng_upper_wopointnet_PointGroup or Du_original_PointGroup
 
