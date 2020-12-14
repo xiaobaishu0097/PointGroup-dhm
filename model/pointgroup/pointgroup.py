@@ -494,7 +494,7 @@ class PointGroup(nn.Module):
             centre_semantic_preds = self.centre_semantic(grid_feats)
             centre_offset_preds = self.centre_offset(grid_feats)
 
-            ret['point_semantic_preds'] = point_semantic_preds
+            ret['point_semantic_scores'] = semantic_scores
             ret['point_offset_preds'] = point_offset_preds
 
             ret['centre_preds'] = centre_preds
@@ -942,6 +942,7 @@ def model_fn_decorator(test=False):
     centre_criterion = WeightedFocalLoss(alpha=cfg.focal_loss_alpha, gamma=cfg.focal_loss_gamma).cuda()
     centre_semantic_criterion = nn.CrossEntropyLoss(ignore_index=cfg.ignore_label).cuda()
     centre_offset_criterion = nn.L1Loss().cuda()
+    score_criterion = nn.BCELoss(reduction='none').cuda()
 
     def test_model_fn(batch, model, epoch):
         coords = batch['locs'].cuda()  # (N, 1 + 3), long, cuda, dimension 0 for batch_idx
@@ -980,7 +981,8 @@ def model_fn_decorator(test=False):
         point_semantic_scores = ret['point_semantic_scores']
         point_semantic_scores = point_semantic_scores.squeeze()
 
-        scores, proposals_idx, proposals_offset = ret['proposal_scores']
+        if 'proposal_scores' in ret.keys():
+            scores, proposals_idx, proposals_offset = ret['proposal_scores']
 
         if 'centre_preds' in ret.keys():
             centre_preds = ret['centre_preds']
@@ -1023,7 +1025,7 @@ def model_fn_decorator(test=False):
                 preds['centre_semantic_preds'] = centre_semantic_preds
                 preds['centre_offset_preds'] = centre_offset_preds
             preds['pt_coords'] = coords_float
-            if (epoch == cfg.test_epoch):
+            if (epoch == cfg.test_epoch) and ('proposal_scores' in ret.keys()):
                 preds['score'] = scores
                 preds['proposals'] = (proposals_idx, proposals_offset)
 
@@ -1092,6 +1094,12 @@ def model_fn_decorator(test=False):
             centre_offset_preds = centre_offset_preds.squeeze(dim=0)
             centre_offset_preds = centre_offset_preds[grid_centre_gt.long(), :] # (nInst, 3)
 
+        if (epoch > cfg.prepare_epochs) and (cfg.model_mode == 'Jiang_original_PointGroup'):
+            scores, proposals_idx, proposals_offset = ret['proposal_scores']
+            # scores: (nProposal, 1) float, cuda
+            # proposals_idx: (sumNPoint, 2), int, cpu, dim 0 for cluster_id, dim 1 for corresponding point idxs in N
+            # proposals_offset: (nProposal + 1), int, cpu
+
         # instance_heatmap = torch.zeros((32**3)).cuda()
         # instance_heatmap[grid_centre_gt.long()] = 1
 
@@ -1110,6 +1118,9 @@ def model_fn_decorator(test=False):
             loss_inp['centre_semantic_preds'] = (centre_semantic_preds, centre_semantic_labels.squeeze(dim=0))
             loss_inp['centre_offset_preds'] = (centre_offset_preds, centre_offset_labels)
 
+        if (epoch > cfg.prepare_epochs) and (cfg.model_mode == 'Jiang_original_PointGroup'):
+            loss_inp['proposal_scores'] = (scores, proposals_idx, proposals_offset, instance_pointnum)
+
         loss, loss_out, infos = loss_fn(loss_inp, epoch)
 
         ##### accuracy / visual_dict / meter_dict
@@ -1121,6 +1132,9 @@ def model_fn_decorator(test=False):
                 preds['centre_preds'] = centre_preds
                 preds['centre_semantic_preds'] = centre_semantic_preds
                 preds['centre_offset_preds'] = centre_offset_preds
+            if (epoch > cfg.prepare_epochs) and (cfg.model_mode == 'Jiang_original_PointGroup'):
+                preds['score'] = scores
+                preds['proposals'] = (proposals_idx, proposals_offset)
 
             visual_dict = {}
             visual_dict['loss'] = loss
@@ -1262,6 +1276,23 @@ def model_fn_decorator(test=False):
             centre_offset_loss = centre_offset_criterion(centre_offset_preds, grid_centre_offsets)
             loss_out['centre_offset_loss'] = (centre_offset_loss, grid_centre_offsets.shape[0])
 
+        if (epoch > cfg.prepare_epochs) and (cfg.model_mode == 'Jiang_original_PointGroup'):
+            '''score loss'''
+            scores, proposals_idx, proposals_offset, instance_pointnum = loss_inp['proposal_scores']
+            # scores: (nProposal, 1), float32
+            # proposals_idx: (sumNPoint, 2), int, cpu, dim 0 for cluster_id, dim 1 for corresponding point idxs in N
+            # proposals_offset: (nProposal + 1), int, cpu
+            # instance_pointnum: (total_nInst), int
+
+            ious = pointgroup_ops.get_iou(proposals_idx[:, 1].cuda(), proposals_offset.cuda(), instance_labels, instance_pointnum) # (nProposal, nInstance), float
+            gt_ious, gt_instance_idxs = ious.max(1)  # (nProposal) float, long
+            gt_scores = get_segmented_scores(gt_ious, cfg.fg_thresh, cfg.bg_thresh)
+
+            score_loss = score_criterion(torch.sigmoid(scores.view(-1)), gt_scores)
+            score_loss = score_loss.mean()
+
+            loss_out['score_loss'] = (score_loss, gt_ious.shape[0])
+
         '''total loss'''
         loss = cfg.loss_weight[3] * semantic_loss + cfg.loss_weight[4] * offset_norm_loss + \
                cfg.loss_weight[5] * offset_dir_loss
@@ -1270,6 +1301,8 @@ def model_fn_decorator(test=False):
         if 'centre_preds' in loss_inp.keys():
             loss += cfg.loss_weight[0] * centre_loss + cfg.loss_weight[1] * centre_semantic_loss + \
                     cfg.loss_weight[2] * centre_offset_loss
+        if (epoch > cfg.prepare_epochs) and (cfg.model_mode == 'Jiang_original_PointGroup'):
+            loss += (1 * score_loss)
 
         return loss, loss_out, infos
 

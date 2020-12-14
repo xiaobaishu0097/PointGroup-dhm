@@ -51,7 +51,7 @@ TRAIN:
   offset_norm_criterion: l1 # l1 or l2 or triplet
   triplet_margin: 0.3
   triplet_p: 1
-  overfitting: True
+  overfitting: False
 
   constrastive_loss: True
 
@@ -74,7 +74,7 @@ GROUP:
   cluster_npoint_thre: 50
   cluster_sets: P # P or Q
 
-  prepare_epochs: 128
+  prepare_epochs: 0
 
 TEST:
   split: val
