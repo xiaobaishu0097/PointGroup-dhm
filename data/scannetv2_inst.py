@@ -423,9 +423,9 @@ class ScannetDatast(Dataset):
                 'instance_centres': instance_centres,  # (nInst, 3)
                 'instance_heatmap': instance_heatmap,  # (nGrid)
                 'grid_centre_gt': grid_centre_gt,  # (nInst)
-                'grid_centre_offset': grid_centre_offset,  # (nInst, 3)
+                'centre_offset_labels': grid_centre_offset,  # (nInst, 3)
                 'grid_xyz': grid_xyz,  # (nGrid, 3)
-                'grid_instance_label': grid_instance_label,  # (nGrid)
+                'centre_semantic_labels': grid_instance_label,  # (nGrid)
                 'id': idx,
                 'offsets': batch_offsets,  # int (B+1)
                 'spatial_shape': spatial_shape,  # long (3)

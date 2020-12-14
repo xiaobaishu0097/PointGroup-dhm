@@ -269,7 +269,7 @@ class PointGroup(nn.Module):
             )
 
         ### same network architecture as PointGroup
-        elif self.model_mode == 'Du_original_PointGroup':
+        elif self.model_mode == 'Jiang_original_PointGroup':
             self.input_conv = spconv.SparseSequential(
                 spconv.SubMConv3d(input_c, m, kernel_size=3, padding=1, bias=False, indice_key='subm1')
             )
@@ -289,108 +289,6 @@ class PointGroup(nn.Module):
                 nn.ReLU()
             )
             self.score_linear = nn.Linear(m, 1)
-
-        # elif self.model_mode == 1:
-        #     self.input_conv = spconv.SparseSequential(
-        #         spconv.SubMConv3d(m, m, kernel_size=3, padding=1, bias=False, indice_key='subm1')
-        #     )
-        #
-        #     self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
-        #                        indice_key_id=1)
-        #
-        #     self.output_layer = spconv.SparseSequential(
-        #         norm_fn(m),
-        #         nn.ReLU()
-        #     )
-        #     #### semantic segmentation
-        #     self.linear = nn.Linear(m, classes)  # bias(default): True
-        #
-        #     #### offset
-        #     self.offset = nn.Sequential(
-        #         nn.Linear(m, m, bias=True),
-        #         norm_fn(m),
-        #         nn.ReLU(),
-        #     )
-        #     self.offset_linear = nn.Linear(m, 3, bias=True)
-        # elif self.model_mode == 2:
-        #     ### convolutional occupancy networks decoder
-        #     self.decoder = decoder.LocalDecoder(
-        #         dim=3,
-        #         c_dim=m,
-        #         hidden_size=m,
-        #     )
-        #     self.input_conv = spconv.SparseSequential(
-        #         spconv.SubMConv3d(m, m, kernel_size=3, padding=1, bias=False, indice_key='subm1')
-        #     )
-        #
-        #     self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
-        #                        indice_key_id=1)
-        #
-        #     self.output_layer = spconv.SparseSequential(
-        #         norm_fn(m),
-        #         nn.ReLU()
-        #     )
-        #
-        #     self.unet3d = UNet3D(num_levels=cfg.unet3d_num_levels, f_maps=32, in_channels=32, out_channels=32)
-        #
-        #     #### semantic segmentation
-        #     self.linear = nn.Linear(m, classes)  # bias(default): True
-        #
-        #     #### offset
-        #     self.offset = nn.Sequential(
-        #         nn.Linear(m, m, bias=True),
-        #         norm_fn(m),
-        #         nn.ReLU(),
-        #     )
-        #     self.offset_linear = nn.Linear(m, 3, bias=True)
-        #
-        # elif self.model_mode == 3:
-        #     ### convolutional occupancy networks decoder
-        #     self.decoder = decoder.LocalDecoder(
-        #         dim=3,
-        #         c_dim=32,
-        #         hidden_size=32,
-        #     )
-        #
-        #     self.point_offset = nn.Sequential(
-        #         nn.Linear(32, 32, bias=True),
-        #         nn.ReLU(),
-        #         nn.Linear(32, 3, bias=True),
-        #     )
-        #     self.point_semantic = nn.Sequential(
-        #         nn.Linear(32, 32, bias=True),
-        #         nn.ReLU(),
-        #         nn.Linear(32, classes, bias=True),
-        #     )
-        #
-        # elif self.model_mode == 4:
-        #     m = 16
-        #     if cfg.use_coords:
-        #         self.input_conv = spconv.SparseSequential(
-        #             spconv.SubMConv3d(6, m, kernel_size=3, padding=1, bias=False, indice_key='subm1')
-        #         )
-        #     else:
-        #         self.input_conv = spconv.SparseSequential(
-        #             spconv.SubMConv3d(3, m, kernel_size=3, padding=1, bias=False, indice_key='subm1')
-        #         )
-        #
-        #     self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
-        #                        indice_key_id=1)
-        #
-        #     self.output_layer = spconv.SparseSequential(
-        #         norm_fn(m),
-        #         nn.ReLU()
-        #     )
-        #     #### semantic segmentation
-        #     self.linear = nn.Linear(m, classes)  # bias(default): True
-        #
-        #     #### offset
-        #     self.offset = nn.Sequential(
-        #         nn.Linear(m, m, bias=True),
-        #         norm_fn(m),
-        #         nn.ReLU(),
-        #     )
-        #     self.offset_linear = nn.Linear(m, 3, bias=True)
 
         self.apply(self.set_bn_init)
 
@@ -434,7 +332,7 @@ class PointGroup(nn.Module):
         #               'score_unet': self.score_unet, 'score_outputlayer': self.score_outputlayer,
         #               'score_linear': self.score_linear}
 
-        # if self.model_mode == 'Du_original_PointGroup':
+        # if self.model_mode == 'Jiang_original_PointGroup':
         #     module_map = {'input_conv': self.input_conv, 'unet': self.unet, 'output_layer': self.output_layer,
         #                   'linear': self.linear, 'offset': self.offset, 'offset_linear': self.offset_linear,
         #                   'module.encoder': self.encoder, 'module.grid_centre_pred': self.grid_centre_pred,
@@ -948,7 +846,7 @@ class PointGroup(nn.Module):
             ret['point_semantic_scores'] = semantic_scores
             ret['point_offset_preds'] = point_offset_preds
 
-        elif self.model_mode == 'Du_original_PointGroup':
+        elif self.model_mode == 'Jiang_original_PointGroup':
             voxel_feats = pointgroup_ops.voxelization(
                 input['pt_feats'].squeeze(dim=0),
                 input['v2p_map'].squeeze(dim=0),
@@ -976,6 +874,7 @@ class PointGroup(nn.Module):
             if (epoch > self.prepare_epochs):
                 #### get prooposal clusters
                 object_idxs = torch.nonzero(point_semantic_preds > 1).view(-1)
+                coords = coords.squeeze()
 
                 batch_idxs_ = batch_idxs[object_idxs]
                 batch_offsets_ = utils.get_batch_offsets(batch_idxs_, input['batch_size'])
@@ -1368,7 +1267,7 @@ def model_fn_decorator(test=False):
                cfg.loss_weight[5] * offset_dir_loss
         if cfg.offset_norm_criterion == 'triplet':
             loss += cfg.loss_weight[6] * offset_norm_triplet_loss
-        if epoch > cfg.prepare_epochs:
+        if 'centre_preds' in loss_inp.keys():
             loss += cfg.loss_weight[0] * centre_loss + cfg.loss_weight[1] * centre_semantic_loss + \
                     cfg.loss_weight[2] * centre_offset_loss
 
