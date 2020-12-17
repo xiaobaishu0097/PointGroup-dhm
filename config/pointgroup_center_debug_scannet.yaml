@@ -38,7 +38,7 @@ TRAIN:
   train_workers: 16 # data loader workers
   optim: Adam # Adam or SGD
   lr: 0.001
-  step_epoch: 32
+  step_epoch: 384
   multiplier: 0.5
   momentum: 0.9
   weight_decay: 0.0001
