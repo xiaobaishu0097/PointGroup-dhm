@@ -183,12 +183,12 @@ if __name__ == '__main__':
     MODEL = importlib.import_module(args.net)  # import network module
     model = MODEL.get_model(input_channels=0)
 
-    eval_set = KittiDataset(root_dir='./data', mode='EVAL', split='val')
+    eval_set = KittiDataset(root_dir='data', mode='EVAL', split='val')
     eval_loader = DataLoader(eval_set, batch_size=args.batch_size, shuffle=False, pin_memory=True,
                              num_workers=args.workers, collate_fn=eval_set.collate_batch)
 
     if args.mode == 'train':
-        train_set = KittiDataset(root_dir='./data', mode='TRAIN', split='train')
+        train_set = KittiDataset(root_dir='data', mode='TRAIN', split='train')
         train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, pin_memory=True,
                                   num_workers=args.workers, collate_fn=train_set.collate_batch)
         # output dir config

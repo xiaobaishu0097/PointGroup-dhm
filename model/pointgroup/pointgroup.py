@@ -7,6 +7,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch_scatter import scatter_mean
+import os
 import numpy as np
 import spconv
 from spconv.modules import SparseModule
@@ -22,6 +23,39 @@ from model.encoder import pointnet
 from model.encoder.unet3d import UNet3D
 from model.decoder import decoder
 from model.common import coordinate2index, normalize_3d_coordinate
+
+from model.Pointnet2.pointnet2.pointnet2_modules import PointnetFPModule, PointnetSAModuleMSG, PointnetSAModule
+import model.Pointnet2.pointnet2.pointnet2_utils as pointnet2_utils
+import model.Pointnet2.pointnet2.pytorch_utils as pt_utils
+
+
+class backbone_pointnet2(nn.Module):
+    def __init__(self):
+        super(backbone_pointnet2, self).__init__()
+        self.sa1 = PointnetSAModule(mlp=[6, 32, 32, 64], npoint=1024, radius=0.1, nsample=32, bn=True)
+        self.sa2 = PointnetSAModule(mlp=[64, 64, 64, 128], npoint=256, radius=0.2, nsample=64, bn=True)
+        self.sa3 = PointnetSAModule(mlp=[128, 128, 128, 256], npoint=64, radius=0.4, nsample=128, bn=True)
+        self.sa4 = PointnetSAModule(mlp=[256, 256, 256, 512], npoint=None, radius=None, nsample=None, bn=True)
+        self.fp4 = PointnetFPModule(mlp=[768, 256, 256])
+        self.fp3 = PointnetFPModule(mlp=[384, 256, 256])
+        self.fp2 = PointnetFPModule(mlp=[320, 256, 128])
+        self.fp1 = PointnetFPModule(mlp=[137, 128, 128, 128, 128])
+
+    def forward(self, xyz, points):
+        l1_xyz, l1_points = self.sa1(xyz.contiguous(), points)
+        l2_xyz, l2_points = self.sa2(l1_xyz, l1_points)
+        l3_xyz, l3_points = self.sa3(l2_xyz, l2_points)
+        l4_xyz, l4_points = self.sa4(l3_xyz, l3_points)
+        l3_points = self.fp4(l3_xyz, l4_xyz, l3_points, l4_points)
+        l2_points = self.fp3(l2_xyz, l3_xyz, l2_points, l3_points)
+        l1_points = self.fp2(l1_xyz, l2_xyz, l1_points, l2_points)
+        l0_points = self.fp1(xyz.contiguous(), l1_xyz, torch.cat((xyz.transpose(1, 2), points), dim=1), l1_points)
+
+        # global_features = l4_points.view(-1, 512)
+        global_features = l3_points.view(-1, 512)
+        point_features = l0_points.transpose(1, 2)
+
+        return point_features, global_features
 
 
 class ResidualBlock(SparseModule):
@@ -174,7 +208,7 @@ class PointGroup(nn.Module):
                     padding=0.1, n_blocks=5
                 )
             elif self.backbone == 'pointnet++':
-
+                self.pointnet_backbone_encoder = backbone_pointnet2()
 
             ### point prediction branch
             ### sparse 3D U-Net
@@ -294,7 +328,7 @@ class PointGroup(nn.Module):
             )
             self.score_linear = nn.Linear(m, 1)
 
-        self.apply(self.set_bn_init)
+            self.apply(self.set_bn_init)
 
         ### point prediction
         self.point_offset = nn.Sequential(
@@ -444,7 +478,7 @@ class PointGroup(nn.Module):
         fea_grid = fea_grid.reshape(p.size(0), 32, self.reso_grid, self.reso_grid, self.reso_grid) # sparce matrix (B x 512 x reso x reso)
         return fea_grid
 
-    def forward(self, input, input_map, coords, rgb, batch_idxs, batch_offsets, epoch):
+    def forward(self, input, input_map, coords, rgb, ori_xyz, batch_idxs, batch_offsets, epoch):
         '''
         :param input_map: (N), int, cuda
         :param coords: (N, 3), float, cuda
@@ -456,17 +490,25 @@ class PointGroup(nn.Module):
         batch_idxs = batch_idxs.squeeze()
 
         if self.model_mode == 0:
-            encoded_feats = self.pointnet_backbone_encoder(coords, rgb)
-            '''encoded_feats:{
-            coord: coordinate of points (b, n, 3)
-            index: index of points (b, 1, n)
-            point: feature of points (b, n, 32)
-            grid: grid features (b, c, grid_dim, grid_dim, grid_dim)
-            }
-            '''
+            if self.backbone == 'pointnet':
+                encoded_feats = self.pointnet_backbone_encoder(coords, rgb)
+                '''encoded_feats:{
+                coord: coordinate of points (b, n, 3)
+                index: index of points (b, 1, n)
+                point: feature of points (b, n, 32)
+                grid: grid features (b, c, grid_dim, grid_dim, grid_dim)
+                }
+                '''
+
+                point_feats = encoded_feats['point']
+                grid_feats = encoded_feats['grid']
+            elif self.backbone == 'pointnet++':
+                temp_output = self.pointnet_backbone_encoder(
+                    coords, torch.cat((rgb, ori_xyz), dim=2).transpose(1, 2).contiguous()
+                )
 
             voxel_feats = pointgroup_ops.voxelization(
-                encoded_feats['point'].squeeze(dim=0),
+                point_feats.squeeze(dim=0),
                 input['v2p_map'].squeeze(dim=0),
                 input['mode']
             )  # (M, C), float, cuda
@@ -490,9 +532,8 @@ class PointGroup(nn.Module):
             point_offset_preds = self.point_offset(output_feats)  # (N, 3), float32
 
             ### centre prediction
-            bs, c_dim, grid_size = encoded_feats['grid'].shape[0], encoded_feats['grid'].shape[1], \
-                                   encoded_feats['grid'].shape[2]
-            grid_feats = encoded_feats['grid'].reshape(bs, c_dim, -1).permute(0, 2, 1)
+            bs, c_dim, grid_size = grid_feats.shape[0], grid_feats.shape[1], grid_feats.shape[2]
+            grid_feats = grid_feats.reshape(bs, c_dim, -1).permute(0, 2, 1)
 
             centre_preds = self.centre_pred(grid_feats)
             centre_semantic_preds = self.centre_semantic(grid_feats)
@@ -955,6 +996,7 @@ def model_fn_decorator(test=False):
         v2p_map = batch['v2p_map'].cuda()  # (M, 1 + maxActive), int, cuda
 
         coords_float = batch['locs_float'].cuda()  # (N, 3), float32, cuda
+        ori_coords = batch['ori_coords'].cuda()
         feats = batch['feats'].cuda()  # (N, C), float32, cuda
 
         batch_offsets = batch['offsets'].cuda()  # (B + 1), int, cuda
@@ -977,7 +1019,7 @@ def model_fn_decorator(test=False):
             'batch_size': cfg.batch_size,
         }
 
-        ret = model(input_, p2v_map, coords_float, rgb, coords[:, :, 0].int(), batch_offsets, epoch)
+        ret = model(input_, p2v_map, coords_float, rgb, ori_coords, coords[:, :, 0].int(), batch_offsets, epoch)
 
         point_offset_preds = ret['point_offset_preds']
         point_offset_preds = point_offset_preds.squeeze()
@@ -1048,6 +1090,7 @@ def model_fn_decorator(test=False):
         v2p_map = batch['v2p_map'].cuda()  # (M, 1 + maxActive), int, cuda
 
         coords_float = batch['locs_float'].cuda()  # (N, 3), float32, cuda
+        ori_coords = batch['ori_coords'].cuda()
         feats = batch['feats'].cuda()  # (N, C), float32, cuda
         labels = batch['labels'].cuda()  # (N), long, cuda
         instance_labels = batch['instance_labels'].cuda()  # (N), long, cuda, 0~total_nInst, -100
@@ -1079,7 +1122,7 @@ def model_fn_decorator(test=False):
             'batch_size': cfg.batch_size,
         }
 
-        ret = model(input_, p2v_map, coords_float, rgb, coords[:, :, 0].int(), batch_offsets, epoch)
+        ret = model(input_, p2v_map, coords_float, rgb, ori_coords, coords[:, :, 0].int(), batch_offsets, epoch)
 
         point_offset_preds = ret['point_offset_preds']
         point_offset_preds = point_offset_preds.squeeze()
