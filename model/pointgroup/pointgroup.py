@@ -147,6 +147,7 @@ class PointGroup(nn.Module):
         self.pretrain_module = cfg.pretrain_module
         self.fix_module = cfg.fix_module
 
+        self.backbone = cfg.backbone
         self.model_mode = cfg.model_mode
         self.reso_grid = 32
         self.cluster_sets = cfg.cluster_sets
@@ -163,14 +164,17 @@ class PointGroup(nn.Module):
 
         ### Our target model, based on Panoptic Deeplab
         if self.model_mode == 0 or self.model_mode == 'Zheng_panoptic_wpointnet_PointGroup':
-            #### PointNet backbone encoder
-            self.pointnet_backbone_encoder = pointnet.LocalPoolPointnet(
-                c_dim=m, dim=6, hidden_dim=m, scatter_type=cfg.scatter_type,
-                unet3d=True,
-                unet3d_kwargs={"num_levels": cfg.unet3d_num_levels, "f_maps": m, "in_channels": m, "out_channels": m},
-                grid_resolution=32, plane_type='grid',
-                padding=0.1, n_blocks=5
-            )
+            if self.backbone == 'pointnet':
+                #### PointNet backbone encoder
+                self.pointnet_backbone_encoder = pointnet.LocalPoolPointnet(
+                    c_dim=m, dim=6, hidden_dim=m, scatter_type=cfg.scatter_type,
+                    unet3d=True,
+                    unet3d_kwargs={"num_levels": cfg.unet3d_num_levels, "f_maps": m, "in_channels": m, "out_channels": m},
+                    grid_resolution=32, plane_type='grid',
+                    padding=0.1, n_blocks=5
+                )
+            elif self.backbone == 'pointnet++':
+
 
             ### point prediction branch
             ### sparse 3D U-Net
