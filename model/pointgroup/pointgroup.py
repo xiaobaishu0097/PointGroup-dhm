@@ -241,12 +241,15 @@ class PointGroup(nn.Module):
         ### only the upper branch of our target model
         elif self.model_mode == 'Zheng_upper_wpointnet_PointGroup':
             #### PointNet backbone encoder
-            self.pointnet_backbone_encoder = pointnet.LocalPoolPointnet(
-                c_dim=m, dim=6, hidden_dim=m, scatter_type=cfg.scatter_type,
-                unet3d=False,
-                grid_resolution=32, plane_type='grid',
-                padding=0.1, n_blocks=5
-            )
+            if self.backbone == 'pointnet':
+                #### PointNet backbone encoder
+                self.pointnet_backbone_encoder = pointnet.LocalPoolPointnet(
+                    c_dim=m, dim=6, hidden_dim=m, scatter_type=cfg.scatter_type,
+                    unet3d=False, grid_resolution=32, plane_type='grid',
+                    padding=0.1, n_blocks=5
+                )
+            elif self.backbone == 'pointnet++':
+                self.pointnet_backbone_encoder = backbone_pointnet2()
 
             ### point prediction branch
             ### sparse 3D U-Net
@@ -658,10 +661,26 @@ class PointGroup(nn.Module):
             ret['centre_offset_preds'] = centre_offset_preds
 
         elif self.model_mode == 'Zheng_upper_wpointnet_PointGroup':
-            encoded_feats = self.pointnet_backbone_encoder(coords, rgb)
+            if self.backbone == 'pointnet':
+                encoded_feats = self.pointnet_backbone_encoder(coords, rgb)
+                '''encoded_feats:{
+                coord: coordinate of points (b, n, 3)
+                index: index of points (b, 1, n)
+                point: feature of points (b, n, 32)
+                grid: grid features (b, c, grid_dim, grid_dim, grid_dim)
+                }
+                '''
+
+                point_feats = encoded_feats['point']
+                grid_feats = encoded_feats['grid']
+            elif self.backbone == 'pointnet++':
+                point_feats, _ = self.pointnet_backbone_encoder(
+                    coords, torch.cat((rgb, ori_xyz), dim=2).transpose(1, 2).contiguous()
+                )
+                point_feats = point_feats.contiguous()
 
             voxel_feats = pointgroup_ops.voxelization(
-                encoded_feats['point'].squeeze(dim=0),
+                point_feats.squeeze(dim=0),
                 input['v2p_map'].squeeze(dim=0),
                 input['mode']
             )  # (M, C), float, cuda
