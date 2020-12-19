@@ -25,6 +25,7 @@ from model.decoder import decoder
 from model.common import coordinate2index, normalize_3d_coordinate
 
 from model.Pointnet2.pointnet2.pointnet2_modules import PointnetFPModule, PointnetSAModuleMSG, PointnetSAModule
+from model.encoder.unet3d import UNet3D
 import model.Pointnet2.pointnet2.pointnet2_utils as pointnet2_utils
 import model.Pointnet2.pointnet2.pytorch_utils as pt_utils
 
@@ -39,7 +40,8 @@ class backbone_pointnet2(nn.Module):
         self.fp4 = PointnetFPModule(mlp=[768, 256, 256])
         self.fp3 = PointnetFPModule(mlp=[384, 256, 256])
         self.fp2 = PointnetFPModule(mlp=[320, 256, 128])
-        self.fp1 = PointnetFPModule(mlp=[137, 128, 128, 128, 128])
+        # self.fp1 = PointnetFPModule(mlp=[137, 128, 128, 128, 128])
+        self.fp1 = PointnetFPModule(mlp=[137, 128, 128, 64, 32])
 
     def forward(self, xyz, points):
         l1_xyz, l1_points = self.sa1(xyz.contiguous(), points)
@@ -185,6 +187,7 @@ class PointGroup(nn.Module):
         self.model_mode = cfg.model_mode
         self.reso_grid = 32
         self.cluster_sets = cfg.cluster_sets
+        self.m = cfg.m
 
         norm_fn = functools.partial(nn.BatchNorm1d, eps=1e-4, momentum=0.1)
 
@@ -209,6 +212,9 @@ class PointGroup(nn.Module):
                 )
             elif self.backbone == 'pointnet++':
                 self.pointnet_backbone_encoder = backbone_pointnet2()
+                self.unet3d = UNet3D(
+                    num_levels=cfg.unet3d_num_levels, f_maps=m, in_channels=m, out_channels=m
+                )
 
             ### point prediction branch
             ### sparse 3D U-Net
@@ -472,10 +478,14 @@ class PointGroup(nn.Module):
         p_nor = normalize_3d_coordinate(p.clone(), padding=0.1)
         index = coordinate2index(p_nor, self.reso_grid, coord_type='3d')
         # scatter grid features from points
-        fea_grid = c.new_zeros(p.size(0), 32, self.reso_grid**3)
+        fea_grid = c.new_zeros(p.size(0), self.m, self.reso_grid**3)
         c = c.permute(0, 2, 1)
         fea_grid = scatter_mean(c, index, out=fea_grid) # B x C x reso^3
-        fea_grid = fea_grid.reshape(p.size(0), 32, self.reso_grid, self.reso_grid, self.reso_grid) # sparce matrix (B x 512 x reso x reso)
+        fea_grid = fea_grid.reshape(p.size(0), self.m, self.reso_grid, self.reso_grid, self.reso_grid) # sparce matrix (B x 512 x reso x reso)
+
+        if self.unet3d is not None:
+            fea_grid = self.unet3d(fea_grid)
+
         return fea_grid
 
     def forward(self, input, input_map, coords, rgb, ori_xyz, batch_idxs, batch_offsets, epoch):
@@ -503,9 +513,12 @@ class PointGroup(nn.Module):
                 point_feats = encoded_feats['point']
                 grid_feats = encoded_feats['grid']
             elif self.backbone == 'pointnet++':
-                temp_output = self.pointnet_backbone_encoder(
+                point_feats, _ = self.pointnet_backbone_encoder(
                     coords, torch.cat((rgb, ori_xyz), dim=2).transpose(1, 2).contiguous()
                 )
+                point_feats = point_feats.contiguous()
+
+                grid_feats = self.generate_grid_features(coords, point_feats)
 
             voxel_feats = pointgroup_ops.voxelization(
                 point_feats.squeeze(dim=0),

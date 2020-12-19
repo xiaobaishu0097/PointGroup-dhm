@@ -222,6 +222,7 @@ class ScannetDatast(Dataset):
             xyz = xyz[valid_idxs]
             rgb = rgb[valid_idxs]
             label = label[valid_idxs]
+            xyz_origin_valid = xyz_origin[valid_idxs]
             instance_label = self.getCroppedInstLabel(instance_label, valid_idxs)
 
             # label[label == -100] = 20
@@ -280,7 +281,7 @@ class ScannetDatast(Dataset):
 
             locs = torch.cat([torch.LongTensor(xyz.shape[0], 1).fill_(0), torch.from_numpy(xyz).long()], 1) # long (N, 1 + 3), the batch item idx is put in locs[:, 0]
             locs_float = torch.from_numpy(xyz_middle).to(torch.float32) # float (N, 3)
-            xyz_origin = torch.from_numpy(xyz_origin).to(torch.float32)
+            xyz_origin_valid = torch.from_numpy(xyz_origin_valid).to(torch.float32)
             feats = (torch.from_numpy(rgb) + torch.randn(3) * 0.1) # float (N, C)
             # feats = torch.from_numpy(rgb)
             labels = torch.from_numpy(label).long() # long (N)
@@ -308,7 +309,7 @@ class ScannetDatast(Dataset):
                 'p2v_map': p2v_map,  # (N)
                 'v2p_map': v2p_map,  # (nVoxel, 19?)
                 'locs_float': locs_float,  # (N, 3)
-                'ori_coords': xyz_origin,
+                'ori_coords': xyz_origin_valid,
                 'feats': feats,  # (N, 3)
                 'labels': labels,  # (N)
                 'instance_labels': instance_labels,  # (N)
