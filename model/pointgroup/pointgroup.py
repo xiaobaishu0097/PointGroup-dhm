@@ -1190,6 +1190,9 @@ def model_fn_decorator(test=False):
         if cfg.use_coords:
             feats = torch.cat((feats, coords_float), -1)
 
+        if not cfg.use_ori_coords:
+            ori_coords = coords_float
+
         input_ = {
             'pt_feats': feats,
             'v2p_map': v2p_map,

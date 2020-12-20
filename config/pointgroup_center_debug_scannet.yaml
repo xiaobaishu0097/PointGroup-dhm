@@ -33,6 +33,7 @@ STRUCTURE:
   # or Zheng_upper_wopointnet_PointGroup or Jiang_original_PointGroup
 
   use_coords: True
+  use_ori_coords: True
   pointnet_include_rgb: True
 
 TRAIN:
