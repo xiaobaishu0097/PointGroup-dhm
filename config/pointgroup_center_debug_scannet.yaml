@@ -22,7 +22,7 @@ DATA:
 
 STRUCTURE:
   model_name: pointgroup
-  backbone: pointnet++
+  backbone: pointnet++_yanx # pointnet, pointnet++_yanx, pointnet++_shi
   m: 32 # 16 or 32
   block_residual: True
   block_reps: 2
@@ -33,6 +33,7 @@ STRUCTURE:
   # or Zheng_upper_wopointnet_PointGroup or Jiang_original_PointGroup
 
   use_coords: True
+  pointnet_include_rgb: True
 
 TRAIN:
   epochs: 384

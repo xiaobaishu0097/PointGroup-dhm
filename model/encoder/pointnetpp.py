@@ -103,10 +103,15 @@ class PointNetFeaturePropagation(nn.Module):
         return new_points
 
 class PointNetPlusPlus(nn.Module):
-    def __init__(self, dim=None, c_dim=128, padding=0.1):
+    def __init__(self, dim=None, c_dim=128, padding=0.1, include_rgb=False):
         super(PointNetPlusPlus, self).__init__()
 
-        self.sa1 = PointNetSetAbstraction(npoint=512, radius=0.2, nsample=32, in_channel=6, mlp=[64, 64, 128], group_all=False)
+        if include_rgb:
+            sa1_in_channel = 6 + 3
+        else:
+            sa1_in_channel = 6
+
+        self.sa1 = PointNetSetAbstraction(npoint=512, radius=0.2, nsample=32, in_channel=sa1_in_channel, mlp=[64, 64, 128], group_all=False)
         self.sa2 = PointNetSetAbstraction(npoint=128, radius=0.4, nsample=64, in_channel=128 + 3, mlp=[128, 128, 256], group_all=False)
         self.sa3 = PointNetSetAbstraction(npoint=None, radius=None, nsample=None, in_channel=256 + 3, mlp=[256, 512, 1024], group_all=True)
         self.fp3 = PointNetFeaturePropagation(in_channel=1280, mlp=[256, 256])

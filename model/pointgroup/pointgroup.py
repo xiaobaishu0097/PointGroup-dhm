@@ -19,7 +19,7 @@ sys.path.append('../../')
 
 from lib.pointgroup_ops.functions import pointgroup_ops
 from util import utils
-from model.encoder import pointnet
+from model.encoder import pointnet, pointnetpp
 from model.encoder.unet3d import UNet3D
 from model.decoder import decoder
 from model.common import coordinate2index, normalize_3d_coordinate
@@ -189,6 +189,8 @@ class PointGroup(nn.Module):
         self.cluster_sets = cfg.cluster_sets
         self.m = cfg.m
 
+        self.pointnet_include_rgb = cfg.pointnet_include_rgb
+
         norm_fn = functools.partial(nn.BatchNorm1d, eps=1e-4, momentum=0.1)
 
         if block_residual:
@@ -210,7 +212,14 @@ class PointGroup(nn.Module):
                     grid_resolution=32, plane_type='grid',
                     padding=0.1, n_blocks=5
                 )
-            elif self.backbone == 'pointnet++':
+            elif self.backbone == 'pointnet++_yanx':
+                self.pointnet_backbone_encoder = pointnetpp.PointNetPlusPlus(
+                    c_dim=self.m, include_rgb=self.pointnet_include_rgb
+                )
+                self.unet3d = UNet3D(
+                    num_levels=cfg.unet3d_num_levels, f_maps=m, in_channels=m, out_channels=m
+                )
+            elif self.backbone == 'pointnet++_shi':
                 self.pointnet_backbone_encoder = backbone_pointnet2()
                 self.unet3d = UNet3D(
                     num_levels=cfg.unet3d_num_levels, f_maps=m, in_channels=m, out_channels=m
@@ -515,7 +524,16 @@ class PointGroup(nn.Module):
 
                 point_feats = encoded_feats['point']
                 grid_feats = encoded_feats['grid']
-            elif self.backbone == 'pointnet++':
+            elif self.backbone == 'pointnet++_yanx':
+                if self.pointnet_include_rgb:
+                    pointnet_input = torch.cat((coords, rgb), dim=-1)
+                else:
+                    pointnet_input = coords
+                _, point_feats = self.pointnet_backbone_encoder(pointnet_input)
+                point_feats = point_feats.contiguous()
+
+                grid_feats = self.generate_grid_features(coords, point_feats)
+            elif self.backbone == 'pointnet++_shi':
                 point_feats, _ = self.pointnet_backbone_encoder(
                     coords, torch.cat((rgb, ori_xyz), dim=2).transpose(1, 2).contiguous()
                 )
@@ -563,17 +581,37 @@ class PointGroup(nn.Module):
             ret['centre_offset_preds'] = centre_offset_preds
 
         elif self.model_mode == 'Zheng_panoptic_wpointnet_PointGroup':
-            encoded_feats = self.pointnet_backbone_encoder(coords, rgb)
-            '''encoded_feats:{
-            coord: coordinate of points (b, n, 3)
-            index: index of points (b, 1, n)
-            point: feature of points (b, n, 32)
-            grid: grid features (b, c, grid_dim, grid_dim, grid_dim)
-            }
-            '''
+            if self.backbone == 'pointnet':
+                encoded_feats = self.pointnet_backbone_encoder(coords, rgb)
+                '''encoded_feats:{
+                coord: coordinate of points (b, n, 3)
+                index: index of points (b, 1, n)
+                point: feature of points (b, n, 32)
+                grid: grid features (b, c, grid_dim, grid_dim, grid_dim)
+                }
+                '''
+
+                point_feats = encoded_feats['point']
+                grid_feats = encoded_feats['grid']
+            elif self.backbone == 'pointnet++_yanx':
+                if self.pointnet_include_rgb:
+                    pointnet_input = torch.cat((coords, rgb), dim=-1)
+                else:
+                    pointnet_input = coords
+                _, point_feats = self.pointnet_backbone_encoder(pointnet_input)
+                point_feats = point_feats.contiguous()
+
+                grid_feats = self.generate_grid_features(coords, point_feats)
+            elif self.backbone == 'pointnet++_shi':
+                point_feats, _ = self.pointnet_backbone_encoder(
+                    coords, torch.cat((rgb, ori_xyz), dim=2).transpose(1, 2).contiguous()
+                )
+                point_feats = point_feats.contiguous()
+
+                grid_feats = self.generate_grid_features(coords, point_feats)
 
             voxel_feats = pointgroup_ops.voxelization(
-                encoded_feats['point'].squeeze(dim=0),
+                point_feats.squeeze(dim=0),
                 input['v2p_map'].squeeze(dim=0),
                 input['mode']
             )  # (M, C), float, cuda
@@ -597,9 +635,8 @@ class PointGroup(nn.Module):
             point_offset_preds = self.point_offset(output_feats)  # (N, 3), float32
 
             ### centre prediction
-            bs, c_dim, grid_size = encoded_feats['grid'].shape[0], encoded_feats['grid'].shape[1], \
-                                   encoded_feats['grid'].shape[2]
-            grid_feats = encoded_feats['grid'].reshape(bs, c_dim, -1).permute(0, 2, 1)
+            bs, c_dim, grid_size = grid_feats.shape[0], grid_feats.shape[1], grid_feats.shape[2]
+            grid_feats = grid_feats.reshape(bs, c_dim, -1).permute(0, 2, 1)
 
             centre_preds = self.centre_pred(grid_feats)
             centre_semantic_preds = self.centre_semantic(grid_feats)
@@ -672,8 +709,16 @@ class PointGroup(nn.Module):
                 '''
 
                 point_feats = encoded_feats['point']
-                grid_feats = encoded_feats['grid']
-            elif self.backbone == 'pointnet++':
+
+            elif self.backbone == 'pointnet++_yanx':
+                if self.pointnet_include_rgb:
+                    pointnet_input = torch.cat((coords, rgb), dim=-1)
+                else:
+                    pointnet_input = coords
+                _, point_feats = self.pointnet_backbone_encoder(pointnet_input)
+                point_feats = point_feats.contiguous()
+
+            elif self.backbone == 'pointnet++_shi':
                 point_feats, _ = self.pointnet_backbone_encoder(
                     coords, torch.cat((rgb, ori_xyz), dim=2).transpose(1, 2).contiguous()
                 )
