@@ -257,7 +257,11 @@ class PointGroup(nn.Module):
                     unet3d=False, grid_resolution=32, plane_type='grid',
                     padding=0.1, n_blocks=5
                 )
-            elif self.backbone == 'pointnet++':
+            elif self.backbone == 'pointnet++_yanx':
+                self.pointnet_backbone_encoder = pointnetpp.PointNetPlusPlus(
+                    c_dim=self.m, include_rgb=self.pointnet_include_rgb
+                )
+            elif self.backbone == 'pointnet++_shi':
                 self.pointnet_backbone_encoder = backbone_pointnet2()
 
             ### point prediction branch
