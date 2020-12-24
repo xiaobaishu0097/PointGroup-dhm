@@ -516,44 +516,64 @@ class PointGroup(nn.Module):
         batch_idxs = batch_idxs.squeeze()
 
         if self.model_mode == 0:
+            point_feats = []
+            grid_feats = []
             if self.backbone == 'pointnet':
-                encoded_feats = self.pointnet_backbone_encoder(coords, rgb)
-                '''encoded_feats:{
-                coord: coordinate of points (b, n, 3)
-                index: index of points (b, 1, n)
-                point: feature of points (b, n, 32)
-                grid: grid features (b, c, grid_dim, grid_dim, grid_dim)
-                }
-                '''
+                for sample_indx in range(1, len(batch_offsets)):
+                    coords_input = coords[batch_offsets[sample_indx - 1]:batch_offsets[sample_indx], :].unsqueeze(dim=0)
+                    rgb_input = rgb[batch_offsets[sample_indx - 1]:batch_offsets[sample_indx], :].unsqueeze(dim=0)
 
-                point_feats = encoded_feats['point']
-                grid_feats = encoded_feats['grid']
+                    encoded_feats = self.pointnet_backbone_encoder(coords_input, rgb_input)
+                    '''encoded_feats:{
+                    coord: coordinate of points (b, n, 3)
+                    index: index of points (b, 1, n)
+                    point: feature of points (b, n, 32)
+                    grid: grid features (b, c, grid_dim, grid_dim, grid_dim)
+                    }
+                    '''
+
+                    point_feats.append(encoded_feats['point'].squeeze(dim=0))
+                    grid_feats.append(encoded_feats['grid'])
+
             elif self.backbone == 'pointnet++_yanx':
-                if self.pointnet_include_rgb:
-                    pointnet_input = torch.cat((coords, rgb), dim=-1)
-                else:
-                    pointnet_input = coords
-                _, point_feats = self.pointnet_backbone_encoder(pointnet_input)
-                point_feats = point_feats.contiguous()
+                for sample_indx in range(1, len(batch_offsets)):
+                    coords_input = coords[batch_offsets[sample_indx - 1]:batch_offsets[sample_indx], :].unsqueeze(dim=0)
+                    rgb_input = rgb[batch_offsets[sample_indx - 1]:batch_offsets[sample_indx], :].unsqueeze(dim=0)
 
-                grid_feats = self.generate_grid_features(coords, point_feats)
+                    if self.pointnet_include_rgb:
+                        pointnet_input = torch.cat((coords_input, rgb_input), dim=-1)
+                    else:
+                        pointnet_input = coords_input
+                    _, point_feat = self.pointnet_backbone_encoder(pointnet_input)
+
+                    point_feats.append(point_feat.contiguous().squeeze(dim=0))
+                    grid_feats.append(self.generate_grid_features(coords_input, point_feat))
+
             elif self.backbone == 'pointnet++_shi':
-                point_feats, _ = self.pointnet_backbone_encoder(
-                    coords, torch.cat((rgb, ori_xyz), dim=2).transpose(1, 2).contiguous()
-                )
-                point_feats = point_feats.contiguous()
+                for sample_indx in range(1, len(batch_offsets)):
+                    coords_input = coords[batch_offsets[sample_indx - 1]:batch_offsets[sample_indx], :].unsqueeze(dim=0)
+                    rgb_input = rgb[batch_offsets[sample_indx - 1]:batch_offsets[sample_indx], :].unsqueeze(dim=0)
+                    ori_xyz_input = ori_xyz[batch_offsets[sample_indx - 1]:batch_offsets[sample_indx], :].unsqueeze(dim=0)
 
-                grid_feats = self.generate_grid_features(coords, point_feats)
+                    point_feat, _ = self.pointnet_backbone_encoder(
+                        coords_input, torch.cat((rgb_input, ori_xyz_input), dim=2).transpose(1, 2).contiguous()
+                    )
+
+                    point_feats.append(point_feat.contiguous().squeeze(dim=0))
+                    grid_feats.append(self.generate_grid_features(coords_input, point_feat))
+
+            point_feats = torch.cat(point_feats, 0).contiguous()
+            grid_feats = torch.cat(grid_feats, 0)
 
             voxel_feats = pointgroup_ops.voxelization(
-                point_feats.squeeze(dim=0),
-                input['v2p_map'].squeeze(dim=0),
+                point_feats,
+                input['v2p_map'],
                 input['mode']
             )  # (M, C), float, cuda
 
             input_ = spconv.SparseConvTensor(
-                voxel_feats, input['voxel_coords'].squeeze(dim=0),
-                input['spatial_shape'].squeeze(dim=0).cpu().numpy(), input['batch_size']
+                voxel_feats, input['voxel_coords'],
+                input['spatial_shape'], input['batch_size']
             )
             output = self.input_conv(input_)
             output = self.unet(output)
@@ -1161,31 +1181,50 @@ def model_fn_decorator(test=False):
 
     def model_fn(batch, model, epoch):
         ##### prepare input and forward
-        # batch {'locs': locs, 'voxel_locs': voxel_locs, 'p2v_map': p2v_map, 'v2p_map': v2p_map,
-        # 'locs_float': locs_float, 'feats': feats, 'labels': labels, 'instance_labels': instance_labels,
-        # 'instance_info': instance_infos, 'instance_pointnum': instance_pointnum,
-        # 'id': tbl, 'offsets': batch_offsets, 'spatial_shape': spatial_shape}
-        coords = batch['locs'].cuda()  # (N, 1 + 3), long, cuda, dimension 0 for batch_idx
+        # {
+        #     # variables for backbone
+        #     'point_locs': point_locs,  # (N, 4) (sample_index, xyz)
+        #     'point_coords': point_coords,  # (N, 6) (shifted_xyz, original_xyz)
+        #     'point_feats': point_feats,  # (N, 3) (rgb)
+        #     # variables for point-wise predictions
+        #     'voxel_locs': voxel_locs,  # (nVoxel, 4)
+        #     'p2v_map': p2v_map,  # (N)
+        #     'v2p_map': v2p_map,  # (nVoxel, 19?)
+        #     'point_semantic_labels': point_semantic_labels,  # (N)
+        #     'point_instance_labels': point_instance_labels,  # (N)
+        #     'point_instance_infos': point_instance_infos,  # (N, 9)
+        #     'instance_centres': instance_centres,  # (nInst, 3) (instance_xyz)
+        #     # variables for grid-wise predictions
+        #     'grid_centre_heatmap': grid_centre_heatmaps,  # (B, nGrid)
+        #     'grid_centre_indicator': grid_centre_indicators,  # (NGrid, 2) (sample_index, grid_index)
+        #     'grid_centre_offset_labels': grid_centre_offset_labels,  # (NGrid, 4) (sample_index, grid_centre_offset)
+        #     'grid_centre_semantic_labels': grid_centre_semantic_labels,  # (B, nGrid)
+        #     # variables for other uses
+        #     'instance_pointnum': instance_pointnum,  # (nInst) # currently used in Jiang_PointGroup
+        #     'id': idx,
+        #     'batch_offsets': batch_offsets,  # int (B+1)
+        #     'spatial_shape': spatial_shape,  # long (3)
+        # }
+        coords = batch['point_locs'].cuda()  # (N, 1 + 3), long, cuda, dimension 0 for batch_idx
         voxel_coords = batch['voxel_locs'].cuda()  # (M, 1 + 3), long, cuda
         p2v_map = batch['p2v_map'].cuda()  # (N), int, cuda
         v2p_map = batch['v2p_map'].cuda()  # (M, 1 + maxActive), int, cuda
 
-        coords_float = batch['locs_float'].cuda()  # (N, 3), float32, cuda
-        ori_coords = batch['ori_coords'].cuda()
-        feats = batch['feats'].cuda()  # (N, C), float32, cuda
-        labels = batch['labels'].cuda()  # (N), long, cuda
-        instance_labels = batch['instance_labels'].cuda()  # (N), long, cuda, 0~total_nInst, -100
+        coords_float = batch['point_coords'].cuda()  # (N, 6), float32, cuda
+        feats = batch['point_feats'].cuda()  # (N, C), float32, cuda
+        labels = batch['point_semantic_labels'].cuda()  # (N), long, cuda
+        instance_labels = batch['point_instance_labels'].cuda()  # (N), long, cuda, 0~total_nInst, -100
 
-        instance_info = batch['instance_info'].cuda()  # (N, 9), float32, cuda, (meanxyz, minxyz, maxxyz)
+        instance_info = batch['point_instance_infos'].cuda()  # (N, 9), float32, cuda, (meanxyz, minxyz, maxxyz)
         instance_pointnum = batch['instance_pointnum'].cuda()  # (total_nInst), int, cuda
         instance_centres = batch['instance_centres'].cuda()
 
-        instance_heatmap = batch['instance_heatmap'].cuda()
-        grid_centre_gt = batch['grid_centre_gt'].cuda()
-        centre_offset_labels = batch['centre_offset_labels'].cuda()
-        centre_semantic_labels = batch['centre_semantic_labels'].cuda()
+        instance_heatmap = batch['grid_centre_heatmap'].cuda()
+        grid_centre_gt = batch['grid_centre_indicator'].cuda()
+        centre_offset_labels = batch['grid_centre_offset_labels'].cuda()
+        centre_semantic_labels = batch['grid_centre_semantic_labels'].cuda()
 
-        batch_offsets = batch['offsets'].cuda()  # (B + 1), int, cuda
+        batch_offsets = batch['batch_offsets'].cuda()  # (B + 1), int, cuda
 
         spatial_shape = batch['spatial_shape']
 
@@ -1195,7 +1234,11 @@ def model_fn_decorator(test=False):
             feats = torch.cat((feats, coords_float), -1)
 
         if not cfg.use_ori_coords:
-            ori_coords = coords_float
+            ori_coords = coords_float[:, 3:]
+        else:
+            ori_coords = coords_float[:, :3]
+
+        coords_float = coords_float[:, :3]
 
         input_ = {
             'pt_feats': feats,
@@ -1206,7 +1249,7 @@ def model_fn_decorator(test=False):
             'batch_size': cfg.batch_size,
         }
 
-        ret = model(input_, p2v_map, coords_float, rgb, ori_coords, coords[:, :, 0].int(), batch_offsets, epoch)
+        ret = model(input_, p2v_map, coords_float, rgb, ori_coords, coords[:, 0].int(), batch_offsets, epoch)
 
         point_offset_preds = ret['point_offset_preds']
         point_offset_preds = point_offset_preds.squeeze()
@@ -1215,26 +1258,24 @@ def model_fn_decorator(test=False):
         point_semantic_scores = point_semantic_scores.squeeze()
 
         if 'centre_preds' in ret.keys():
-            centre_preds = ret['centre_preds'] # (1, 32**3)
-            centre_preds = centre_preds.reshape(1, -1)
+            centre_preds = ret['centre_preds'] # (B, 32**3)
+            centre_preds = centre_preds.squeeze(dim=-1)
 
             centre_semantic_preds = ret['centre_semantic_preds']
-            centre_semantic_preds = centre_semantic_preds.squeeze(dim=0)
 
-            centre_offset_preds = ret['centre_offset_preds'] # (1, 32**3, 3)
-            centre_offset_preds = centre_offset_preds.squeeze(dim=0)
-            centre_offset_preds = centre_offset_preds[grid_centre_gt.long(), :] # (nInst, 3)
+            centre_offset_preds = []
+            centre_offset_pred = ret['centre_offset_preds'] # (B, 32**3, 3)
+            for sample_indx in range(len(batch_offsets) - 1):
+                centre_offset_preds.append(
+                    centre_offset_pred[sample_indx, grid_centre_gt[grid_centre_gt[:, 0] == sample_indx, :][:, 1]]
+                )
+            centre_offset_preds = torch.cat(centre_offset_preds, 0) # (nInst, 3)
 
         if (epoch > cfg.prepare_epochs) and (cfg.model_mode == 'Jiang_original_PointGroup'):
             scores, proposals_idx, proposals_offset = ret['proposal_scores']
             # scores: (nProposal, 1) float, cuda
             # proposals_idx: (sumNPoint, 2), int, cpu, dim 0 for cluster_id, dim 1 for corresponding point idxs in N
             # proposals_offset: (nProposal + 1), int, cpu
-
-        # instance_heatmap = torch.zeros((32**3)).cuda()
-        # instance_heatmap[grid_centre_gt.long()] = 1
-
-        instance_heatmap = instance_heatmap.reshape((1, -1))
 
         loss_inp = {}
 
@@ -1246,8 +1287,8 @@ def model_fn_decorator(test=False):
 
         if 'centre_preds' in ret.keys():
             loss_inp['centre_preds'] = (centre_preds, instance_heatmap)
-            loss_inp['centre_semantic_preds'] = (centre_semantic_preds, centre_semantic_labels.squeeze(dim=0))
-            loss_inp['centre_offset_preds'] = (centre_offset_preds, centre_offset_labels)
+            loss_inp['centre_semantic_preds'] = (centre_semantic_preds, centre_semantic_labels)
+            loss_inp['centre_offset_preds'] = (centre_offset_preds, centre_offset_labels[:, 1:])
 
         if (epoch > cfg.prepare_epochs) and (cfg.model_mode == 'Jiang_original_PointGroup'):
             loss_inp['proposal_scores'] = (scores, proposals_idx, proposals_offset, instance_pointnum)
@@ -1391,13 +1432,18 @@ def model_fn_decorator(test=False):
 
             '''centre semantic loss'''
             centre_semantic_preds, grid_instance_label = loss_inp['centre_semantic_preds']
-            grid_valid_index = instance_heatmap.squeeze(dim=0) > 0
-            if sum(grid_valid_index) != 0:
-                centre_semantic_loss = centre_semantic_criterion(
-                    centre_semantic_preds[grid_valid_index, :], grid_instance_label[grid_valid_index].to(torch.long)
-                )
-            else:
-                centre_semantic_loss = 0
+            grid_valid_index = instance_heatmap > 0
+            centre_semantic_loss = []
+            for sample_index in range(instance_heatmap.shape[0]):
+                if sum(grid_valid_index[sample_index, :]) != 0:
+                    centre_semantic_loss.append(
+                        centre_semantic_criterion(
+                            centre_semantic_preds[sample_index, grid_valid_index[sample_index, :], :],
+                            grid_instance_label[sample_index, grid_valid_index[sample_index, :]].to(torch.long)
+                        )
+                    )
+            if len(centre_semantic_loss) != 0:
+                centre_semantic_loss = torch.mean(torch.stack(centre_semantic_loss))
 
             loss_out['centre_semantic_loss'] = (centre_semantic_loss, grid_instance_label.shape[0])
 
@@ -1469,8 +1515,7 @@ class WeightedFocalLoss(nn.Module):
 
     def forward(self, inputs, targets):
         BCE_loss = F.binary_cross_entropy_with_logits(inputs, targets, reduction='none')
-        targets = targets.type(torch.long)
-        at = self.alpha.gather(0, targets.data.view(-1))
+        at = self.alpha.gather(0, targets.data.view(-1).to(torch.long))
         pt = torch.exp(-BCE_loss)
-        F_loss = at*(1-pt)**self.gamma * BCE_loss
+        F_loss = at*(1-pt.view(-1))**self.gamma * BCE_loss.view(-1)
         return F_loss.mean()

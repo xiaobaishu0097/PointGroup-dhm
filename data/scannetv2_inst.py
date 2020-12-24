@@ -7,7 +7,7 @@ import os, sys, glob, math, numpy as np
 import scipy.ndimage
 import scipy.interpolate
 import torch
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader
 import torch_scatter
 
 from model.common import generate_heatmap, normalize_3d_coordinate, coordinate2index, generate_adaptive_heatmap
@@ -18,11 +18,8 @@ from util.config import cfg
 from util.log import logger
 from lib.pointgroup_ops.functions import pointgroup_ops
 
-class ScannetDatast(Dataset):
-    '''
-    Dataset class for Scannet v2
-    '''
-    def __init__(self, data_mode='train'):
+class ScannetDatast:
+    def __init__(self, test=False):
         self.data_root = cfg.data_root
         self.dataset = cfg.dataset
         self.filename_suffix = cfg.filename_suffix
@@ -39,51 +36,48 @@ class ScannetDatast(Dataset):
         self.heatmap_sigma = cfg.heatmap_sigma
         self.min_IoU = cfg.min_IoU
 
-        self.data_mode = data_mode
-
-        if self.data_mode == 'train':
-            if not cfg.overfitting:
-                self.file_names = sorted(
-                    glob.glob(os.path.join(self.data_root, self.dataset, 'train', '*' + self.filename_suffix))
-                )
-                self.data_files = [torch.load(i) for i in self.file_names]
-            else:
-                train_file_names = sorted(glob.glob(os.path.join(self.data_root, self.dataset, 'val', '*' + self.filename_suffix)))
-                self.data_files = [torch.load(train_file_names[0])]
-
-            logger.info('Training samples: {}'.format(len(self.data_files)))
-
-        elif self.data_mode == 'val':
-            self.file_names = sorted(
-                glob.glob(os.path.join(self.data_root, self.dataset, 'val', '*' + self.filename_suffix))
-            )
-            self.data_files = [torch.load(i) for i in self.file_names]
-
-            logger.info('Validation samples: {}'.format(len(self.data_files)))
-
-        elif self.data_mode == 'test':
+        if test:
             self.test_split = cfg.split  # val or test
             self.test_workers = cfg.test_workers
             cfg.batch_size = 1
 
-            if not cfg.overfitting:
-                self.file_names = sorted(
-                    glob.glob(os.path.join(self.data_root, self.dataset, self.test_split, '*' + self.filename_suffix))
-                )
-                self.data_files = [torch.load(i) for i in self.file_names]
-            else:
-                self.test_file_names = sorted(glob.glob(os.path.join(self.data_root, self.dataset, 'val', '*' + self.filename_suffix)))
-                self.test_files = [torch.load(self.test_file_names[0])]
+    def trainLoader(self):
+        if not cfg.overfitting:
+            file_names = sorted(
+                glob.glob(os.path.join(self.data_root, self.dataset, 'train', '*' + self.filename_suffix))
+            )
+            self.train_data_files = [torch.load(i) for i in file_names]
+        else:
+            file_names = sorted(
+                glob.glob(os.path.join(self.data_root, self.dataset, 'val', '*' + self.filename_suffix))
+            )
+            self.train_data_files = [torch.load(file_names[0])]
 
-            logger.info('Testing samples ({}): {}'.format(self.test_split, len(self.data_files)))
+        logger.info('Training samples: {}'.format(len(self.train_data_files)))
+        self.train_set = list(range(len(self.train_data_files)))
 
-        self.data_max_length = 0
-        for i in self.data_files:
-            if self.data_max_length < len(i[0]):
-                self.data_max_length = len(i[0])
+    def valLoader(self):
+        file_names = sorted(
+            glob.glob(os.path.join(self.data_root, self.dataset, 'val', '*' + self.filename_suffix))
+        )
+        self.val_data_files = [torch.load(i) for i in file_names]
 
-    def __len__(self):
-        return len(self.data_files)
+        logger.info('Validation samples: {}'.format(len(self.val_data_files)))
+        self.val_set = list(range(len(self.val_data_files)))
+
+
+    def testLoader(self):
+        if not cfg.overfitting:
+            file_names = sorted(
+                glob.glob(os.path.join(self.data_root, self.dataset, self.test_split, '*' + self.filename_suffix))
+            )
+            self.test_data_files = [torch.load(i) for i in file_names]
+        else:
+            file_names = sorted(glob.glob(os.path.join(self.data_root, self.dataset, 'val', '*' + self.filename_suffix)))
+            self.test_data_files = [torch.load(file_names[0])]
+
+        logger.info('Testing samples ({}): {}'.format(self.test_split, len(self.test_data_files)))
+        self.test_set = list(range(len(self.test_data_files)))
 
     #Elastic distortion
     def elastic(self, x, gran, mag):
@@ -194,12 +188,215 @@ class ScannetDatast(Dataset):
             j += 1
         return instance_label
 
+    def padding_pointcloud_data(self, xyz, rgb, label, instance_label):
+        point_num = xyz.shape[0]
+
+        xyz_padding = np.zeros((self.max_point_num - point_num, 3), dtype=np.float32)
+        xyz_padded = np.concatenate((xyz, xyz_padding), axis=0)
+
+        rgb_padding = np.ones((self.max_point_num - point_num, 3), dtype=np.float32)
+        rgb_padded = np.concatenate((rgb, rgb_padding), axis=0)
+
+        label_padding = np.ones((self.max_point_num - point_num, )) * -100
+        label_padded = np.concatenate((label, label_padding), axis=0)
+
+        instance_label_padding = np.ones((self.max_point_num - point_num, )) * -100
+        instance_label_padded = np.concatenate((instance_label, instance_label_padding), axis=0)
+
+        return xyz_padded, rgb_padded, label_padded, instance_label_padded
+
+    def trainMerge(self, id):
+        # variables for backbone
+        point_locs = [] # (N, 4) (sample_index, xyz)
+        point_coords = []  # (N, 6) (shifted_xyz, original_xyz)
+        point_feats = []  # (N, 3) (rgb)
+        # variables for point-wise predictions
+        point_semantic_labels = []  # (N)
+        point_instance_labels = []  # (N)
+        point_instance_infos = []  # (N, 9)
+        instance_centres = []  # (nInst, 3) (instance_xyz)
+        # variables for grid-wise predictions
+        grid_centre_heatmaps = []  # (B, nGrid)
+        grid_centre_indicators = []  # (nInst) --> (B, nGrid)
+        grid_centre_offset_labels = []  # (nInst, 3) --> (B, nGrid, 3)
+        grid_centre_semantic_labels = []  # (B, nGrid)
+        #
+        instance_pointnum = []  # (total_nInst), int
+
+        batch_offsets = [0]
+        total_inst_num = 0
+
+        for i, idx in enumerate(id):
+            xyz_origin, rgb, label, instance_label = self.train_data_files[idx]
+
+            ### jitter / flip x / rotation
+            xyz_middle = self.dataAugment(xyz_origin, True, True, True)
+            # xyz_middle = self.dataAugment(xyz_origin, False, False, False)
+
+            ### scale
+            xyz = xyz_middle * self.scale
+
+            ### elastic
+            xyz = self.elastic(xyz, 6 * self.scale // 50, 40 * self.scale / 50)
+            xyz = self.elastic(xyz, 20 * self.scale // 50, 160 * self.scale / 50)
+
+            ### offset
+            xyz -= xyz.min(0)
+
+            ### crop
+            xyz, valid_idxs = self.crop(xyz)
+
+            xyz_origin = xyz_origin[valid_idxs]
+            xyz_middle = xyz_middle[valid_idxs]
+            xyz = xyz[valid_idxs]
+            rgb = rgb[valid_idxs]
+            label = label[valid_idxs]
+            instance_label = self.getCroppedInstLabel(instance_label, valid_idxs)
+
+            # label[label == -100] = 20
+
+            ### get instance information
+            inst_num, inst_infos = self.getInstanceInfo(xyz_middle, instance_label.astype(np.int32), label.copy())
+            instance_infos = inst_infos["instance_info"]  # (n, 9), (cx, cy, cz, minx, miny, minz, maxx, maxy, maxz)
+            inst_pointnum = inst_infos["instance_pointnum"]  # (nInst), list
+            inst_centres = inst_infos['instance_centre']  # (nInst, 3) (cx, cy, cz)
+            inst_size = inst_infos['instance_size']
+            inst_label = inst_infos['instance_label']
+
+            instance_label[np.where(instance_label != -100)] += total_inst_num
+            total_inst_num += inst_num
+
+            ### get instance centre heatmap
+            grid_xyz = np.zeros((32 ** 3, 3), dtype=np.float32)
+            grid_xyz += xyz_middle.min(axis=0, keepdims=True)
+            grid_size = (xyz_middle.max(axis=0, keepdims=True) - xyz_middle.min(axis=0, keepdims=True)) / 32
+            grid_xyz += grid_size / 2
+            grid_xyz = grid_xyz.reshape(32, 32, 32, 3)
+            for index in range(32):
+                grid_xyz[index, :, :, 0] = grid_xyz[index, :, :, 0] + index * grid_size[0, 0]
+                grid_xyz[:, index, :, 1] = grid_xyz[:, index, :, 1] + index * grid_size[0, 1]
+                grid_xyz[:, :, index, 2] = grid_xyz[:, :, index, 2] + index * grid_size[0, 2]
+            grid_xyz = grid_xyz.reshape(-1, 3)
+
+            ### size adaptive gaussian function or fixed sigma gaussian
+            if not self.heatmap_sigma:
+                grid_infos = generate_adaptive_heatmap(
+                    torch.tensor(grid_xyz, dtype=torch.float64), torch.tensor(inst_centres), torch.tensor(inst_size),
+                    torch.tensor(inst_label), min_IoU=self.min_IoU, min_radius=np.linalg.norm(grid_size),
+                )
+                grid_centre_heatmap = grid_infos['heatmap']
+                grid_instance_label = grid_infos['grid_instance_label']
+                grid_instance_label[grid_instance_label == 20] = -100
+            else:
+                grid_centre_heatmap = generate_heatmap(grid_xyz.astype(np.double), np.asarray(inst_centres),
+                                                sigma=self.heatmap_sigma)
+
+            norm_coords = normalize_3d_coordinate(
+                torch.cat((torch.from_numpy(xyz_middle), torch.from_numpy(np.asarray(inst_centres))), dim=0).unsqueeze(
+                    dim=0).clone()
+            )
+            norm_inst_centres = norm_coords[:, -len(inst_centres):, :]
+            grid_centre_gt = coordinate2index(norm_inst_centres, 32, coord_type='3d').squeeze()
+            grid_centre_indicator = torch.cat(
+                (torch.LongTensor(grid_centre_gt.shape[0], 1).fill_(i), grid_centre_gt.unsqueeze(dim=-1)), dim=1
+            )
+
+            ### only the centre grid point require to predict the offset vector
+            grid_cent_xyz = grid_xyz[grid_centre_gt]
+            grid_centre_offset = grid_cent_xyz - np.array(inst_centres)
+            grid_centre_offset = grid_centre_offset.squeeze()
+            grid_centre_offset_label = torch.cat(
+                (torch.DoubleTensor(grid_centre_offset.shape[0], 1).fill_(i), torch.from_numpy(grid_centre_offset)), dim=1
+            )
+
+            ### merge the scene to the batch
+            batch_offsets.append(batch_offsets[-1] + xyz.shape[0])
+            # variables for backbone
+            point_locs.append(torch.cat((torch.LongTensor(xyz.shape[0], 1).fill_(i), torch.from_numpy(xyz).long()), dim=1))  # (N, 4) (sample_index, xyz)
+            point_coords.append(torch.from_numpy(np.concatenate((xyz_middle, xyz_origin), axis=1)))  # (N, 6) (shifted_xyz, original_xyz)
+            point_feats.append(torch.from_numpy(rgb) + torch.randn(3) * 0.1)  # (N, 3) (rgb)
+            # variables for point-wise predictions
+            point_semantic_labels.append(torch.from_numpy(label))  # (N)
+            point_instance_labels.append(torch.from_numpy(instance_label))  # (N)
+            point_instance_infos.append(torch.from_numpy(instance_infos))  # (N, 9) (cx, cy, cz, minx, miny, minz, maxx, maxy, maxz)
+            instance_centres.append(
+                torch.cat(
+                    (torch.DoubleTensor(len(inst_centres), 1).fill_(i), torch.from_numpy(np.array(inst_centres))),
+                    dim=1
+                )
+            )  # (nInst, 4) (sample_index, instance_centre_xyz)
+            # variables for grid-wise predictions
+            grid_centre_heatmaps.append(grid_centre_heatmap.unsqueeze(dim=0))  # (B, nGrid)
+            grid_centre_indicators.append(grid_centre_indicator)  # (NGrid, 2) (sample_index, grid_index)
+            grid_centre_offset_labels.append(grid_centre_offset_label)  # (NGrid, 4) (sample_index, grid_centre_offset)
+            grid_centre_semantic_labels.append(grid_instance_label.unsqueeze(dim=0))  # (B, nGrid)
+            # variable for other uses
+            instance_pointnum.extend(inst_pointnum)
+
+        ### merge all the scenes in the batchd
+        batch_offsets = torch.tensor(batch_offsets, dtype=torch.int)
+
+        point_locs = torch.cat(point_locs, 0)  # (N) (sample_index)
+        point_coords = torch.cat(point_coords, 0).to(torch.float32)  # (N, 6) (shifted_xyz, original_xyz)
+        point_feats = torch.cat(point_feats, 0)  # (N, 3) (rgb)
+        # variables for point-wise predictions
+        point_semantic_labels = torch.cat(point_semantic_labels, 0).long()  # (N)
+        point_instance_labels = torch.cat(point_instance_labels, 0).long()  # (N)
+        point_instance_infos = torch.cat(point_instance_infos, 0).to(torch.float32) # (N, 9) (cx, cy, cz, minx, miny, minz, maxx, maxy, maxz)
+        instance_centres = torch.cat(instance_centres, 0)  # (nInst, 3) (instance_centre_xyz)
+        # variables for grid-wise predictions
+        grid_centre_heatmaps = torch.cat(grid_centre_heatmaps, 0).to(torch.float32)  # (B, nGrid)
+        grid_centre_indicators = torch.cat(grid_centre_indicators, 0)  # (NInst, 2) (sample_index, grid_index)
+        grid_centre_offset_labels = torch.cat(grid_centre_offset_labels, 0).to(torch.float32)  # (NInst, 4) (sample_index, grid_centre_offset)
+        grid_centre_semantic_labels = torch.cat(grid_centre_semantic_labels, 0)  # (B, nGrid)
+        # variable for other uses
+        instance_pointnum = torch.tensor(instance_pointnum, dtype=torch.int) # int (total_nInst)
+
+        spatial_shape = np.clip((point_locs.max(0)[0][1:] + 1).numpy(), self.full_scale[0], None)  # long (3)
+
+        ### voxelize
+        voxel_locs, p2v_map, v2p_map = pointgroup_ops.voxelization_idx(point_locs, self.batch_size, self.mode)
+
+        #TODO: check size first; rewrite padding part later
+        return {
+            # variables for backbone
+            'point_locs': point_locs, # (N, 4) (sample_index, xyz)
+            'point_coords': point_coords, # (N, 6) (shifted_xyz, original_xyz)
+            'point_feats': point_feats, # (N, 3) (rgb)
+            # variables for point-wise predictions
+            'voxel_locs': voxel_locs,  # (nVoxel, 4)
+            'p2v_map': p2v_map,  # (N)
+            'v2p_map': v2p_map,  # (nVoxel, 19?)
+            'point_semantic_labels': point_semantic_labels,  # (N)
+            'point_instance_labels': point_instance_labels,  # (N)
+            'point_instance_infos': point_instance_infos,  # (N, 9)
+            'instance_centres': instance_centres,  # (nInst, 3) (instance_xyz)
+            # variables for grid-wise predictions
+            'grid_centre_heatmap': grid_centre_heatmaps,  # (B, nGrid)
+            'grid_centre_indicator': grid_centre_indicators,  # (NGrid, 2) (sample_index, grid_index)
+            'grid_centre_offset_labels': grid_centre_offset_labels,  # (NGrid, 4) (sample_index, grid_centre_offset)
+            'grid_centre_semantic_labels': grid_centre_semantic_labels,  # (B, nGrid)
+            # variables for other uses
+            'instance_pointnum': instance_pointnum,  # (nInst) # currently used in Jiang_PointGroup
+            'id': idx,
+            'batch_offsets': batch_offsets,  # int (B+1)
+            'spatial_shape': spatial_shape,  # long (3)
+            # =====================
+            # 'locs': locs,  # (N, 4) --> batch_point_index @Deprecated
+            # 'locs_float': locs_float,  # (N, 3) --> batch_point_index @Deprecated
+            # 'feats': feats,  # (N, 3) --> point_feats @Deprecated
+            # 'centre_offset_labels': grid_centre_offset,  # (nInst, 3) --> grid_centre_offset_labels @Deprecated
+            # 'centre_semantic_labels': grid_instance_label,  # (B, nGrid) --> grid_centre_semantic_labels @Deprecated
+        }
+
     def __getitem__(self, idx):
         batch_offsets = [0]
         total_inst_num = 0
 
         if self.data_mode == 'train':
             xyz_origin, rgb, label, instance_label = self.data_files[idx]
+
+            # xyz_origin, rgb, label, instance_label = self.padding_pointcloud_data(xyz_origin, rgb, label, instance_label)
 
             ### jitter / flip x / rotation
             xyz_middle = self.dataAugment(xyz_origin, True, True, True)
@@ -302,7 +499,6 @@ class ScannetDatast(Dataset):
             ### voxelize
             voxel_locs, p2v_map, v2p_map = pointgroup_ops.voxelization_idx(locs, self.batch_size, self.mode)
 
-            #TODO: uniform variable names
             return {
                 'locs': locs,  # (N, 4)
                 'voxel_locs': voxel_locs,  # (nVoxel, 4)

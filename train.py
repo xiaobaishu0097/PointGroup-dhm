@@ -173,24 +173,29 @@ if __name__ == '__main__':
     if cfg.dataset == 'scannetv2':
         if data_name == 'scannet':
             from data.scannetv2_inst import ScannetDatast
-            dataset_train = ScannetDatast(data_mode='train')
-            dataset_val = ScannetDatast(data_mode='val')
+            dataset = ScannetDatast()
+            dataset.trainLoader()
+            dataset.valLoader()
         else:
             print("Error: no data loader - " + data_name)
             exit(0)
 
     if cfg.distributed:
         # TODO: update pytorch version and add shuffle parameter into DistributedSampler
-        sampler_train = DistributedSampler(dataset_train)
-        sampler_val = DistributedSampler(dataset_val)
+        sampler_train = DistributedSampler(dataset.train_set)
+        sampler_val = DistributedSampler(dataset.val_set)
     else:
-        sampler_train = torch.utils.data.RandomSampler(dataset_train)
-        sampler_val = torch.utils.data.SequentialSampler(dataset_val)
+        sampler_train = torch.utils.data.RandomSampler(dataset.train_set)
+        sampler_val = torch.utils.data.SequentialSampler(dataset.val_set)
 
     batch_sampler_train = torch.utils.data.BatchSampler(sampler_train, cfg.batch_size, drop_last=True)
 
-    data_loader_train = DataLoader(dataset_train, batch_sampler=batch_sampler_train, num_workers=cfg.train_workers)
-    data_loader_val = DataLoader(dataset_val, cfg.batch_size, sampler=sampler_val, drop_last=False, num_workers=cfg.train_workers)
+    data_loader_train = DataLoader(
+        dataset.train_set, batch_sampler=batch_sampler_train, collate_fn=dataset.trainMerge, num_workers=cfg.train_workers
+    )
+    data_loader_val = DataLoader(
+        dataset.val_set, batch_size=cfg.batch_size, sampler=sampler_val, drop_last=False, num_workers=cfg.train_workers
+    )
 
     ##### resume
     start_epoch = utils.checkpoint_restore(model_without_ddp, cfg.exp_path, cfg.config.split('/')[-1][:-5], use_cuda)      # resume from the latest epoch, or specify the epoch to restore
