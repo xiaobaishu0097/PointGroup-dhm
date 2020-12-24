@@ -568,13 +568,13 @@ class PointGroup(nn.Module):
 
         return point_feats, grid_feats
 
-    def pointgroup_cluster_algorithm(self, coords, point_offset_preds, point_semantic_preds, batch_idxs):
+    def pointgroup_cluster_algorithm(self, coords, point_offset_preds, point_semantic_preds, batch_idxs, batch_size):
         #### get prooposal clusters
         object_idxs = torch.nonzero(point_semantic_preds > 1).view(-1)
         coords = coords.squeeze()
 
         batch_idxs_ = batch_idxs[object_idxs]
-        batch_offsets_ = utils.get_batch_offsets(batch_idxs_, input['batch_size'])
+        batch_offsets_ = utils.get_batch_offsets(batch_idxs_, batch_size)
         coords_ = coords[object_idxs]
         pt_offsets_ = point_offset_preds[object_idxs]
 
@@ -693,7 +693,7 @@ class PointGroup(nn.Module):
 
             if (epoch == self.test_epoch):
                 scores, proposals_idx, proposals_offset = self.pointgroup_cluster_algorithm(
-                    coords, point_offset_preds, point_semantic_preds, batch_idxs
+                    coords, point_offset_preds, point_semantic_preds, batch_idxs, input['batch_size']
                 )
                 ret['proposal_scores'] = (scores, proposals_idx, proposals_offset)
 
@@ -730,7 +730,7 @@ class PointGroup(nn.Module):
 
             if (epoch == self.test_epoch):
                 scores, proposals_idx, proposals_offset = self.pointgroup_cluster_algorithm(
-                    coords, point_offset_preds, point_semantic_preds, batch_idxs
+                    coords, point_offset_preds, point_semantic_preds, batch_idxs, input['batch_size']
                 )
                 ret['proposal_scores'] = (scores, proposals_idx, proposals_offset)
 
@@ -774,7 +774,7 @@ class PointGroup(nn.Module):
 
             if (epoch == self.test_epoch):
                 scores, proposals_idx, proposals_offset = self.pointgroup_cluster_algorithm(
-                    coords, point_offset_preds, point_semantic_preds, batch_idxs
+                    coords, point_offset_preds, point_semantic_preds, batch_idxs, input['batch_size']
                 )
                 ret['proposal_scores'] = (scores, proposals_idx, proposals_offset)
 
@@ -809,7 +809,7 @@ class PointGroup(nn.Module):
 
             if (epoch == self.test_epoch):
                 scores, proposals_idx, proposals_offset = self.pointgroup_cluster_algorithm(
-                    coords, point_offset_preds, point_semantic_preds, batch_idxs
+                    coords, point_offset_preds, point_semantic_preds, batch_idxs, input['batch_size']
                 )
                 ret['proposal_scores'] = (scores, proposals_idx, proposals_offset)
 
@@ -1262,6 +1262,8 @@ def model_fn_decorator(test=False):
                     )
             if len(centre_semantic_loss) != 0:
                 centre_semantic_loss = torch.mean(torch.stack(centre_semantic_loss))
+            else:
+                centre_semantic_loss = 0
 
             loss_out['centre_semantic_loss'] = (centre_semantic_loss, grid_instance_label.shape[0])
 
