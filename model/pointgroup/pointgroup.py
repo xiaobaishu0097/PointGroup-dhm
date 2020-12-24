@@ -24,10 +24,8 @@ from model.encoder.unet3d import UNet3D
 from model.decoder import decoder
 from model.common import coordinate2index, normalize_3d_coordinate
 
-from model.Pointnet2.pointnet2.pointnet2_modules import PointnetFPModule, PointnetSAModuleMSG, PointnetSAModule
 from model.encoder.unet3d import UNet3D
-import model.Pointnet2.pointnet2.pointnet2_utils as pointnet2_utils
-import model.Pointnet2.pointnet2.pytorch_utils as pt_utils
+from model.Pointnet2.pointnet2.pointnet2_modules import PointnetFPModule, PointnetSAModuleMSG, PointnetSAModule
 
 
 class backbone_pointnet2(nn.Module):
