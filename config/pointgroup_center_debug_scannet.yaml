@@ -15,20 +15,20 @@ DATA:
 
   input_channel: 3
   scale: 50   # voxel_size = 1 / scale, scale 50(2cm)
-  batch_size: 1
+  batch_size: 4
   full_scale: [128, 512]
   max_npoint: 250000
   mode: 4 # 4=mean
 
 STRUCTURE:
   model_name: pointgroup
-  backbone: pointnet++_yanx # pointnet, pointnet++_yanx, pointnet++_shi
+  backbone: pointnet # pointnet, pointnet++_yanx, pointnet++_shi
   m: 32 # 16 or 32
   block_residual: True
   block_reps: 2
   scatter_type: max
   unet3d_num_levels: 3
-  model_mode: 0
+  model_mode: Jiang_original_PointGroup
   # 0 or Zheng_panoptic_wpointnet_PointGroup or Zheng_upper_wpointnet_PointGroup or Zheng_panoptic_wopointnet_PointGroup
   # or Zheng_upper_wopointnet_PointGroup or Jiang_original_PointGroup
 
@@ -77,11 +77,11 @@ GROUP:
   cluster_npoint_thre: 50
   cluster_sets: P # P or Q
 
-  prepare_epochs: 128
+  prepare_epochs: 0
 
 TEST:
   split: val
-  test_epoch: 1
+  test_epoch: 384
   test_workers: 16
   test_seed: 567
 
