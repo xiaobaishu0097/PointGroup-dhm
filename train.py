@@ -191,10 +191,12 @@ if __name__ == '__main__':
     batch_sampler_train = torch.utils.data.BatchSampler(sampler_train, cfg.batch_size, drop_last=True)
 
     data_loader_train = DataLoader(
-        dataset.train_set, batch_sampler=batch_sampler_train, collate_fn=dataset.trainMerge, num_workers=cfg.train_workers
+        dataset.train_set, batch_sampler=batch_sampler_train, collate_fn=dataset.trainMerge,
+        num_workers=cfg.train_workers, pin_memory=False
     )
     data_loader_val = DataLoader(
-        dataset.val_set, batch_size=cfg.batch_size, sampler=sampler_val, drop_last=False, num_workers=cfg.train_workers
+        dataset.val_set, batch_size=1, sampler=sampler_val, collate_fn=dataset.valMerge,
+        drop_last=False, num_workers=cfg.train_workers
     )
 
     ##### resume
@@ -204,7 +206,7 @@ if __name__ == '__main__':
     for epoch in range(start_epoch, cfg.epochs + 1):
         if cfg.distributed:
             sampler_train.set_epoch(epoch)
-        train_epoch(data_loader_train, model, model_fn, optimizer, epoch)
+        # train_epoch(data_loader_train, model, model_fn, optimizer, epoch)
 
         if utils.is_multiple(epoch, cfg.save_freq) or utils.is_power2(epoch):
             eval_epoch(data_loader_val, model, model_fn, epoch)

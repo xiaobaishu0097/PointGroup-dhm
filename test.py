@@ -45,14 +45,17 @@ def test(model, model_fn, data_name, epoch):
     if cfg.dataset == 'scannetv2':
         if data_name == 'scannet':
             from data.scannetv2_inst import ScannetDatast
-            dataset_test = ScannetDatast(data_mode=cfg.split)
+            dataset = ScannetDatast(test=True)
+            dataset.testLoader()
         else:
             print("Error: no data loader - " + data_name)
             exit(0)
-    sampler_test = torch.utils.data.SequentialSampler(dataset_test)
+
+    sampler_test = torch.utils.data.SequentialSampler(dataset.test_set)
 
     data_loader_test = DataLoader(
-        dataset_test, batch_size=1, shuffle=False, sampler=sampler_test, drop_last=False, num_workers=cfg.test_workers
+        dataset.test_set, batch_size=1, shuffle=False, sampler=sampler_test, collate_fn=dataset.testMerge,
+        drop_last=False, num_workers=cfg.test_workers
     )
 
     maxpool3d = nn.MaxPool3d(3, stride=1, padding=1)
@@ -61,20 +64,13 @@ def test(model, model_fn, data_name, epoch):
         model = model.eval()
         start = time.time()
 
-        # tp = 0
-        # tn = 0
-        # fp = 0
-        # fn = 0
-
-        # offset_error = 0
-
         true_threshold = 0.0
         candidate_num = 100
 
         matches = {}
         for i, batch in enumerate(data_loader_test):
             N = batch['feats'].shape[1]
-            test_scene_name = dataset_test.file_names[int(batch['id'][0])].split('/')[-1][:12]
+            test_scene_name = dataset.test_data_files[int(batch['id'][0])].split('/')[-1][:12]
 
             start1 = time.time()
             preds = model_fn(batch, model, epoch)

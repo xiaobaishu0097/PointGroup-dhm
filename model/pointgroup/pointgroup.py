@@ -800,7 +800,7 @@ class PointGroup(nn.Module):
             ### point prediction
             #### point semantic label prediction
             semantic_scores = self.point_semantic(output_feats)  # (N, nClass), float
-            point_semantic_preds = semantic_scores
+            point_semantic_preds = semantic_scores.max(1)[1]
 
             #### point offset prediction
             point_offset_preds = self.point_offset(output_feats)  # (N, 3), float32
@@ -808,7 +808,6 @@ class PointGroup(nn.Module):
             if (epoch > self.prepare_epochs):
                 #### get prooposal clusters
                 object_idxs = torch.nonzero(point_semantic_preds > 1).view(-1)
-                coords = coords.squeeze()
 
                 batch_idxs_ = batch_idxs[object_idxs]
                 batch_offsets_ = utils.get_batch_offsets(batch_idxs_, input['batch_size'])
@@ -968,30 +967,6 @@ def model_fn_decorator(test=False):
 
     def model_fn(batch, model, epoch):
         ##### prepare input and forward
-        # {
-        #     # variables for backbone
-        #     'point_locs': point_locs,  # (N, 4) (sample_index, xyz)
-        #     'point_coords': point_coords,  # (N, 6) (shifted_xyz, original_xyz)
-        #     'point_feats': point_feats,  # (N, 3) (rgb)
-        #     # variables for point-wise predictions
-        #     'voxel_locs': voxel_locs,  # (nVoxel, 4)
-        #     'p2v_map': p2v_map,  # (N)
-        #     'v2p_map': v2p_map,  # (nVoxel, 19?)
-        #     'point_semantic_labels': point_semantic_labels,  # (N)
-        #     'point_instance_labels': point_instance_labels,  # (N)
-        #     'point_instance_infos': point_instance_infos,  # (N, 9)
-        #     'instance_centres': instance_centres,  # (nInst, 3) (instance_xyz)
-        #     # variables for grid-wise predictions
-        #     'grid_centre_heatmap': grid_centre_heatmaps,  # (B, nGrid)
-        #     'grid_centre_indicator': grid_centre_indicators,  # (NGrid, 2) (sample_index, grid_index)
-        #     'grid_centre_offset_labels': grid_centre_offset_labels,  # (NGrid, 4) (sample_index, grid_centre_offset)
-        #     'grid_centre_semantic_labels': grid_centre_semantic_labels,  # (B, nGrid)
-        #     # variables for other uses
-        #     'instance_pointnum': instance_pointnum,  # (nInst) # currently used in Jiang_PointGroup
-        #     'id': idx,
-        #     'batch_offsets': batch_offsets,  # int (B+1)
-        #     'spatial_shape': spatial_shape,  # long (3)
-        # }
         coords = batch['point_locs'].cuda()  # (N, 1 + 3), long, cuda, dimension 0 for batch_idx
         voxel_coords = batch['voxel_locs'].cuda()  # (M, 1 + 3), long, cuda
         p2v_map = batch['p2v_map'].cuda()  # (N), int, cuda
