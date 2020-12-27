@@ -206,7 +206,7 @@ if __name__ == '__main__':
     for epoch in range(start_epoch, cfg.epochs + 1):
         if cfg.distributed:
             sampler_train.set_epoch(epoch)
-        # train_epoch(data_loader_train, model, model_fn, optimizer, epoch)
+        train_epoch(data_loader_train, model, model_fn, optimizer, epoch)
 
         if utils.is_multiple(epoch, cfg.save_freq) or utils.is_power2(epoch):
             eval_epoch(data_loader_val, model, model_fn, epoch)
