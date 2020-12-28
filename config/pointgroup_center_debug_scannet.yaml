@@ -28,7 +28,7 @@ STRUCTURE:
   block_reps: 2
   scatter_type: max
   unet3d_num_levels: 3
-  model_mode: Jiang_original_PointGroup
+  model_mode: Zheng_panoptic_wpointnet_PointGroup
   # 0 or Zheng_panoptic_wpointnet_PointGroup or Zheng_upper_wpointnet_PointGroup or Zheng_panoptic_wopointnet_PointGroup
   # or Zheng_upper_wopointnet_PointGroup or Jiang_original_PointGroup
 
@@ -77,7 +77,7 @@ GROUP:
   cluster_npoint_thre: 50
   cluster_sets: P # P or Q
 
-  prepare_epochs: 0
+  prepare_epochs: 128
 
 TEST:
   split: val
