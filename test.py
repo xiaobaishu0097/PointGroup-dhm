@@ -69,8 +69,8 @@ def test(model, model_fn, data_name, epoch):
 
         matches = {}
         for i, batch in enumerate(data_loader_test):
-            N = batch['feats'].shape[1]
-            test_scene_name = dataset.test_data_files[int(batch['id'][0])].split('/')[-1][:12]
+            N = batch['point_feats'].shape[0]
+            test_scene_name = dataset.test_file_names[int(batch['id'][0])].split('/')[-1][:12]
 
             start1 = time.time()
             preds = model_fn(batch, model, epoch)
@@ -164,7 +164,7 @@ def test(model, model_fn, data_name, epoch):
             elif cfg.model_mode.endswith('_PointGroup'):
                 ##### get predictions (#1 semantic_pred, pt_offsets; #2 scores, proposals_pred)
                 semantic_scores = preds['semantic']  # (N, nClass=20) float32, cuda
-                semantic_pred = semantic_scores  # (N) long, cuda
+                semantic_pred = semantic_scores.max(1)[1]  # (N) long, cuda
                 # semantic_pred = semantic_scores.max(1)[1]  # (N) long, cuda
 
                 pt_offsets = preds['pt_offsets']  # (N, 3), float32, cuda
@@ -302,7 +302,9 @@ def test(model, model_fn, data_name, epoch):
             start = time.time()
 
             ##### print
-            logger.info("instance iter: {}/{} point_num: {} time: total {:.2f}s inference {:.2f}s save {:.2f}s".format(batch['id'][0] + 1, len(dataset_test.data_files), N, end, end1, end3))
+            logger.info("instance iter: {}/{} point_num: {} time: total {:.2f}s inference {:.2f}s save {:.2f}s".format(
+                batch['id'][0] + 1, len(dataset.test_data_files), N, end, end1, end3)
+            )
 
         ##### evaluation
         if cfg.eval:

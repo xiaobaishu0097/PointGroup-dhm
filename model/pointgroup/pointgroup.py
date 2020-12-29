@@ -878,23 +878,30 @@ def model_fn_decorator(test=False):
     score_criterion = nn.BCELoss(reduction='none').cuda()
 
     def test_model_fn(batch, model, epoch):
-        coords = batch['locs'].cuda()  # (N, 1 + 3), long, cuda, dimension 0 for batch_idx
+        coords = batch['point_locs'].cuda()  # (N, 1 + 3), long, cuda, dimension 0 for batch_idx
         voxel_coords = batch['voxel_locs'].cuda()  # (M, 1 + 3), long, cuda
         p2v_map = batch['p2v_map'].cuda()  # (N), int, cuda
         v2p_map = batch['v2p_map'].cuda()  # (M, 1 + maxActive), int, cuda
 
-        coords_float = batch['locs_float'].cuda()  # (N, 3), float32, cuda
-        ori_coords = batch['ori_coords'].cuda()
-        feats = batch['feats'].cuda()  # (N, C), float32, cuda
+        coords_float = batch['point_coords'].cuda()  # (N, 3), float32, cuda
+        feats = batch['point_feats'].cuda()  # (N, C), float32, cuda
 
-        batch_offsets = batch['offsets'].cuda()  # (B + 1), int, cuda
+        batch_offsets = batch['batch_offsets'].cuda()  # (B + 1), int, cuda
 
         spatial_shape = batch['spatial_shape']
 
         rgb = feats
 
         if cfg.use_coords:
-            feats = torch.cat((feats, coords_float), -1)
+            feats = torch.cat((feats, coords_float[:, :3]), -1)
+
+        if not cfg.use_ori_coords:
+            ori_coords = coords_float[:, 3:]
+        else:
+            ori_coords = coords_float[:, :3]
+
+        coords_float = coords_float[:, :3]
+
         # voxel_feats = pointgroup_ops.voxelization(feats, v2p_map, cfg.mode)  # (M, C), float, cuda
         #
         # input_ = spconv.SparseConvTensor(voxel_feats, voxel_coords.int(), spatial_shape, cfg.batch_size)
@@ -907,7 +914,7 @@ def model_fn_decorator(test=False):
             'batch_size': cfg.batch_size,
         }
 
-        ret = model(input_, p2v_map, coords_float, rgb, ori_coords, coords[:, :, 0].int(), batch_offsets, epoch)
+        ret = model(input_, p2v_map, coords_float, rgb, ori_coords, coords[:, 0].int(), batch_offsets, epoch)
 
         point_offset_preds = ret['point_offset_preds']
         point_offset_preds = point_offset_preds.squeeze()

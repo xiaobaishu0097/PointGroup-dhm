@@ -68,13 +68,13 @@ class ScannetDatast:
 
     def testLoader(self):
         if not cfg.overfitting:
-            file_names = sorted(
+            self.test_file_names = sorted(
                 glob.glob(os.path.join(self.data_root, self.dataset, self.test_split, '*' + self.filename_suffix))
             )
-            self.test_data_files = [torch.load(i) for i in file_names]
+            self.test_data_files = [torch.load(i) for i in self.test_file_names]
         else:
-            file_names = sorted(glob.glob(os.path.join(self.data_root, self.dataset, 'val', '*' + self.filename_suffix)))
-            self.test_data_files = [torch.load(file_names[0])]
+            self.test_file_names = sorted(glob.glob(os.path.join(self.data_root, self.dataset, 'val', '*' + self.filename_suffix)))
+            self.test_data_files = [torch.load(self.test_file_names[0])]
 
         logger.info('Testing samples ({}): {}'.format(self.test_split, len(self.test_data_files)))
         self.test_set = list(range(len(self.test_data_files)))
@@ -378,7 +378,7 @@ class ScannetDatast:
             'grid_centre_semantic_labels': grid_centre_semantic_labels,  # (B, nGrid)
             # variables for other uses
             'instance_pointnum': instance_pointnum,  # (nInst) # currently used in Jiang_PointGroup
-            'id': idx,
+            'id': id,
             'batch_offsets': batch_offsets,  # int (B+1)
             'spatial_shape': spatial_shape,  # long (3)
         }
@@ -550,7 +550,7 @@ class ScannetDatast:
             'grid_centre_semantic_labels': grid_centre_semantic_labels,  # (B, nGrid)
             # variables for other uses
             'instance_pointnum': instance_pointnum,  # (nInst) # currently used in Jiang_PointGroup
-            'id': idx,
+            'id': id,
             'batch_offsets': batch_offsets,  # int (B+1)
             'spatial_shape': spatial_shape,  # long (3)
         }
@@ -612,7 +612,7 @@ class ScannetDatast:
             'p2v_map': p2v_map,  # (N)
             'v2p_map': v2p_map,  # (nVoxel, 19?)
             # variables for other uses
-            'id': idx,
+            'id': id,
             'batch_offsets': batch_offsets,  # int (B+1)
             'spatial_shape': spatial_shape,  # long (3)
         }
