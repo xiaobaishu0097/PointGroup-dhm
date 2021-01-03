@@ -18,6 +18,12 @@ from util.config import cfg
 from util.log import logger
 from lib.pointgroup_ops.functions import pointgroup_ops
 
+SEMANTIC_NAME2INDEX = {
+    'wall': 0, 'floor': 1, 'cabinet': 2, 'bed': 3, 'chair': 4, 'sofa': 5, 'table': 6, 'door': 7, 'window': 8,
+    'bookshelf': 9, 'picture': 10, 'counter': 11, 'desk': 12, 'curtain': 13, 'refridgerator': 14,
+    'shower curtain': 15, 'toilet': 16, 'sink': 17, 'bathtub': 18, 'otherfurniture': 19
+}
+
 class ScannetDatast:
     def __init__(self, test=False):
         self.data_root = cfg.data_root
@@ -35,6 +41,10 @@ class ScannetDatast:
 
         self.heatmap_sigma = cfg.heatmap_sigma
         self.min_IoU = cfg.min_IoU
+
+        self.remove_class = []
+        for class_name in cfg.remove_class:
+            self.remove_class.append(SEMANTIC_NAME2INDEX[class_name])
 
         if test:
             self.test_split = cfg.split  # val or test
@@ -228,6 +238,13 @@ class ScannetDatast:
 
         for i, idx in enumerate(id):
             xyz_origin, rgb, label, instance_label = self.train_data_files[idx]
+
+            for class_idx in self.remove_class:
+                remove_class_indx = label != class_idx
+                xyz_origin = xyz_origin[remove_class_indx, :]
+                rgb = rgb[remove_class_indx, :]
+                label = label[remove_class_indx]
+                instance_label = instance_label[remove_class_indx]
 
             ### jitter / flip x / rotation
             xyz_middle = self.dataAugment(xyz_origin, True, True, True)
