@@ -313,7 +313,10 @@ class ScannetDatast:
                     dim=0).clone()
             )
             norm_inst_centres = norm_coords[:, -len(inst_centres):, :]
-            grid_centre_gt = coordinate2index(norm_inst_centres, 32, coord_type='3d').squeeze(dim=0).squeeze(dim=0)
+            grid_centre_gt = coordinate2index(norm_inst_centres, 32, coord_type='3d').squeeze()
+            if grid_centre_gt.ndimension() == 0:
+                grid_centre_gt = grid_centre_gt.unsqueeze(dim=0)
+            assert grid_centre_gt.ndimension() == 1, 'the dimension of grid_centre_gt is {}'.format(grid_centre_gt.ndimension())
             grid_centre_indicator = torch.cat(
                 (torch.LongTensor(grid_centre_gt.shape[-1], 1).fill_(i), grid_centre_gt.unsqueeze(dim=-1)), dim=1
             )
