@@ -836,7 +836,7 @@ class PointGroup(nn.Module):
             ret['point_semantic_scores'] = semantic_scores
             ret['point_offset_preds'] = point_offset_preds
 
-        elif self.model_mode == 'Jiang_original_PointGroup':
+        elif self.model_mode == 'Jiang_original_PointGroup' or self.model_mode == 'Yu_cluster_test_PointGroup':
             voxel_feats = pointgroup_ops.voxelization(input['pt_feats'], input['v2p_map'], input['mode'])  # (M, C), float, cuda
 
             input_ = spconv.SparseConvTensor(
