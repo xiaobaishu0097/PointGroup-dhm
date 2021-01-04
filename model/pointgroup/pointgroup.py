@@ -243,6 +243,8 @@ class PointGroup(nn.Module):
                 hidden_size=32,
             )
 
+            module_map = {}
+
         ### only the upper branch of our target model
         elif self.model_mode == 'Zheng_upper_wpointnet_PointGroup':
             #### PointNet backbone encoder
@@ -272,6 +274,8 @@ class PointGroup(nn.Module):
                 norm_fn(m),
                 nn.ReLU()
             )
+
+            module_map = {}
 
         ### Our target model without PointNet encoder
         ### Ablation study: figure out the performance improvement of PointNet encoder
@@ -317,6 +321,8 @@ class PointGroup(nn.Module):
                 hidden_size=32,
             )
 
+            module_map = {}
+
         ### only the upper branch of our target model without PointNet encoder
         elif self.model_mode == 'Zheng_upper_wopointnet_PointGroup':
             ### point prediction branch
@@ -332,6 +338,11 @@ class PointGroup(nn.Module):
                 norm_fn(m),
                 nn.ReLU()
             )
+
+            module_map = {
+                'module.input_conv': self.input_conv, 'module.unet': self.unet,
+                'module.output_layer': self.output_layer,
+            }
 
         ### same network architecture as PointGroup
         elif self.model_mode == 'Jiang_original_PointGroup':
@@ -357,6 +368,41 @@ class PointGroup(nn.Module):
 
             self.apply(self.set_bn_init)
 
+            module_map = {
+                'module.input_conv': self.input_conv, 'module.unet': self.unet,
+                'module.output_layer': self.output_layer, 'module.score_unet': self.score_unet,
+                'module.score_outputlayer': self.score_outputlayer, 'module.score_linear': self.score_linear
+            }
+
+        elif self.model_mode == 'Yu_cluster_test_PointGroup':
+            self.input_conv = spconv.SparseSequential(
+                spconv.SubMConv3d(input_c, m, kernel_size=3, padding=1, bias=False, indice_key='subm1')
+            )
+
+            self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
+                               indice_key_id=1)
+
+            self.output_layer = spconv.SparseSequential(
+                norm_fn(m),
+                nn.ReLU()
+            )
+
+            #### score branch
+            self.score_unet = UBlock([m, 2 * m], norm_fn, 2, block, indice_key_id=1)
+            self.score_outputlayer = spconv.SparseSequential(
+                norm_fn(m),
+                nn.ReLU()
+            )
+            self.score_linear = nn.Linear(m, 1)
+
+            self.apply(self.set_bn_init)
+
+            module_map = {
+                'module.input_conv': self.input_conv, 'module.unet': self.unet,
+                'module.output_layer': self.output_layer, 'module.score_unet': self.score_unet,
+                'module.score_outputlayer': self.score_outputlayer, 'module.score_linear': self.score_linear
+            }
+
         ### point prediction
         self.point_offset = nn.Sequential(
             nn.Linear(m, m, bias=True),
@@ -364,8 +410,10 @@ class PointGroup(nn.Module):
             nn.ReLU(),
             nn.Linear(m, 3, bias=True),
         )
+        module_map['module.point_offset'] = self.point_offset
 
         self.point_semantic = nn.Linear(m, classes)
+        module_map['module.point_semantic'] = self.point_semantic
 
         #### centre prediction
         ## centre probability
@@ -374,6 +422,7 @@ class PointGroup(nn.Module):
             nn.ReLU(),
             nn.Linear(m, 1)
         )
+        module_map['module.centre_pre'] = self.centre_pred
 
         ## centre semantic
         self.centre_semantic = nn.Sequential(
@@ -381,6 +430,7 @@ class PointGroup(nn.Module):
             nn.ReLU(),
             nn.Linear(m, classes)
         )
+        module_map['module.centre_semantic'] = self.centre_semantic
 
         ## centre offset
         self.centre_offset = nn.Sequential(
@@ -388,20 +438,21 @@ class PointGroup(nn.Module):
             nn.ReLU(),
             nn.Linear(m, 3)
         )
-
-        #### fix parameter
-        module_map = {}
-
-        for m in self.fix_module:
-            mod = module_map[m]
-            for param in mod.parameters():
-                param.requires_grad = False
+        module_map['module.centre_offset'] = self.centre_offset
 
         if self.pretrain_path is not None:
             pretrain_dict = torch.load(self.pretrain_path)
             for m in self.pretrain_module:
                 print(
-                    "Load pretrained " + m + ": %d/%d" % utils.load_model_param(module_map[m], pretrain_dict, prefix=m))
+                    "Load pretrained " + m + ": %d/%d" % utils.load_model_param(module_map[m], pretrain_dict, prefix=m)
+                )
+
+        #### fix parameter
+        for m in self.fix_module:
+            mod = module_map[m]
+            for param in mod.parameters():
+                param.requires_grad = False
+
 
     @staticmethod
     def set_bn_init(m):
