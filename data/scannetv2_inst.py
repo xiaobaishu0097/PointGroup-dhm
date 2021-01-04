@@ -240,11 +240,11 @@ class ScannetDatast:
             xyz_origin, rgb, label, instance_label = self.train_data_files[idx]
 
             for class_idx in self.remove_class:
-                remove_class_indx = label != class_idx
-                xyz_origin = xyz_origin[remove_class_indx, :]
-                rgb = rgb[remove_class_indx, :]
-                label = label[remove_class_indx]
-                instance_label = instance_label[remove_class_indx]
+                valid_class_indx = (label != class_idx)
+                xyz_origin = xyz_origin[valid_class_indx, :]
+                rgb = rgb[valid_class_indx, :]
+                label = label[valid_class_indx]
+                instance_label = instance_label[valid_class_indx]
 
             ### jitter / flip x / rotation
             xyz_middle = self.dataAugment(xyz_origin, True, True, True)
@@ -313,9 +313,9 @@ class ScannetDatast:
                     dim=0).clone()
             )
             norm_inst_centres = norm_coords[:, -len(inst_centres):, :]
-            grid_centre_gt = coordinate2index(norm_inst_centres, 32, coord_type='3d').squeeze()
+            grid_centre_gt = coordinate2index(norm_inst_centres, 32, coord_type='3d').squeeze(dim=0).squeeze(dim=0)
             grid_centre_indicator = torch.cat(
-                (torch.LongTensor(grid_centre_gt.shape[0], 1).fill_(i), grid_centre_gt.unsqueeze(dim=-1)), dim=1
+                (torch.LongTensor(grid_centre_gt.shape[-1], 1).fill_(i), grid_centre_gt.unsqueeze(dim=-1)), dim=1
             )
 
             ### only the centre grid point require to predict the offset vector
