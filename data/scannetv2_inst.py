@@ -316,7 +316,8 @@ class ScannetDatast:
             grid_centre_gt = coordinate2index(norm_inst_centres, 32, coord_type='3d').squeeze()
             if grid_centre_gt.ndimension() == 0:
                 grid_centre_gt = grid_centre_gt.unsqueeze(dim=0)
-            assert grid_centre_gt.ndimension() == 1, 'the dimension of grid_centre_gt is {}'.format(grid_centre_gt.ndimension())
+            assert grid_centre_gt.ndimension() == 1, 'the dimension of grid_centre_gt is {}'.format(
+                grid_centre_gt.ndimension())
             grid_centre_indicator = torch.cat(
                 (torch.LongTensor(grid_centre_gt.shape[-1], 1).fill_(i), grid_centre_gt.unsqueeze(dim=-1)), dim=1
             )
@@ -325,8 +326,13 @@ class ScannetDatast:
             grid_cent_xyz = grid_xyz[grid_centre_gt]
             grid_centre_offset = grid_cent_xyz - np.array(inst_centres)
             grid_centre_offset = grid_centre_offset.squeeze()
+            grid_centre_offset = torch.from_numpy(grid_centre_offset)
+            if grid_centre_offset.ndimension() == 1:
+                grid_centre_offset = grid_centre_offset.unsqueeze(dim=0)
+            assert grid_centre_offset.ndimension() == 2, 'the dimension of grid_centre_gt is {}'.format(
+                grid_centre_offset.ndimension())
             grid_centre_offset_label = torch.cat(
-                (torch.DoubleTensor(grid_centre_offset.shape[0], 1).fill_(i), torch.from_numpy(grid_centre_offset)), dim=1
+                (torch.DoubleTensor(grid_centre_offset.shape[0], 1).fill_(i), grid_centre_offset), dim=1
             )
 
             ### merge the scene to the batch
