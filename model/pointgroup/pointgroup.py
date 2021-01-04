@@ -25,7 +25,7 @@ from model.decoder import decoder
 from model.common import coordinate2index, normalize_3d_coordinate
 
 from model.encoder.unet3d import UNet3D
-from model.Pointnet2.pointnet2.pointnet2_modules import PointnetFPModule, PointnetSAModule
+# from model.Pointnet2.pointnet2.pointnet2_modules import PointnetFPModule, PointnetSAModule
 
 
 class backbone_pointnet2(nn.Module):
