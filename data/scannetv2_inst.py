@@ -323,7 +323,7 @@ class ScannetDatast:
             grid_centre_offset = grid_cent_xyz - np.array(inst_centres)
             grid_centre_offset = grid_centre_offset.squeeze()
             grid_centre_offset_label = torch.cat(
-                (torch.DoubleTensor(grid_centre_offset.shape[0], 1).fill_(i), torch.from_numpy(grid_centre_offset)), dim=1
+                (torch.DoubleTensor(grid_centre_offset.shape[-1], 1).fill_(i), torch.from_numpy(grid_centre_offset)), dim=1
             )
 
             ### merge the scene to the batch
