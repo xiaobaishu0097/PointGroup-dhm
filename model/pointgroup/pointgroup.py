@@ -374,35 +374,6 @@ class PointGroup(nn.Module):
                 'module.score_outputlayer': self.score_outputlayer, 'module.score_linear': self.score_linear
             }
 
-        elif self.model_mode == 'Yu_cluster_test_PointGroup':
-            self.input_conv = spconv.SparseSequential(
-                spconv.SubMConv3d(input_c, m, kernel_size=3, padding=1, bias=False, indice_key='subm1')
-            )
-
-            self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
-                               indice_key_id=1)
-
-            self.output_layer = spconv.SparseSequential(
-                norm_fn(m),
-                nn.ReLU()
-            )
-
-            #### score branch
-            self.score_unet = UBlock([m, 2 * m], norm_fn, 2, block, indice_key_id=1)
-            self.score_outputlayer = spconv.SparseSequential(
-                norm_fn(m),
-                nn.ReLU()
-            )
-            self.score_linear = nn.Linear(m, 1)
-
-            self.apply(self.set_bn_init)
-
-            module_map = {
-                'module.input_conv': self.input_conv, 'module.unet': self.unet,
-                'module.output_layer': self.output_layer, 'module.score_unet': self.score_unet,
-                'module.score_outputlayer': self.score_outputlayer, 'module.score_linear': self.score_linear
-            }
-
         ### point prediction
         self.point_offset = nn.Sequential(
             nn.Linear(m, m, bias=True),
@@ -836,7 +807,7 @@ class PointGroup(nn.Module):
             ret['point_semantic_scores'] = semantic_scores
             ret['point_offset_preds'] = point_offset_preds
 
-        elif self.model_mode == 'Jiang_original_PointGroup' or self.model_mode == 'Yu_cluster_test_PointGroup':
+        elif self.model_mode == 'Jiang_original_PointGroup':
             voxel_feats = pointgroup_ops.voxelization(input['pt_feats'], input['v2p_map'], input['mode'])  # (M, C), float, cuda
 
             input_ = spconv.SparseConvTensor(
