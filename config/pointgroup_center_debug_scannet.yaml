@@ -15,7 +15,7 @@ DATA:
 
   input_channel: 3
   scale: 50   # voxel_size = 1 / scale, scale 50(2cm)
-  batch_size: 4
+  batch_size: 2
   full_scale: [128, 512]
   max_npoint: 250000
   mode: 4 # 4=mean
@@ -28,9 +28,9 @@ STRUCTURE:
   block_reps: 2
   scatter_type: max
   unet3d_num_levels: 3
-  model_mode: Jiang_original_PointGroup
+  model_mode: Yu_refine_clustering_PointGroup
   # 0 or Zheng_panoptic_wpointnet_PointGroup or Zheng_upper_wpointnet_PointGroup or Zheng_panoptic_wopointnet_PointGroup
-  # or Zheng_upper_wopointnet_PointGroup or Jiang_original_PointGroup
+  # or Zheng_upper_wopointnet_PointGroup or Jiang_original_PointGroup or Yu_refine_clustering_PointGroup
 
   use_coords: True
   use_ori_coords: True
@@ -46,7 +46,8 @@ TRAIN:
   momentum: 0.9
   weight_decay: 0.0001
   save_freq: 16  # also eval_freq
-  loss_weight: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0] # center, center_semantic, center_offset, semantic, pt_offset_norm, pt_offset_dir
+  loss_weight: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+  # center, center_semantic, center_offset, semantic, pt_offset_norm, pt_offset_dir
   focal_loss_alpha: 0.25
   focal_loss_gamma: 2
   heatmap_sigma: 0
@@ -55,6 +56,9 @@ TRAIN:
   triplet_margin: 0.3
   triplet_p: 1
   overfitting: False
+  multi_heads: 2
+  refine_times: 2
+  clip: 1
 
   constrastive_loss: True
 

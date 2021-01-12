@@ -188,6 +188,7 @@ class PointGroup(nn.Module):
         self.m = cfg.m
 
         self.pointnet_include_rgb = cfg.pointnet_include_rgb
+        self.refine_times = cfg.refine_times
 
         norm_fn = functools.partial(nn.BatchNorm1d, eps=1e-4, momentum=0.1)
 
@@ -342,6 +343,27 @@ class PointGroup(nn.Module):
             module_map = {
                 'module.input_conv': self.input_conv, 'module.unet': self.unet,
                 'module.output_layer': self.output_layer,
+            }
+
+        elif self.model_mode == 'Yu_refine_clustering_PointGroup':
+            self.input_conv = spconv.SparseSequential(
+                spconv.SubMConv3d(input_c, m, kernel_size=3, padding=1, bias=False, indice_key='subm1')
+            )
+
+            self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
+                               indice_key_id=1)
+
+            self.output_layer = spconv.SparseSequential(
+                norm_fn(m),
+                nn.ReLU()
+            )
+
+            self.point_refine_feature_attn = nn.MultiheadAttention(embed_dim=m, num_heads=cfg.multi_heads)
+
+            module_map = {
+                'module.input_conv': self.input_conv, 'module.unet': self.unet,
+                'module.output_layer': self.output_layer,
+                'module.point_refine_feature_attn': self.point_refine_feature_attn,
             }
 
         ### same network architecture as PointGroup
@@ -807,6 +829,106 @@ class PointGroup(nn.Module):
             ret['point_semantic_scores'] = semantic_scores
             ret['point_offset_preds'] = point_offset_preds
 
+        elif self.model_mode == 'Yu_refine_clustering_PointGroup':
+            point_offset_preds = []
+            point_semantic_scores = []
+            
+            voxel_feats = pointgroup_ops.voxelization(input['pt_feats'], input['v2p_map'], input['mode'])  # (M, C), float, cuda
+
+            input_ = spconv.SparseConvTensor(
+                voxel_feats, input['voxel_coords'],
+                input['spatial_shape'], input['batch_size']
+            )
+            output = self.input_conv(input_)
+            output = self.unet(output)
+            output = self.output_layer(output)
+            output_feats = output.features[input_map.long()]
+            output_feats = output_feats.squeeze(dim=0)
+
+            ### point prediction
+            #### point semantic label prediction
+            point_semantic_scores.append(self.point_semantic(output_feats))  # (N, nClass), float
+            # point_semantic_preds = semantic_scores
+            point_semantic_preds = point_semantic_scores[-1].max(1)[1]
+
+            #### point offset prediction
+            point_offset_preds.append(self.point_offset(output_feats))  # (N, 3), float32
+
+            point_features = output_feats.clone()
+
+            if (epoch > self.prepare_epochs):
+                refined_point_offset_preds = []
+                refined_point_semantic_scores = []
+
+                for _ in range(self.refine_times):
+                    #### get prooposal clusters
+                    object_idxs = torch.nonzero(point_semantic_preds > 1).view(-1)
+
+                    batch_idxs_ = batch_idxs[object_idxs]
+                    batch_offsets_ = utils.get_batch_offsets(batch_idxs_, input['batch_size'])
+                    coords_ = coords[object_idxs]
+                    pt_offsets_ = point_offset_preds[-1][object_idxs]
+
+                    semantic_preds_cpu = point_semantic_preds[object_idxs].int().cpu()
+
+                    idx_shift, start_len_shift = pointgroup_ops.ballquery_batch_p(coords_ + pt_offsets_, batch_idxs_,
+                                                                                  batch_offsets_, self.cluster_radius,
+                                                                                  self.cluster_shift_meanActive)
+                    proposals_idx_shift, proposals_offset_shift = pointgroup_ops.bfs_cluster(semantic_preds_cpu,
+                                                                                             idx_shift.cpu(),
+                                                                                             start_len_shift.cpu(),
+                                                                                             self.cluster_npoint_thre)
+                    proposals_idx_shift[:, 1] = object_idxs[proposals_idx_shift[:, 1].long()].int()
+                    # proposals_idx_shift: (sumNPoint, 2), int, dim 0 for cluster_id, dim 1 for corresponding point idxs in N
+                    # proposals_offset_shift: (nProposal + 1), int
+
+                    c_idxs = proposals_idx_shift[:, 1].cuda()
+                    clusters_feats = output_feats[c_idxs.long()]
+
+                    cluster_feature = pointgroup_ops.sec_mean(clusters_feats, proposals_offset_shift.cuda())  # (nCluster, m), float
+
+                    clusters_pts_idxs = proposals_idx_shift[proposals_offset_shift[:-1].long()][:, 1].cuda()
+
+                    if len(clusters_pts_idxs) == 0:
+                        continue
+
+                    clusters_batch_idxs = clusters_pts_idxs.clone()
+                    for _batch_idx in range(len(batch_offsets_) - 1, 0, -1):
+                        clusters_batch_idxs[clusters_pts_idxs < batch_offsets_[_batch_idx]] = _batch_idx
+
+                    refined_point_features = []
+                    for _batch_idx in range(1, len(batch_offsets)):
+                        point_refined_feature, _ = self.point_refine_feature_attn(
+                            query=output_feats[batch_offsets[_batch_idx-1]:batch_offsets[_batch_idx], :].unsqueeze(dim=1),
+                            key=cluster_feature[clusters_batch_idxs == _batch_idx, :].unsqueeze(dim=1),
+                            value=cluster_feature[clusters_batch_idxs == _batch_idx, :].unsqueeze(dim=1)
+                        )
+                        refined_point_features.append(point_refined_feature)
+
+                    refined_point_features = torch.cat(refined_point_features, dim=0).squeeze(dim=1)
+                    assert refined_point_features.shape[0] == point_features.shape[0], 'point wise features have wrong point numbers'
+                    refined_point_features = refined_point_features + point_features
+                    point_features = refined_point_features.clone()
+
+                    ### refined point prediction
+                    #### refined point semantic label prediction
+                    point_semantic_scores.append(self.point_semantic(refined_point_features))  # (N, nClass), float
+                    point_semantic_preds = point_semantic_scores[-1].max(1)[1]
+
+                    #### point offset prediction
+                    point_offset_preds.append(self.point_offset(refined_point_features))  # (N, 3), float32
+
+                if (epoch == self.test_epoch):
+                    self.cluster_sets = 'Q'
+                    scores, proposals_idx, proposals_offset = self.pointgroup_cluster_algorithm(
+                        coords, point_offset_preds[-1], point_semantic_preds,
+                        batch_idxs, input['batch_size']
+                    )
+                    ret['proposal_scores'] = (scores, proposals_idx, proposals_offset)
+
+            ret['point_semantic_scores'] = point_semantic_scores
+            ret['point_offset_preds'] = point_offset_preds
+
         elif self.model_mode == 'Jiang_original_PointGroup':
             voxel_feats = pointgroup_ops.voxelization(input['pt_feats'], input['v2p_map'], input['mode'])  # (M, C), float, cuda
 
@@ -1043,10 +1165,7 @@ def model_fn_decorator(test=False):
         ret = model(input_, p2v_map, coords_float, rgb, ori_coords, coords[:, 0].int(), batch_offsets, epoch)
 
         point_offset_preds = ret['point_offset_preds']
-        point_offset_preds = point_offset_preds.squeeze()
-
         point_semantic_scores = ret['point_semantic_scores']
-        point_semantic_scores = point_semantic_scores.squeeze()
 
         if 'centre_preds' in ret.keys():
             centre_preds = ret['centre_preds'] # (B, 32**3)
@@ -1121,8 +1240,11 @@ def model_fn_decorator(test=False):
         # semantic_scores: (N, nClass), float32, cuda
         # semantic_labels: (N), long, cuda
 
-        semantic_loss = semantic_criterion(semantic_scores, semantic_labels)
-        loss_out['semantic_loss'] = (semantic_loss, semantic_scores.shape[0])
+        semantic_loss = torch.zeros(1).cuda()
+        for semantic_score in semantic_scores:
+            semantic_loss += semantic_criterion(semantic_score, semantic_labels)
+
+        loss_out['semantic_loss'] = (semantic_loss, semantic_scores[0].shape[0])
 
         '''offset loss'''
         pt_offsets, coords, instance_info, instance_centre, instance_labels = loss_inp['pt_offsets']
@@ -1131,85 +1253,88 @@ def model_fn_decorator(test=False):
         # instance_info: (N, 9), float32 tensor (meanxyz, minxyz, maxxyz)
         # instance_labels: (N), long
 
-        gt_offsets = instance_info[:, 0:3] - coords  # (N, 3)
-        pt_valid_index = instance_labels != cfg.ignore_label
-        if cfg.offset_norm_criterion == 'l1':
-            pt_diff = pt_offsets - gt_offsets  # (N, 3)
-            pt_dist = torch.sum(torch.abs(pt_diff), dim=-1)  # (N)
+        offset_norm_loss = torch.zeros(1).cuda()
+        offset_dir_loss = torch.zeros(1).cuda()
+        for pt_offset in pt_offsets:
+            gt_offsets = instance_info[:, 0:3] - coords  # (N, 3)
+            pt_valid_index = instance_labels != cfg.ignore_label
+            if cfg.offset_norm_criterion == 'l1':
+                pt_diff = pt_offset - gt_offsets  # (N, 3)
+                pt_dist = torch.sum(torch.abs(pt_diff), dim=-1)  # (N)
+                valid = (instance_labels != cfg.ignore_label).float()
+                offset_norm_loss = torch.sum(pt_dist * valid) / (torch.sum(valid) + 1e-6)
+            if cfg.offset_norm_criterion == 'l2':
+                offset_norm_loss = offset_norm_criterion(pt_offset[pt_valid_index], gt_offsets[pt_valid_index])
+            elif cfg.offset_norm_criterion == 'triplet':
+                ### offset l1 distance loss: learn to move towards the true instance centre
+                offset_norm_loss = offset_norm_criterion(pt_offset[pt_valid_index], gt_offsets[pt_valid_index])
+
+                # positive_offset = instance_info[:, 0:3].unsqueeze(dim=1).repeat(1, instance_centre.shape[0], 1)
+                # negative_offset = instance_centre.unsqueeze(dim=0).repeat(coords.shape[0], 1, 1)
+                # positive_offset_index = (negative_offset == positive_offset).to(torch.bool) == torch.ones(3, dtype=torch.bool).cuda()
+                # negative_offset[positive_offset_index] = 100
+                # negative_offset = negative_offset - positive_offset
+                # negative_offset_index = torch.norm(
+                #     gt_offsets.unsqueeze(dim=1).repeat(1, instance_centre.shape[0], 1) - negative_offset, dim=2
+                # ).min(dim=1)[1][:, 0]
+
+                ### offset triplet loss: learn to leave the second closest point
+                ## semi-hard negative sampling
+                shifted_coords = coords + pt_offset
+                positive_offsets = shifted_coords - instance_info[:, 0:3]
+                positive_distance = torch.norm(positive_offsets, dim=1)
+                negative_offsets = shifted_coords.unsqueeze(dim=1).repeat(1, instance_centre.shape[0], 1) - \
+                                   instance_centre.unsqueeze(dim=0).repeat(shifted_coords.shape[0], 1, 1)
+                negative_distance = torch.norm(negative_offsets, dim=2)
+                negative_offset_index = (
+                        negative_distance - positive_distance.unsqueeze(dim=1).repeat(1, instance_centre.shape[0])
+                ).min(dim=1)[1]
+                semi_negative_sample_index = torch.ones(shifted_coords.shape[0], dtype=torch.bool).cuda()
+                # ignore points whose distance from the second closest point is larger than the triplet margin
+                semi_negative_sample_index[
+                    (negative_distance.topk(2, dim=1, largest=False)[0][:, -1] - positive_distance) > cfg.triplet_margin] = 0
+                semi_negative_sample_index[
+                    (negative_distance.topk(2, dim=1, largest=False)[0][:, -1] - positive_distance) < 0] = 0
+                # 1 st false
+                semi_negative_sample_index[
+                    (negative_distance.topk(1, dim=1, largest=False)[0][:, -1] - positive_distance) != 0] = 1
+                # ignore points with -100 instance label
+                semi_negative_sample_index[instance_labels == cfg.ignore_label] = 0
+
+                ### calculate triplet loss based predicted offset vector and gt offset vector
+                # negative_offset = instance_centre[negative_offset_index] - coords
+                # offset_norm_triplet_loss = offset_norm_triplet_criterion(
+                #     pt_offsets[semi_negative_sample_index], gt_offsets[semi_negative_sample_index],
+                #     negative_offset[semi_negative_sample_index]
+                # )
+
+                ### calculate triplet loss based shifted coordinates and centre coordinates
+                negative_coords = instance_centre[negative_offset_index]
+                gt_coords = instance_info[:, 0:3]
+                offset_norm_triplet_loss = offset_norm_triplet_criterion(
+                    shifted_coords[semi_negative_sample_index], gt_coords[semi_negative_sample_index],
+                    negative_coords[semi_negative_sample_index]
+                )
+
+                if torch.isnan(offset_norm_triplet_loss):
+                    offset_norm_triplet_loss = torch.tensor(0, dtype=torch.float).cuda()
+                loss_out['offset_norm_triplet_loss'] = (offset_norm_triplet_loss, semi_negative_sample_index.to(torch.float32).sum())
+
+            # if cfg.constrastive_loss:
+            #     shifted_coords = coords + pt_offsets
+
+
+            # pt_diff = pt_offsets - gt_offsets  # (N, 3)
+            # pt_dist = torch.sum(torch.abs(pt_diff), dim=-1)  # (N)
             valid = (instance_labels != cfg.ignore_label).float()
-            offset_norm_loss = torch.sum(pt_dist * valid) / (torch.sum(valid) + 1e-6)
-        if cfg.offset_norm_criterion == 'l2':
-            offset_norm_loss = offset_norm_criterion(pt_offsets[pt_valid_index], gt_offsets[pt_valid_index])
-        elif cfg.offset_norm_criterion == 'triplet':
-            ### offset l1 distance loss: learn to move towards the true instance centre
-            offset_norm_loss = offset_norm_criterion(pt_offsets[pt_valid_index], gt_offsets[pt_valid_index])
+            # offset_norm_loss = torch.sum(pt_dist * valid) / (torch.sum(valid) + 1e-6)
 
-            # positive_offset = instance_info[:, 0:3].unsqueeze(dim=1).repeat(1, instance_centre.shape[0], 1)
-            # negative_offset = instance_centre.unsqueeze(dim=0).repeat(coords.shape[0], 1, 1)
-            # positive_offset_index = (negative_offset == positive_offset).to(torch.bool) == torch.ones(3, dtype=torch.bool).cuda()
-            # negative_offset[positive_offset_index] = 100
-            # negative_offset = negative_offset - positive_offset
-            # negative_offset_index = torch.norm(
-            #     gt_offsets.unsqueeze(dim=1).repeat(1, instance_centre.shape[0], 1) - negative_offset, dim=2
-            # ).min(dim=1)[1][:, 0]
-
-            ### offset triplet loss: learn to leave the second closest point
-            ## semi-hard negative sampling
-            shifted_coords = coords + pt_offsets
-            positive_offsets = shifted_coords - instance_info[:, 0:3]
-            positive_distance = torch.norm(positive_offsets, dim=1)
-            negative_offsets = shifted_coords.unsqueeze(dim=1).repeat(1, instance_centre.shape[0], 1) - \
-                               instance_centre.unsqueeze(dim=0).repeat(shifted_coords.shape[0], 1, 1)
-            negative_distance = torch.norm(negative_offsets, dim=2)
-            negative_offset_index = (
-                    negative_distance - positive_distance.unsqueeze(dim=1).repeat(1, instance_centre.shape[0])
-            ).min(dim=1)[1]
-            semi_negative_sample_index = torch.ones(shifted_coords.shape[0], dtype=torch.bool).cuda()
-            # ignore points whose distance from the second closest point is larger than the triplet margin
-            semi_negative_sample_index[
-                (negative_distance.topk(2, dim=1, largest=False)[0][:, -1] - positive_distance) > cfg.triplet_margin] = 0
-            semi_negative_sample_index[
-                (negative_distance.topk(2, dim=1, largest=False)[0][:, -1] - positive_distance) < 0] = 0
-            # 1 st false
-            semi_negative_sample_index[
-                (negative_distance.topk(1, dim=1, largest=False)[0][:, -1] - positive_distance) != 0] = 1
-            # ignore points with -100 instance label
-            semi_negative_sample_index[instance_labels == cfg.ignore_label] = 0
-
-            ### calculate triplet loss based predicted offset vector and gt offset vector
-            # negative_offset = instance_centre[negative_offset_index] - coords
-            # offset_norm_triplet_loss = offset_norm_triplet_criterion(
-            #     pt_offsets[semi_negative_sample_index], gt_offsets[semi_negative_sample_index],
-            #     negative_offset[semi_negative_sample_index]
-            # )
-
-            ### calculate triplet loss based shifted coordinates and centre coordinates
-            negative_coords = instance_centre[negative_offset_index]
-            gt_coords = instance_info[:, 0:3]
-            offset_norm_triplet_loss = offset_norm_triplet_criterion(
-                shifted_coords[semi_negative_sample_index], gt_coords[semi_negative_sample_index],
-                negative_coords[semi_negative_sample_index]
-            )
-
-            if torch.isnan(offset_norm_triplet_loss):
-                offset_norm_triplet_loss = torch.tensor(0, dtype=torch.float).cuda()
-            loss_out['offset_norm_triplet_loss'] = (offset_norm_triplet_loss, semi_negative_sample_index.to(torch.float32).sum())
-
-        # if cfg.constrastive_loss:
-        #     shifted_coords = coords + pt_offsets
-
-
-        # pt_diff = pt_offsets - gt_offsets  # (N, 3)
-        # pt_dist = torch.sum(torch.abs(pt_diff), dim=-1)  # (N)
-        valid = (instance_labels != cfg.ignore_label).float()
-        # offset_norm_loss = torch.sum(pt_dist * valid) / (torch.sum(valid) + 1e-6)
-
-        gt_offsets_norm = torch.norm(gt_offsets, p=2, dim=1)  # (N), float
-        gt_offsets_ = gt_offsets / (gt_offsets_norm.unsqueeze(-1) + 1e-8)
-        pt_offsets_norm = torch.norm(pt_offsets, p=2, dim=1)
-        pt_offsets_ = pt_offsets / (pt_offsets_norm.unsqueeze(-1) + 1e-8)
-        direction_diff = - (gt_offsets_ * pt_offsets_).sum(-1)  # (N)
-        offset_dir_loss = torch.sum(direction_diff * valid) / (torch.sum(valid) + 1e-6)
+            gt_offsets_norm = torch.norm(gt_offsets, p=2, dim=1)  # (N), float
+            gt_offsets_ = gt_offsets / (gt_offsets_norm.unsqueeze(-1) + 1e-8)
+            pt_offsets_norm = torch.norm(pt_offset, p=2, dim=1)
+            pt_offsets_ = pt_offset / (pt_offsets_norm.unsqueeze(-1) + 1e-8)
+            direction_diff = - (gt_offsets_ * pt_offsets_).sum(-1)  # (N)
+            offset_dir_loss = torch.sum(direction_diff * valid) / (torch.sum(valid) + 1e-6)
 
         loss_out['offset_norm_loss'] = (offset_norm_loss, valid.sum())
         loss_out['offset_dir_loss'] = (offset_dir_loss, valid.sum())
@@ -1272,7 +1397,7 @@ def model_fn_decorator(test=False):
             loss += cfg.loss_weight[0] * centre_loss + cfg.loss_weight[1] * centre_semantic_loss + \
                     cfg.loss_weight[2] * centre_offset_loss
         if (epoch > cfg.prepare_epochs) and (cfg.model_mode == 'Jiang_original_PointGroup'):
-            loss += (1 * score_loss)
+            loss += (cfg.loss_weight[7] * score_loss)
 
         return loss, loss_out, infos
 

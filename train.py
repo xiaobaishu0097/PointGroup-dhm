@@ -63,6 +63,7 @@ def train_epoch(train_loader, model, model_fn, optimizer, epoch):
         ##### backward
         optimizer.zero_grad()
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.clip)
         optimizer.step()
 
         ##### time and print
