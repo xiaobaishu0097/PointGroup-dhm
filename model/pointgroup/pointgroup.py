@@ -189,6 +189,7 @@ class PointGroup(nn.Module):
 
         self.pointnet_include_rgb = cfg.pointnet_include_rgb
         self.refine_times = cfg.refine_times
+        self.add_pos_enc_ref = cfg.add_pos_enc_ref
 
         norm_fn = functools.partial(nn.BatchNorm1d, eps=1e-4, momentum=0.1)
 
@@ -624,7 +625,7 @@ class PointGroup(nn.Module):
 
         return scores, proposals_idx, proposals_offset
 
-    def forward(self, input, input_map, coords, rgb, ori_coords, batch_idxs, batch_offsets, epoch):
+    def forward(self, input, input_map, coords, rgb, ori_coords, point_positional_encoding, batch_idxs, batch_offsets, epoch):
         '''
         :param input_map: (N), int, cuda
         :param coords: (N, 3), float, cuda
@@ -908,6 +909,8 @@ class PointGroup(nn.Module):
                     refined_point_features = torch.cat(refined_point_features, dim=0).squeeze(dim=1)
                     assert refined_point_features.shape[0] == point_features.shape[0], 'point wise features have wrong point numbers'
                     refined_point_features = refined_point_features + point_features
+                    if self.add_pos_enc_ref:
+                        refined_point_features += point_positional_encoding
                     point_features = refined_point_features.clone()
 
                     ### refined point prediction
@@ -1127,6 +1130,7 @@ def model_fn_decorator(test=False):
         feats = batch['point_feats'].cuda()  # (N, C), float32, cuda
         labels = batch['point_semantic_labels'].cuda()  # (N), long, cuda
         instance_labels = batch['point_instance_labels'].cuda()  # (N), long, cuda, 0~total_nInst, -100
+        point_positional_encoding = batch['point_positional_encoding'].cuda()
 
         instance_info = batch['point_instance_infos'].cuda()  # (N, 9), float32, cuda, (meanxyz, minxyz, maxxyz)
         instance_pointnum = batch['instance_pointnum'].cuda()  # (total_nInst), int, cuda
@@ -1162,7 +1166,10 @@ def model_fn_decorator(test=False):
             'batch_size': cfg.batch_size,
         }
 
-        ret = model(input_, p2v_map, coords_float, rgb, ori_coords, coords[:, 0].int(), batch_offsets, epoch)
+        ret = model(
+            input_, p2v_map, coords_float, rgb, ori_coords, point_positional_encoding,
+            coords[:, 0].int(), batch_offsets, epoch
+        )
 
         point_offset_preds = ret['point_offset_preds']
         point_semantic_scores = ret['point_semantic_scores']

@@ -215,6 +215,17 @@ class ScannetDatast:
 
         return xyz_padded, rgb_padded, label_padded, instance_label_padded
 
+    def positional_encoding_func(self, position, embed_dim):
+        pos_en = []
+        for pos_idx in range(position.shape[1]):
+            pos = position[:, pos_idx]
+            for d in range(embed_dim):
+                pos_en.append(np.sin(np.array(np.pi) * (2 ** d) * pos).unsqueeze(dim=1))
+                pos_en.append(np.cos(np.array(np.pi) * (2 ** d) * pos).unsqueeze(dim=1))
+        pos_en = torch.cat(pos_en, dim=1)
+
+        return pos_en
+
     def trainMerge(self, id):
         # variables for backbone
         point_locs = [] # (N, 4) (sample_index, xyz)
@@ -365,6 +376,12 @@ class ScannetDatast:
         point_locs = torch.cat(point_locs, 0)  # (N) (sample_index)
         point_coords = torch.cat(point_coords, 0).to(torch.float32)  # (N, 6) (shifted_xyz, original_xyz)
         point_feats = torch.cat(point_feats, 0)  # (N, 3) (rgb)
+        point_positional_encoding = torch.cat(
+            (
+                torch.zeros(point_coords.shape[0], 1), self.positional_encoding_func(point_coords[:, :3], 3),
+                torch.zeros(point_coords.shape[0], 1), self.positional_encoding_func(point_feats, 2)
+            ), dim=1
+        )
         # variables for point-wise predictions
         point_semantic_labels = torch.cat(point_semantic_labels, 0).long()  # (N)
         point_instance_labels = torch.cat(point_instance_labels, 0).long()  # (N)
@@ -389,6 +406,7 @@ class ScannetDatast:
             'point_locs': point_locs, # (N, 4) (sample_index, xyz)
             'point_coords': point_coords, # (N, 6) (shifted_xyz, original_xyz)
             'point_feats': point_feats, # (N, 3) (rgb)
+            'point_positional_encoding': point_positional_encoding, # (N, 32) (0, xyz-18dim, 0, rgb-12dim)
             # variables for point-wise predictions
             'voxel_locs': voxel_locs,  # (nVoxel, 4)
             'p2v_map': p2v_map,  # (N)

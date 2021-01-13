@@ -59,6 +59,7 @@ TRAIN:
   multi_heads: 2
   refine_times: 2
   clip: 1
+  add_pos_enc_ref: False
 
   constrastive_loss: True
 
@@ -97,7 +98,7 @@ TEST:
   TEST_DIST_THRESH: 2
 
   eval: True
-  save_grid_points: True
+  save_grid_points: False
   save_semantic: False
   save_pt_offsets: False
   save_instance: False
