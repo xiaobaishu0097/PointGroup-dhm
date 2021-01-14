@@ -83,7 +83,23 @@ def get_coords_color(opt):
         xyz, rgb, label, inst_label = torch.load(input_file)
     rgb = (rgb + 1) * 127.5
 
-    if opt.task == 'grid_gt':
+    if opt.task == 'offset_error':
+        assert opt.room_split != 'test'
+        inst_label = inst_label.astype(np.int)
+        print("Instance number: {}".format(inst_label.max() + 1))
+        inst_label_rgb = np.zeros(rgb.shape)
+        object_idx = (inst_label >= 0)
+        inst_label_rgb[object_idx] = COLOR20[inst_label[object_idx] % len(COLOR20)]
+        rgb = inst_label_rgb
+
+        pt_offsets_file = os.path.join(opt.result_root, opt.room_split, 'pt_offsets', opt.room_name + '.npy')
+        assert os.path.isfile(pt_offsets_file), 'No grid points result - {}.'.format(pt_offsets_file)
+        pt_offsets = np.load(pt_offsets_file)
+        xyz = xyz + 1 * pt_offsets[:, :]
+
+        pt_gt_offset_file = os.path.join()
+
+    elif opt.task == 'grid_gt':
         # sem_valid = (label != 100)
         # xyz = xyz[sem_valid]
         # rgb = rgb[sem_valid]

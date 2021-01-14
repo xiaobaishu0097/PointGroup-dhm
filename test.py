@@ -164,7 +164,7 @@ def test(model, model_fn, data_name, epoch):
             elif cfg.model_mode.endswith('_PointGroup'):
                 ##### get predictions (#1 semantic_pred, pt_offsets; #2 scores, proposals_pred)
                 semantic_scores = preds['semantic']  # (N, nClass=20) float32, cuda
-                semantic_pred = semantic_scores.max(1)[1]  # (N) long, cuda
+                semantic_pred = semantic_scores[-1].max(1)[1]  # (N) long, cuda
                 # semantic_pred = semantic_scores.max(1)[1]  # (N) long, cuda
 
                 pt_offsets = preds['pt_offsets']  # (N, 3), float32, cuda

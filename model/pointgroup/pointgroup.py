@@ -1032,6 +1032,7 @@ def model_fn_decorator(test=False):
 
         coords_float = batch['point_coords'].cuda()  # (N, 3), float32, cuda
         feats = batch['point_feats'].cuda()  # (N, C), float32, cuda
+        point_positional_encoding = batch['point_positional_encoding'].cuda()
 
         batch_offsets = batch['batch_offsets'].cuda()  # (B + 1), int, cuda
 
@@ -1061,13 +1062,13 @@ def model_fn_decorator(test=False):
             'batch_size': cfg.batch_size,
         }
 
-        ret = model(input_, p2v_map, coords_float, rgb, ori_coords, coords[:, 0].int(), batch_offsets, epoch)
+        ret = model(
+            input_, p2v_map, coords_float, rgb, ori_coords, point_positional_encoding,
+            coords[:, 0].int(), batch_offsets, epoch
+        )
 
         point_offset_preds = ret['point_offset_preds']
-        point_offset_preds = point_offset_preds.squeeze()
-
         point_semantic_scores = ret['point_semantic_scores']
-        point_semantic_scores = point_semantic_scores.squeeze()
 
         if 'proposal_scores' in ret.keys():
             scores, proposals_idx, proposals_offset = ret['proposal_scores']
