@@ -274,7 +274,7 @@ def test(model, model_fn, data_name, epoch):
 
             ##### save files
             start3 = time.time()
-            
+
             if cfg.save_pt_offsets:
                 os.makedirs(os.path.join(result_dir, 'pt_offsets'), exist_ok=True)
                 pt_offsets = pt_offsets.cpu().numpy()

@@ -58,7 +58,7 @@ TRAIN:
   overfitting: False
   multi_heads: 2
   refine_times: 2
-  clip: 1
+  clip: False
   add_pos_enc_ref: False
 
   constrastive_loss: True
