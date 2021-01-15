@@ -451,13 +451,6 @@ class ScannetDatast:
         for i, idx in enumerate(id):
             xyz_origin, rgb, label, instance_label = self.val_data_files[idx]
 
-            for class_idx in self.remove_class:
-                valid_class_indx = (label != class_idx)
-                xyz_origin = xyz_origin[valid_class_indx, :]
-                rgb = rgb[valid_class_indx, :]
-                label = label[valid_class_indx]
-                instance_label = instance_label[valid_class_indx]
-
             ### jitter / flip x / rotation
             xyz_middle = self.dataAugment(xyz_origin, True, True, True)
             # xyz_middle = self.dataAugment(xyz_origin, False, False, False)
@@ -618,6 +611,7 @@ class ScannetDatast:
         point_locs = [] # (N, 4) (sample_index, xyz)
         point_coords = []  # (N, 6) (shifted_xyz, original_xyz)
         point_feats = []  # (N, 3) (rgb)
+        point_semantic_labels = []
 
         batch_offsets = [0]
         total_inst_num = 0
@@ -625,14 +619,6 @@ class ScannetDatast:
         for i, idx in enumerate(id):
             if self.test_split == 'val':
                 xyz_origin, rgb, label, instance_label = self.test_data_files[idx]
-
-                for class_idx in self.remove_class:
-                    valid_class_indx = (label != class_idx)
-                    xyz_origin = xyz_origin[valid_class_indx, :]
-                    rgb = rgb[valid_class_indx, :]
-                    label = label[valid_class_indx]
-                    instance_label = instance_label[valid_class_indx]
-                    
             elif self.test_split == 'test':
                 xyz_origin, rgb = self.test_data_files[idx]
             else:
@@ -654,6 +640,8 @@ class ScannetDatast:
             point_locs.append(torch.cat((torch.LongTensor(xyz.shape[0], 1).fill_(i), torch.from_numpy(xyz).long()), dim=1))  # (N, 4) (sample_index, xyz)
             point_coords.append(torch.from_numpy(np.concatenate((xyz_middle, xyz_origin), axis=1)))  # (N, 6) (shifted_xyz, original_xyz)
             point_feats.append(torch.from_numpy(rgb) + torch.randn(3) * 0.1)  # (N, 3) (rgb)
+            if self.test_split == 'val':
+                point_semantic_labels.append(torch.from_numpy(label))  # (N)
 
         ### merge all the scenes in the batchd
         batch_offsets = torch.tensor(batch_offsets, dtype=torch.int)
@@ -667,6 +655,8 @@ class ScannetDatast:
                 torch.zeros(point_coords.shape[0], 1), self.positional_encoding_func(point_feats, 2)
             ), dim=1
         )
+        if self.test_split == 'val':
+            point_semantic_labels = torch.cat(point_semantic_labels, 0).long()  # (N)
 
         spatial_shape = np.clip((point_locs.max(0)[0][1:] + 1).numpy(), self.full_scale[0], None)  # long (3)
 
@@ -674,11 +664,29 @@ class ScannetDatast:
         voxel_locs, p2v_map, v2p_map = pointgroup_ops.voxelization_idx(point_locs, self.batch_size, self.mode)
 
         #TODO: check size first; rewrite padding part later
+        if self.test_split == 'val':
+            return {
+                # variables for backbone
+                'point_locs': point_locs, # (N, 4) (sample_index, xyz)
+                'point_coords': point_coords, # (N, 6) (shifted_xyz, original_xyz)
+                'point_feats': point_feats, # (N, 3) (rgb)
+                'point_semantic_labels': point_semantic_labels,  # (N)
+                'point_positional_encoding': point_positional_encoding,
+                # variables for point-wise predictions
+                'voxel_locs': voxel_locs,  # (nVoxel, 4)
+                'p2v_map': p2v_map,  # (N)
+                'v2p_map': v2p_map,  # (nVoxel, 19?)
+                # variables for other uses
+                'id': id,
+                'batch_offsets': batch_offsets,  # int (B+1)
+                'spatial_shape': spatial_shape,  # long (3)
+            }
+
         return {
             # variables for backbone
-            'point_locs': point_locs, # (N, 4) (sample_index, xyz)
-            'point_coords': point_coords, # (N, 6) (shifted_xyz, original_xyz)
-            'point_feats': point_feats, # (N, 3) (rgb)
+            'point_locs': point_locs,  # (N, 4) (sample_index, xyz)
+            'point_coords': point_coords,  # (N, 6) (shifted_xyz, original_xyz)
+            'point_feats': point_feats,  # (N, 3) (rgb)
             'point_positional_encoding': point_positional_encoding,
             # variables for point-wise predictions
             'voxel_locs': voxel_locs,  # (nVoxel, 4)

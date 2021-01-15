@@ -1088,14 +1088,16 @@ def model_fn_decorator(test=False):
 
         ### only be used during debugging
         # instance_info = batch['instance_info'].squeeze(dim=0).cuda()  # (N, 9), float32, cuda, (meanxyz, minxyz, maxxyz)
-        # labels = batch['labels'].squeeze(dim=0).cuda()  # (N), long, cuda
+        labels = batch['point_semantic_labels'].squeeze(dim=0).cuda()  # (N), long, cuda
         # grid_centre_gt = batch['grid_centre_gt'].squeeze(dim=0).cuda()
         # grid_centre_offset = batch['grid_centre_offset'].squeeze(dim=0).cuda()
         # grid_instance_label = batch['grid_instance_label'].squeeze(dim=0).cuda()
 
         # point_offset_preds = instance_info[:, 0:3] - coords_float
         #
-        # point_semantic_preds = labels
+        labels[labels == -100] = 0
+        gt_semantic_labels = []
+        gt_semantic_labels.append(torch.nn.functional.one_hot(labels))
         #
         # fake_grid_centre = torch.zeros_like(grid_centre_preds)
         # fake_grid_centre[0, grid_centre_gt.long()] = 1
@@ -1111,6 +1113,7 @@ def model_fn_decorator(test=False):
             preds = {}
             preds['pt_offsets'] = point_offset_preds
             preds['semantic'] = point_semantic_scores
+            # preds['semantic'] = gt_semantic_labels
             if 'centre_preds' in ret.keys():
                 preds['centre_preds'] = centre_preds
                 preds['centre_semantic_preds'] = centre_semantic_preds
@@ -1119,7 +1122,6 @@ def model_fn_decorator(test=False):
             if (epoch == cfg.test_epoch) and ('proposal_scores' in ret.keys()):
                 preds['score'] = scores
                 preds['proposals'] = (proposals_idx, proposals_offset)
-
 
         return preds
 
