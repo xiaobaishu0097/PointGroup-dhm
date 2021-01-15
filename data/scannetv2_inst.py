@@ -376,12 +376,20 @@ class ScannetDatast:
         point_locs = torch.cat(point_locs, 0)  # (N) (sample_index)
         point_coords = torch.cat(point_coords, 0).to(torch.float32)  # (N, 6) (shifted_xyz, original_xyz)
         point_feats = torch.cat(point_feats, 0)  # (N, 3) (rgb)
-        point_positional_encoding = torch.cat(
-            (
-                torch.zeros(point_coords.shape[0], 1), self.positional_encoding_func(point_coords[:, :3], 3),
-                torch.zeros(point_coords.shape[0], 1), self.positional_encoding_func(point_feats, 2)
-            ), dim=1
-        )
+        if cfg.pos_enc == 'XYZ':
+            point_positional_encoding = torch.cat(
+                (
+                    torch.zeros(point_coords.shape[0], 1), self.positional_encoding_func(point_coords[:, :3], 5),
+                    torch.zeros(point_coords.shape[0], 1)
+                ), dim=1
+            )
+        elif cfg.pos_enc == 'XYZRGB':
+            point_positional_encoding = torch.cat(
+                (
+                    torch.zeros(point_coords.shape[0], 1), self.positional_encoding_func(point_coords[:, :3], 3),
+                    torch.zeros(point_coords.shape[0], 1), self.positional_encoding_func(point_feats, 2)
+                ), dim=1
+            )
         # variables for point-wise predictions
         point_semantic_labels = torch.cat(point_semantic_labels, 0).long()  # (N)
         point_instance_labels = torch.cat(point_instance_labels, 0).long()  # (N)
@@ -555,12 +563,20 @@ class ScannetDatast:
         point_locs = torch.cat(point_locs, 0)  # (N) (sample_index)
         point_coords = torch.cat(point_coords, 0).to(torch.float32)  # (N, 6) (shifted_xyz, original_xyz)
         point_feats = torch.cat(point_feats, 0)  # (N, 3) (rgb)
-        point_positional_encoding = torch.cat(
-            (
-                torch.zeros(point_coords.shape[0], 1), self.positional_encoding_func(point_coords[:, :3], 3),
-                torch.zeros(point_coords.shape[0], 1), self.positional_encoding_func(point_feats, 2)
-            ), dim=1
-        )
+        if cfg.pos_enc == 'XYZ':
+            point_positional_encoding = torch.cat(
+                (
+                    torch.zeros(point_coords.shape[0], 1), self.positional_encoding_func(point_coords[:, :3], 5),
+                    torch.zeros(point_coords.shape[0], 1)
+                ), dim=1
+            )
+        elif cfg.pos_enc == 'XYZRGB':
+            point_positional_encoding = torch.cat(
+                (
+                    torch.zeros(point_coords.shape[0], 1), self.positional_encoding_func(point_coords[:, :3], 3),
+                    torch.zeros(point_coords.shape[0], 1), self.positional_encoding_func(point_feats, 2)
+                ), dim=1
+            )
         # variables for point-wise predictions
         point_semantic_labels = torch.cat(point_semantic_labels, 0).long()  # (N)
         point_instance_labels = torch.cat(point_instance_labels, 0).long()  # (N)
@@ -649,12 +665,20 @@ class ScannetDatast:
         point_locs = torch.cat(point_locs, 0)  # (N) (sample_index)
         point_coords = torch.cat(point_coords, 0).to(torch.float32)  # (N, 6) (shifted_xyz, original_xyz)
         point_feats = torch.cat(point_feats, 0)  # (N, 3) (rgb)
-        point_positional_encoding = torch.cat(
-            (
-                torch.zeros(point_coords.shape[0], 1), self.positional_encoding_func(point_coords[:, :3], 3),
-                torch.zeros(point_coords.shape[0], 1), self.positional_encoding_func(point_feats, 2)
-            ), dim=1
-        )
+        if cfg.pos_enc == 'XYZ':
+            point_positional_encoding = torch.cat(
+                (
+                    torch.zeros(point_coords.shape[0], 1), self.positional_encoding_func(point_coords[:, :3], 5),
+                    torch.zeros(point_coords.shape[0], 1)
+                ), dim=1
+            )
+        elif cfg.pos_enc == 'XYZRGB':
+            point_positional_encoding = torch.cat(
+                (
+                    torch.zeros(point_coords.shape[0], 1), self.positional_encoding_func(point_coords[:, :3], 3),
+                    torch.zeros(point_coords.shape[0], 1), self.positional_encoding_func(point_feats, 2)
+                ), dim=1
+            )
         if self.test_split == 'val':
             point_semantic_labels = torch.cat(point_semantic_labels, 0).long()  # (N)
 
