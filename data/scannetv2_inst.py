@@ -451,6 +451,13 @@ class ScannetDatast:
         for i, idx in enumerate(id):
             xyz_origin, rgb, label, instance_label = self.val_data_files[idx]
 
+            for class_idx in self.remove_class:
+                valid_class_indx = (label != class_idx)
+                xyz_origin = xyz_origin[valid_class_indx, :]
+                rgb = rgb[valid_class_indx, :]
+                label = label[valid_class_indx]
+                instance_label = instance_label[valid_class_indx]
+
             ### jitter / flip x / rotation
             xyz_middle = self.dataAugment(xyz_origin, True, True, True)
             # xyz_middle = self.dataAugment(xyz_origin, False, False, False)
@@ -618,6 +625,14 @@ class ScannetDatast:
         for i, idx in enumerate(id):
             if self.test_split == 'val':
                 xyz_origin, rgb, label, instance_label = self.test_data_files[idx]
+
+                for class_idx in self.remove_class:
+                    valid_class_indx = (label != class_idx)
+                    xyz_origin = xyz_origin[valid_class_indx, :]
+                    rgb = rgb[valid_class_indx, :]
+                    label = label[valid_class_indx]
+                    instance_label = instance_label[valid_class_indx]
+                    
             elif self.test_split == 'test':
                 xyz_origin, rgb = self.test_data_files[idx]
             else:

@@ -275,6 +275,11 @@ def test(model, model_fn, data_name, epoch):
             ##### save files
             start3 = time.time()
 
+            if cfg.save_semantic:
+                os.makedirs(os.path.join(result_dir, 'semantic'), exist_ok=True)
+                semantic_np = semantic_pred.cpu().numpy()
+                np.save(os.path.join(result_dir, 'semantic', test_scene_name + '.npy'), semantic_np)
+
             if cfg.save_pt_offsets:
                 os.makedirs(os.path.join(result_dir, 'pt_offsets'), exist_ok=True)
                 pt_offsets = pt_offsets.cpu().numpy()

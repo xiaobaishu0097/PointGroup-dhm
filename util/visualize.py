@@ -93,11 +93,16 @@ def get_coords_color(opt):
         rgb = inst_label_rgb
 
         pt_offsets_file = os.path.join(opt.result_root, opt.room_split, 'pt_offsets', opt.room_name + '.npy')
-        assert os.path.isfile(pt_offsets_file), 'No grid points result - {}.'.format(pt_offsets_file)
+        assert os.path.isfile(pt_offsets_file), 'No point offset result - {}.'.format(pt_offsets_file)
         pt_offsets = np.load(pt_offsets_file)
         xyz = xyz + 1 * pt_offsets[:, :]
 
-        pt_gt_offset_file = os.path.join()
+        pt_gt_offset_file = os.path.join(
+            '../dataset/scannetv2/val_visualize/pt_instance_info',
+            opt.room_name + '.npy'
+        )
+        assert os.path.isfile(pt_gt_offset_file), 'No point instance info - {}.'.format(pt_gt_offset_file)
+        pt_gt_offsets = np.load(pt_gt_offset_file)
 
     elif opt.task == 'grid_gt':
         # sem_valid = (label != 100)
