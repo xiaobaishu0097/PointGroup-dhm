@@ -458,8 +458,8 @@ if __name__ == '__main__':
     logger.info('Classes: {}'.format(cfg.classes))
 
     if model_name == 'pointgroup':
-        from model.pointgroup.pointgroup import PointGroup as Network
-        from model.pointgroup.pointgroup import model_fn_decorator
+        from model.pointgroup import PointGroup as Network
+        from model.model_functions import model_fn_decorator
     else:
         print("Error: no model version " + model_name)
         exit(0)
