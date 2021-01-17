@@ -28,7 +28,7 @@ STRUCTURE:
   block_reps: 2
   scatter_type: max
   unet3d_num_levels: 3
-  model_mode: Yu_refine_clustering_PointGroup
+  model_mode: Li_simple_backbone_PointGroup
   # 0 or Zheng_panoptic_wpointnet_PointGroup or Zheng_upper_wpointnet_PointGroup or Zheng_panoptic_wopointnet_PointGroup
   # or Zheng_upper_wopointnet_PointGroup or Jiang_original_PointGroup or Yu_refine_clustering_PointGroup
   # or Li_simple_backbone_PointGroup

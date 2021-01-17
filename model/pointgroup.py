@@ -889,17 +889,30 @@ class PointGroup(nn.Module):
             point_semantic_scores = []
 
             point_feats = []
+            grid_feats = []
+
             for sample_indx in range(1, len(batch_offsets)):
                 coords_input = coords[batch_offsets[sample_indx - 1]:batch_offsets[sample_indx], :].unsqueeze(dim=0)
                 rgb_input = rgb[batch_offsets[sample_indx - 1]:batch_offsets[sample_indx], :].unsqueeze(dim=0)
 
                 encoded_feats = self.pointnet_encoder(coords_input, rgb_input)
                 point_feats.append(self.decoder(encoded_feats['coord'], encoded_feats).squeeze(dim=0))
+                grid_feats.append(encoded_feats['grid'])
 
             point_feats = torch.cat(point_feats, 0).contiguous()
+            grid_feats = torch.cat(grid_feats, 0).contiguous()
+
             point_offset_preds.append(self.point_offset(point_feats))
+
             point_semantic_scores.append(self.point_semantic(point_feats))
             point_semantic_preds = point_semantic_scores[-1].max(1)[1]
+
+            bs, c_dim, grid_size = grid_feats.shape[0], grid_feats.shape[1], grid_feats.shape[2]
+            grid_feats = grid_feats.reshape(bs, c_dim, -1).permute(0, 2, 1)
+
+            centre_preds = self.centre_pred(grid_feats)
+            centre_semantic_preds = self.centre_semantic(grid_feats)
+            centre_offset_preds = self.centre_offset(grid_feats)
 
             if (epoch == self.test_epoch):
                 self.cluster_sets = 'Q'
@@ -911,5 +924,9 @@ class PointGroup(nn.Module):
 
             ret['point_semantic_scores'] = point_semantic_scores
             ret['point_offset_preds'] = point_offset_preds
+
+            ret['centre_preds'] = centre_preds
+            ret['centre_semantic_preds'] = centre_semantic_preds
+            ret['centre_offset_preds'] = centre_offset_preds
 
         return ret
