@@ -282,7 +282,7 @@ def test(model, model_fn, data_name, epoch):
 
             if cfg.save_pt_offsets:
                 os.makedirs(os.path.join(result_dir, 'pt_offsets'), exist_ok=True)
-                pt_offsets = pt_offsets.cpu().numpy()
+                pt_offsets = pt_offsets[-1].cpu().numpy()
                 np.save(os.path.join(result_dir, 'pt_offsets', test_scene_name + '.npy'), pt_offsets)
 
             if cfg.save_grid_points:
