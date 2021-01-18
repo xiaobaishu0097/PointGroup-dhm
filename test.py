@@ -278,7 +278,7 @@ def test(model, model_fn, data_name, epoch):
             if cfg.save_semantic:
                 os.makedirs(os.path.join(result_dir, 'semantic_pred'), exist_ok=True)
                 semantic_np = semantic_pred.cpu().numpy()
-                np.save(os.path.join(result_dir, 'semantic', test_scene_name + '.npy'), semantic_np)
+                np.save(os.path.join(result_dir, 'semantic_pred', test_scene_name + '.npy'), semantic_np)
 
             if cfg.save_pt_offsets:
                 os.makedirs(os.path.join(result_dir, 'pt_offsets'), exist_ok=True)
