@@ -54,6 +54,11 @@ CLASS_COLOR = {
 SEMANTIC_IDX2NAME = {1: 'wall', 2: 'floor', 3: 'cabinet', 4: 'bed', 5: 'chair', 6: 'sofa', 7: 'table', 8: 'door', 9: 'window', 10: 'bookshelf', 11: 'picture',
                 12: 'counter', 14: 'desk', 16: 'curtain', 24: 'refridgerator', 28: 'shower curtain', 33: 'toilet',  34: 'sink', 36: 'bathtub', 39: 'otherfurniture'}
 
+SEMANTIC_NAME2INDEX = {
+    'wall': 0, 'floor': 1, 'cabinet': 2, 'bed': 3, 'chair': 4, 'sofa': 5, 'table': 6, 'door': 7, 'window': 8,
+    'bookshelf': 9, 'picture': 10, 'counter': 11, 'desk': 12, 'curtain': 13, 'refridgerator': 14,
+    'shower curtain': 15, 'toilet': 16, 'sink': 17, 'bathtub': 18, 'otherfurniture': 19
+}
 
 def visualize_pts_rgb(fig, pts, rgb, scale=0.02):
     pxs = pts[:, 0]
@@ -103,6 +108,47 @@ def get_coords_color(opt):
         )
         assert os.path.isfile(pt_gt_offset_file), 'No point instance info - {}.'.format(pt_gt_offset_file)
         pt_gt_offsets = np.load(pt_gt_offset_file)
+
+    elif opt.task == 'offset_pred':
+
+        assert opt.room_split != 'test'
+        inst_label = inst_label.astype(np.int)
+        print("Instance number: {}".format(inst_label.max() + 1))
+        inst_label_rgb = np.zeros(rgb.shape)
+        object_idx = (inst_label >= 0)
+        inst_label_rgb[object_idx] = COLOR20[inst_label[object_idx] % len(COLOR20)]
+        rgb = inst_label_rgb
+
+        pt_offsets_file = os.path.join(opt.result_root, opt.room_split, 'pt_offsets', opt.room_name + '.npy')
+        assert os.path.isfile(pt_offsets_file), 'No grid points result - {}.'.format(pt_offsets_file)
+        pt_offsets = np.load(pt_offsets_file)
+        xyz = xyz + 1 * pt_offsets[:, :]
+
+    elif opt.task == 'rc_offset_pred':
+
+        assert opt.room_split != 'test'
+        inst_label = inst_label.astype(np.int)
+        print("Instance number: {}".format(inst_label.max() + 1))
+        inst_label_rgb = np.zeros(rgb.shape)
+        object_idx = (inst_label >= 0)
+        inst_label_rgb[object_idx] = COLOR20[inst_label[object_idx] % len(COLOR20)]
+        rgb = inst_label_rgb
+
+        pt_offsets_file = os.path.join(opt.result_root, opt.room_split, 'pt_offsets', opt.room_name + '.npy')
+        assert os.path.isfile(pt_offsets_file), 'No grid points result - {}.'.format(pt_offsets_file)
+        pt_offsets = np.load(pt_offsets_file)
+        xyz = xyz + 1 * pt_offsets[:, :]
+
+        remove_class = []
+        for class_name in ['table', 'desk']:
+            remove_class.append(SEMANTIC_NAME2INDEX[class_name])
+
+        for class_idx in remove_class:
+            valid_class_indx = (label != class_idx)
+            xyz = xyz[valid_class_indx, :]
+            rgb = rgb[valid_class_indx, :]
+            label = label[valid_class_indx]
+            inst_label = inst_label[valid_class_indx]
 
     elif opt.task == 'grid_gt':
         # sem_valid = (label != 100)

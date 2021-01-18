@@ -628,6 +628,7 @@ class ScannetDatast:
         point_coords = []  # (N, 6) (shifted_xyz, original_xyz)
         point_feats = []  # (N, 3) (rgb)
         point_semantic_labels = []
+        point_instance_infos = []
 
         batch_offsets = [0]
         total_inst_num = 0
@@ -658,6 +659,13 @@ class ScannetDatast:
             point_feats.append(torch.from_numpy(rgb) + torch.randn(3) * 0.1)  # (N, 3) (rgb)
             if self.test_split == 'val':
                 point_semantic_labels.append(torch.from_numpy(label))  # (N)
+                xyz, valid_idxs = self.crop(xyz)
+                instance_label = self.getCroppedInstLabel(instance_label, valid_idxs)
+
+                ### get instance information
+                inst_num, inst_infos = self.getInstanceInfo(xyz_middle, instance_label.astype(np.int32), label.copy())
+                instance_infos = inst_infos["instance_info"]  # (n, 9), (cx, cy, cz, minx, miny, minz, maxx, maxy, maxz)
+                point_instance_infos.append(torch.from_numpy(instance_infos))  # (N, 9) (cx, cy, cz, minx, miny, minz, maxx, maxy, maxz)
 
         ### merge all the scenes in the batchd
         batch_offsets = torch.tensor(batch_offsets, dtype=torch.int)
@@ -681,6 +689,7 @@ class ScannetDatast:
             )
         if self.test_split == 'val':
             point_semantic_labels = torch.cat(point_semantic_labels, 0).long()  # (N)
+            point_instance_infos = torch.cat(point_instance_infos, 0).to(torch.float32) # (N, 9) (cx, cy, cz, minx, miny, minz, maxx, maxy, maxz)
 
         spatial_shape = np.clip((point_locs.max(0)[0][1:] + 1).numpy(), self.full_scale[0], None)  # long (3)
 
@@ -695,6 +704,7 @@ class ScannetDatast:
                 'point_coords': point_coords, # (N, 6) (shifted_xyz, original_xyz)
                 'point_feats': point_feats, # (N, 3) (rgb)
                 'point_semantic_labels': point_semantic_labels,  # (N)
+                'point_instance_infos': point_instance_infos,
                 'point_positional_encoding': point_positional_encoding,
                 # variables for point-wise predictions
                 'voxel_locs': voxel_locs,  # (nVoxel, 4)
