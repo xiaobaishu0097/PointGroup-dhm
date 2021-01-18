@@ -56,6 +56,17 @@ def model_fn_decorator(test=False):
         # voxel_feats = pointgroup_ops.voxelization(feats, v2p_map, cfg.mode)  # (M, C), float, cuda
         #
         # input_ = spconv.SparseConvTensor(voxel_feats, voxel_coords.int(), spatial_shape, cfg.batch_size)
+
+        ### only be used during debugging
+        instance_info = batch['point_instance_infos'].squeeze(dim=0).cuda()  # (N, 9), float32, cuda, (meanxyz, minxyz, maxxyz)
+        labels = batch['point_semantic_labels'].squeeze(dim=0).cuda()  # (N), long, cuda
+
+        point_offset_preds = instance_info[:, 0:3] - coords_float
+
+        point_semantic_scores = []
+        labels[labels == -100] = 0
+        point_semantic_scores.append(torch.nn.functional.one_hot(labels))
+
         input_ = {
             'pt_feats': feats,
             'v2p_map': v2p_map,
@@ -63,6 +74,8 @@ def model_fn_decorator(test=False):
             'voxel_coords': voxel_coords.int(),
             'spatial_shape': spatial_shape,
             'batch_size': cfg.batch_size,
+            'point_offset_preds': point_offset_preds,
+            'point_semantic_scores': point_semantic_scores,
         }
 
         ret = model(

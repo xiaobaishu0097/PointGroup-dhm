@@ -827,11 +827,13 @@ class PointGroup(nn.Module):
 
             ### point prediction
             #### point semantic label prediction
-            semantic_scores.append(self.point_semantic(output_feats))  # (N, nClass), float
+            # semantic_scores.append(self.point_semantic(output_feats))  # (N, nClass), float
+            semantic_scores.append(input['point_semantic_scores'][0])  # (N, nClass), float
             point_semantic_preds = semantic_scores[0].max(1)[1]
 
             #### point offset prediction
-            point_offset_preds.append(self.point_offset(output_feats))  # (N, 3), float32
+            # point_offset_preds.append(self.point_offset(output_feats))  # (N, 3), float32
+            point_offset_preds.append(input['point_offset_preds'])  # (N, 3), float32
 
             if (epoch > self.prepare_epochs):
                 #### get prooposal clusters

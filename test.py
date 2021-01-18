@@ -296,14 +296,14 @@ def test(model, model_fn, data_name, epoch):
                 np.save(os.path.join(result_dir, 'pt_offsets', test_scene_name + '.npy'), pt_offsets)
                 np.save(os.path.join(result_dir, 'semantic_pred', test_scene_name + '.npy'), semantic_pred)
 
-            if cfg.save_instance:
+            if(epoch > cfg.prepare_epochs and cfg.save_instance):
                 f = open(os.path.join(result_dir, test_scene_name + '.txt'), 'w')
-                for proposal_id in range(ninst):
-                    clusters_i = pt_inst_cent[proposal_id].cpu().numpy()  # (N)
+                for proposal_id in range(nclusters):
+                    clusters_i = clusters[proposal_id].cpu().numpy()  # (N)
                     semantic_label = np.argmax(np.bincount(semantic_pred[np.where(clusters_i == 1)[0]].cpu()))
-                    score = inst_scores[proposal_id]
+                    score = cluster_scores[proposal_id]
                     f.write('predicted_masks/{}_{:03d}.txt {} {:.4f}'.format(test_scene_name, proposal_id, semantic_label_idx[semantic_label], score))
-                    if proposal_id < ninst - 1:
+                    if proposal_id < nclusters - 1:
                         f.write('\n')
                     np.savetxt(os.path.join(result_dir, 'predicted_masks', test_scene_name + '_%03d.txt' % (proposal_id)), clusters_i, fmt='%d')
                 f.close()
