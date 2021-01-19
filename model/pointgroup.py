@@ -310,6 +310,19 @@ class PointGroup(nn.Module):
                 'module.cluster_unet': self.cluster_unet, 'module.cluster_outputlayer': self.cluster_outputlayer,
             }
 
+        elif self.model_mode == 'PointNet_point_prediction_test':
+            #### PointNet backbone encoder
+            if self.backbone == 'pointnet':
+                #### PointNet backbone encoder
+                self.pointnet_encoder = pointnet.LocalPoolPointnet(
+                    c_dim=m, dim=6, hidden_dim=m, scatter_type=cfg.scatter_type, grid_resolution=32,
+                    plane_type='grid', padding=0.1, n_blocks=5
+                )
+            elif self.backbone == 'pointnet++_yanx':
+                self.pointnet_encoder = pointnetpp.PointNetPlusPlus(
+                    c_dim=self.m, include_rgb=self.pointnet_include_rgb
+                )
+
         ### point prediction
         self.point_offset = nn.Sequential(
             nn.Linear(m, m, bias=True),
