@@ -59,13 +59,13 @@ def model_fn_decorator(test=False):
 
         ### only be used during debugging
         instance_info = batch['point_instance_infos'].squeeze(dim=0).cuda()  # (N, 9), float32, cuda, (meanxyz, minxyz, maxxyz)
-        labels = batch['point_semantic_labels'].squeeze(dim=0).cuda()  # (N), long, cuda
+        point_semantic_labels = batch['point_semantic_labels'].squeeze(dim=0).cuda()  # (N), long, cuda
 
-        point_offset_preds = instance_info[:, 0:3] - coords_float
+        point_offset_labels = instance_info[:, 0:3] - coords_float
 
         point_semantic_scores = []
-        labels[labels == -100] = 0
-        point_semantic_scores.append(torch.nn.functional.one_hot(labels))
+        point_semantic_labels[point_semantic_labels == -100] = 0
+        point_semantic_scores.append(torch.nn.functional.one_hot(point_semantic_labels))
 
         input_ = {
             'pt_feats': feats,
@@ -74,7 +74,7 @@ def model_fn_decorator(test=False):
             'voxel_coords': voxel_coords.int(),
             'spatial_shape': spatial_shape,
             'batch_size': cfg.batch_size,
-            'point_offset_preds': point_offset_preds,
+            'point_offset_preds': point_offset_labels,
             'point_semantic_scores': point_semantic_scores,
         }
 
@@ -134,6 +134,9 @@ def model_fn_decorator(test=False):
             if (epoch == cfg.test_epoch) and ('proposal_scores' in ret.keys()):
                 preds['score'] = scores
                 preds['proposals'] = (proposals_idx, proposals_offset)
+
+            preds['pt_semantic_labels'] = point_semantic_labels
+            preds['pt_offset_labels'] = point_offset_labels
 
         return preds
 

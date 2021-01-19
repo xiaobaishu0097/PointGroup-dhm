@@ -28,10 +28,11 @@ STRUCTURE:
   block_reps: 2
   scatter_type: max
   unet3d_num_levels: 3
-  model_mode: Yu_refine_clustering_scorenet_PointGroup
+  model_mode: PointNet_point_prediction_test_PointGroup
   # 0 or Zheng_panoptic_wpointnet_PointGroup or Zheng_upper_wpointnet_PointGroup or Zheng_panoptic_wopointnet_PointGroup
   # or Zheng_upper_wopointnet_PointGroup or Jiang_original_PointGroup or Yu_refine_clustering_PointGroup
   # or Li_simple_backbone_PointGroup or Yu_refine_clustering_scorenet_PointGroup
+  # or PointNet_point_prediction_test_PointGroup
 
   use_coords: True
   use_ori_coords: True

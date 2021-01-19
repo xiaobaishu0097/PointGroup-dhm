@@ -68,6 +68,8 @@ def test(model, model_fn, data_name, epoch):
         candidate_num = 100
 
         matches = {}
+        point_evaluations = {}
+
         for i, batch in enumerate(data_loader_test):
             N = batch['point_feats'].shape[0]
             test_scene_name = dataset.test_file_names[int(batch['id'][0])].split('/')[-1][:12]
@@ -169,6 +171,31 @@ def test(model, model_fn, data_name, epoch):
 
                 pt_offsets = preds['pt_offsets']  # (N, 3), float32, cuda
 
+                pt_semantic_labels = preds['pt_semantic_labels']
+                pt_offset_labels = preds['pt_offset_labels']
+
+                pt_valid_indx = (pt_semantic_labels > 1)
+
+                if 'pt_semantic_eval' not in point_evaluations:
+                    point_evaluations['pt_semantic_eval'] = {
+                        'True': 0,
+                        'False': 0,
+                    }
+                point_evaluations['pt_semantic_eval']['True'] += (
+                    semantic_pred[pt_valid_indx] == pt_semantic_labels[pt_valid_indx]
+                ).sum()
+                point_evaluations['pt_semantic_eval']['False'] += (
+                    semantic_pred[pt_valid_indx] != pt_semantic_labels[pt_valid_indx]
+                ).sum()
+
+                if 'pt_offset_eval' not in point_evaluations:
+                    point_evaluations['pt_offset_eval'] = []
+                point_evaluations['pt_offset_eval'].append(
+                    (
+                        torch.abs(pt_offsets[-1][pt_valid_indx] - pt_offset_labels[pt_valid_indx]).sum() / pt_valid_indx.sum()
+                    ).cpu().numpy()
+                )
+
                 if (epoch == cfg.test_epoch):
                     scores = preds['score']  # (nProposal, 1) float, cuda
                     scores_pred = torch.sigmoid(scores.view(-1))
@@ -227,51 +254,6 @@ def test(model, model_fn, data_name, epoch):
                         matches[test_scene_name]['gt'] = gt2pred
                         matches[test_scene_name]['pred'] = pred2gt
 
-            # grid_center_offset_preds = grid_center_offset_preds[grid_center_gt.long(), :]
-            # center_offset_error = grid_center_offset_preds - grid_center_offset
-            # offset_error_mean = torch.norm(center_offset_error, dim=1).mean()
-            #
-            # grid_points = torch.zeros((32**3))
-            # grid_points[grid_center_gt.long()] = 1
-            # grid_points = grid_points.reshape((32, 32, 32))
-            # new_grid_center_gt = torch.zeros((32, 32, 32))
-            # for coord in grid_points.nonzero():
-            #     x, y, z = coord[0], coord[1], coord[2]
-            #     for i in [-1, 0, 1]:
-            #         new_x = x + i
-            #         if new_x >= 0 and new_x <= 31:
-            #             for j in [-1, 0, 1]:
-            #                 new_y = y + j
-            #                 if new_y >= 0 and new_y <= 31:
-            #                     for q in [-1, 0, 1]:
-            #                         new_z = z + q
-            #                         if new_z >= 0 and new_z <= 31:
-            #                             new_grid_center_gt[new_x, new_y, new_z] = 1
-            # new_grid_center_gt = new_grid_center_gt.reshape((32**3,))
-            # grid_center_gt = new_grid_center_gt.nonzero().reshape((-1))
-            #
-            # grid_pred_max = maxpool3d(grid_center_preds.reshape(1, 1, 32, 32, 32)).reshape(1, 32**3)
-            # cent_candidates_indexs = (grid_center_preds == grid_pred_max)
-            # grid_center_preds[~cent_candidates_indexs] = 0
-            # topk_value_, topk_index_ = torch.topk(grid_center_preds, candidate_num, dim=1)
-            # topk_index_ = topk_index_[topk_value_ > true_threshold]
-            #
-            # tp_scene = 0
-            # fp_scene = 0
-            #
-            # for index in topk_index_.cpu():
-            #     if index in grid_center_gt.long():
-            #         tp_scene += 1
-            #     else:
-            #         fp_scene += 1
-            # fn_scene = int(preds['grid_center_gt'].shape[0] - tp_scene)
-            #
-            # tp += tp_scene
-            # fp += fp_scene
-            # fn += fn_scene
-            #
-            # offset_error += offset_error_mean
-
             ##### save files
             start3 = time.time()
 
@@ -323,113 +305,15 @@ def test(model, model_fn, data_name, epoch):
             avgs = eval.compute_averages(ap_scores)
             eval.print_results(avgs)
 
-        # fn = int(fn / 27)
-
-        # precision = tp / (tp + fp + 1)
-        # recall = tp / (tp + fn + 1)
-        # #### print
-        # logger.info("Center prediction: precision: {}, recall: {}".format(precision, recall))
-
-
-
-            # ##### get predictions (#1 semantic_pred, pt_offsets; #2 scores, proposals_pred)
-            # semantic_scores = preds['semantic']  # (N, nClass=20) float32, cuda
-            # semantic_pred = semantic_scores.max(1)[1]  # (N) long, cuda
-            #
-            # pt_offsets = preds['pt_offsets']    # (N, 3), float32, cuda
-
-            # if (epoch > cfg.prepare_epochs):
-            #     scores = preds['score']   # (nProposal, 1) float, cuda
-            #     scores_pred = torch.sigmoid(scores.view(-1))
-            #
-            #     proposals_idx, proposals_offset = preds['proposals']
-            #     # proposals_idx: (sumNPoint, 2), int, cpu, dim 0 for cluster_id, dim 1 for corresponding point idxs in N
-            #     # proposals_offset: (nProposal + 1), int, cpu
-            #     proposals_pred = torch.zeros((proposals_offset.shape[0] - 1, N), dtype=torch.int, device=scores_pred.device) # (nProposal, N), int, cuda
-            #     proposals_pred[proposals_idx[:, 0].long(), proposals_idx[:, 1].long()] = 1
-            #
-            #     semantic_id = torch.tensor(semantic_label_idx, device=scores_pred.device)[semantic_pred[proposals_idx[:, 1][proposals_offset[:-1].long()].long()]] # (nProposal), long
-            #
-            #     ##### score threshold
-            #     score_mask = (scores_pred > cfg.TEST_SCORE_THRESH)
-            #     scores_pred = scores_pred[score_mask]
-            #     proposals_pred = proposals_pred[score_mask]
-            #     semantic_id = semantic_id[score_mask]
-            #
-            #     ##### npoint threshold
-            #     proposals_pointnum = proposals_pred.sum(1)
-            #     npoint_mask = (proposals_pointnum > cfg.TEST_NPOINT_THRESH)
-            #     scores_pred = scores_pred[npoint_mask]
-            #     proposals_pred = proposals_pred[npoint_mask]
-            #     semantic_id = semantic_id[npoint_mask]
-            #
-            #     ##### nms
-            #     if semantic_id.shape[0] == 0:
-            #         pick_idxs = np.empty(0)
-            #     else:
-            #         proposals_pred_f = proposals_pred.float()  # (nProposal, N), float, cuda
-            #         intersection = torch.mm(proposals_pred_f, proposals_pred_f.t())  # (nProposal, nProposal), float, cuda
-            #         proposals_pointnum = proposals_pred_f.sum(1)  # (nProposal), float, cuda
-            #         proposals_pn_h = proposals_pointnum.unsqueeze(-1).repeat(1, proposals_pointnum.shape[0])
-            #         proposals_pn_v = proposals_pointnum.unsqueeze(0).repeat(proposals_pointnum.shape[0], 1)
-            #         cross_ious = intersection / (proposals_pn_h + proposals_pn_v - intersection)
-            #         pick_idxs = non_max_suppression(cross_ious.cpu().numpy(), scores_pred.cpu().numpy(), cfg.TEST_NMS_THRESH)  # int, (nCluster, N)
-            #     clusters = proposals_pred[pick_idxs]
-            #     cluster_scores = scores_pred[pick_idxs]
-            #     cluster_semantic_id = semantic_id[pick_idxs]
-            #
-            #     nclusters = clusters.shape[0]
-            #
-            #     ##### prepare for evaluation
-            #     if cfg.eval:
-            #         pred_info = {}
-            #         pred_info['conf'] = cluster_scores.cpu().numpy()
-            #         pred_info['label_id'] = cluster_semantic_id.cpu().numpy()
-            #         pred_info['mask'] = clusters.cpu().numpy()
-            #         gt_file = os.path.join(cfg.data_root, cfg.dataset, cfg.split + '_gt', test_scene_name + '.txt')
-            #         gt2pred, pred2gt = eval.assign_instances_for_scan(test_scene_name, pred_info, gt_file)
-            #         matches[test_scene_name] = {}
-            #         matches[test_scene_name]['gt'] = gt2pred
-            #         matches[test_scene_name]['pred'] = pred2gt
-
-            ##### save files
-            # start3 = time.time()
-            # if cfg.save_semantic:
-            #     os.makedirs(os.path.join(result_dir, 'semantic'), exist_ok=True)
-            #     semantic_np = semantic_pred.cpu().numpy()
-            #     np.save(os.path.join(result_dir, 'semantic', test_scene_name + '.npy'), semantic_np)
-            #
-            # if cfg.save_pt_offsets:
-            #     os.makedirs(os.path.join(result_dir, 'coords_offsets'), exist_ok=True)
-            #     pt_offsets_np = pt_offsets.cpu().numpy()
-            #     coords_np = batch['locs_float'].numpy()
-            #     coords_offsets = np.concatenate((coords_np, pt_offsets_np), 1)   # (N, 6)
-            #     np.save(os.path.join(result_dir, 'coords_offsets', test_scene_name + '.npy'), coords_offsets)
-            #
-            #
-            # if(epoch > cfg.prepare_epochs and cfg.save_instance):
-            #     f = open(os.path.join(result_dir, test_scene_name + '.txt'), 'w')
-            #     for proposal_id in range(nclusters):
-            #         clusters_i = clusters[proposal_id].cpu().numpy()  # (N)
-            #         semantic_label = np.argmax(np.bincount(semantic_pred[np.where(clusters_i == 1)[0]].cpu()))
-            #         score = cluster_scores[proposal_id]
-            #         f.write('predicted_masks/{}_{:03d}.txt {} {:.4f}'.format(test_scene_name, proposal_id, semantic_label_idx[semantic_label], score))
-            #         if proposal_id < nclusters - 1:
-            #             f.write('\n')
-            #         np.savetxt(os.path.join(result_dir, 'predicted_masks', test_scene_name + '_%03d.txt' % (proposal_id)), clusters_i, fmt='%d')
-            #     f.close()
-            # end3 = time.time() - start3
-            # end = time.time() - start
-            # start = time.time()
-            #
-            # ##### print
-            # logger.info("instance iter: {}/{} point_num: {} ncluster: {} time: total {:.2f}s inference {:.2f}s save {:.2f}s".format(batch['id'][0] + 1, len(dataset.test_files), N, nclusters, end, end1, end3))
-
-        ##### evaluation
-        # if cfg.eval:
-        #     ap_scores = eval.evaluate_matches(matches)
-        #     avgs = eval.compute_averages(ap_scores)
-        #     eval.print_results(avgs)
+        logger.info(
+            'point-wise prediction evaluation results: \n'
+            'semantic prediction accuracy: {:.6f} offset prediction distance: {:6f}'.format(
+                point_evaluations['pt_semantic_eval']['True'].cpu().numpy() / (
+                    point_evaluations['pt_semantic_eval']['True'] + point_evaluations['pt_semantic_eval']['False']
+                ).cpu().numpy(),
+                np.mean(point_evaluations['pt_offset_eval'])
+            )
+        )
 
 
 def non_max_suppression(ious, scores, threshold):

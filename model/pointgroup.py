@@ -310,7 +310,7 @@ class PointGroup(nn.Module):
                 'module.cluster_unet': self.cluster_unet, 'module.cluster_outputlayer': self.cluster_outputlayer,
             }
 
-        elif self.model_mode == 'PointNet_point_prediction_test':
+        elif self.model_mode == 'PointNet_point_prediction_test_PointGroup':
             #### PointNet backbone encoder
             if self.backbone == 'pointnet':
                 #### PointNet backbone encoder
@@ -322,6 +322,10 @@ class PointGroup(nn.Module):
                 self.pointnet_encoder = pointnetpp.PointNetPlusPlus(
                     c_dim=self.m, include_rgb=self.pointnet_include_rgb
                 )
+
+            module_map = {
+                'module.pointnet_encoder': self.pointnet_encoder
+            }
 
         ### point prediction
         self.point_offset = nn.Sequential(
@@ -875,13 +879,15 @@ class PointGroup(nn.Module):
 
             ### point prediction
             #### point semantic label prediction
-            # semantic_scores.append(self.point_semantic(output_feats))  # (N, nClass), float
-            semantic_scores.append(input['point_semantic_scores'][0])  # (N, nClass), float
+            semantic_scores.append(self.point_semantic(output_feats))  # (N, nClass), float
+            # only used to evaluate based on ground truth
+            # semantic_scores.append(input['point_semantic_scores'][0])  # (N, nClass), float
             point_semantic_preds = semantic_scores[0].max(1)[1]
 
             #### point offset prediction
-            # point_offset_preds.append(self.point_offset(output_feats))  # (N, 3), float32
-            point_offset_preds.append(input['point_offset_preds'])  # (N, 3), float32
+            point_offset_preds.append(self.point_offset(output_feats))  # (N, 3), float32
+            # only used to evaluate based on ground truth
+            # point_offset_preds.append(input['point_offset_preds'])  # (N, 3), float32
 
             if (epoch > self.prepare_epochs):
                 #### get prooposal clusters
@@ -1087,6 +1093,29 @@ class PointGroup(nn.Module):
                         batch_idxs, input['batch_size']
                     )
                     ret['proposal_scores'] = (scores, proposals_idx, proposals_offset)
+
+            ret['point_semantic_scores'] = point_semantic_scores
+            ret['point_offset_preds'] = point_offset_preds
+
+        elif self.model_mode == 'PointNet_point_prediction_test_PointGroup':
+            point_offset_preds = []
+            point_semantic_scores = []
+
+            point_feats, _ = self.pointnet_backbone_forward(coords, ori_coords, rgb, batch_offsets)
+
+            ### point prediction
+            #### point semantic label prediction
+            point_semantic_scores.append(self.point_semantic(point_feats))  # (N, nClass), float
+            point_semantic_preds = point_semantic_scores[-1].max(1)[1]
+
+            #### point offset prediction
+            point_offset_preds.append(self.point_offset(point_feats))  # (N, 3), float32
+
+            if (epoch == self.test_epoch):
+                scores, proposals_idx, proposals_offset = self.pointgroup_cluster_algorithm(
+                    coords, point_offset_preds[-1], point_semantic_preds, batch_idxs, input['batch_size']
+                )
+                ret['proposal_scores'] = (scores, proposals_idx, proposals_offset)
 
             ret['point_semantic_scores'] = point_semantic_scores
             ret['point_offset_preds'] = point_offset_preds
