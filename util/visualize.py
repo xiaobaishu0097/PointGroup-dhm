@@ -5,13 +5,12 @@ Written by Li Jiang
 
 import numpy as np
 import mayavi.mlab as mlab
-import os, glob, argparse
+import os, argparse
 import torch
-from torch.nn import functional as F
 from operator import itemgetter
 from math import exp
 
-from model.common import generate_heatmap, normalize_3d_coordinate, coordinate2index, generate_adaptive_heatmap
+from model.common import generate_adaptive_heatmap
 
 COLOR20 = np.array(
         [[230, 25, 75], [60, 180, 75], [255, 225, 25], [0, 130, 200], [245, 130, 48],
