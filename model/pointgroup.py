@@ -223,7 +223,7 @@ class PointGroup(nn.Module):
             )
 
             self.point_refine_feature_attn = nn.MultiheadAttention(embed_dim=m, num_heads=cfg.multi_heads)
-            self.atten_outputlayer = spconv.SparseSequential(
+            self.atten_outputlayer = nn.Sequential(
                 norm_fn(m),
                 nn.ReLU()
             )
@@ -296,7 +296,7 @@ class PointGroup(nn.Module):
             )
 
             self.point_refine_feature_attn = nn.MultiheadAttention(embed_dim=m, num_heads=cfg.multi_heads)
-            self.atten_outputlayer = spconv.SparseSequential(
+            self.atten_outputlayer = nn.Sequential(
                 norm_fn(m),
                 nn.ReLU()
             )
