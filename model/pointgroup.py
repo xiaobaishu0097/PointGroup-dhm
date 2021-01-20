@@ -296,6 +296,10 @@ class PointGroup(nn.Module):
             )
 
             self.point_refine_feature_attn = nn.MultiheadAttention(embed_dim=m, num_heads=cfg.multi_heads)
+            self.atten_outputlayer = spconv.SparseSequential(
+                norm_fn(m),
+                nn.ReLU()
+            )
 
             self.cluster_unet = UBlock([m, 2 * m], norm_fn, 2, block, indice_key_id=1)
             self.cluster_outputlayer = spconv.SparseSequential(
@@ -307,6 +311,7 @@ class PointGroup(nn.Module):
                 'module.input_conv': self.input_conv, 'module.unet': self.unet,
                 'module.output_layer': self.output_layer,
                 'module.point_refine_feature_attn': self.point_refine_feature_attn,
+                'module.atten_outputlayer': self.atten_outputlayer,
                 'module.cluster_unet': self.cluster_unet, 'module.cluster_outputlayer': self.cluster_outputlayer,
             }
 
