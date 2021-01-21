@@ -837,10 +837,10 @@ class PointGroup(nn.Module):
                             key=cluster_feature[clusters_batch_idxs == _batch_idx, :].unsqueeze(dim=1),
                             value=cluster_feature[clusters_batch_idxs == _batch_idx, :].unsqueeze(dim=1)
                         )
-                        point_refined_feature = self.atten_outputlayer(point_refined_feature)
+                        point_refined_feature = self.atten_outputlayer(point_refined_feature.squeeze(dim=1))
                         refined_point_features.append(point_refined_feature)
 
-                    refined_point_features = torch.cat(refined_point_features, dim=0).squeeze(dim=1)
+                    refined_point_features = torch.cat(refined_point_features, dim=0)
                     assert refined_point_features.shape[0] == point_features.shape[0], 'point wise features have wrong point numbers'
 
                     refined_point_features = refined_point_features + point_features
@@ -1071,10 +1071,10 @@ class PointGroup(nn.Module):
                             key=cluster_feature[clusters_batch_idxs == _batch_idx, :].unsqueeze(dim=1),
                             value=cluster_feature[clusters_batch_idxs == _batch_idx, :].unsqueeze(dim=1)
                         )
-                        point_refined_feature = self.atten_outputlayer(point_refined_feature)
+                        point_refined_feature = self.atten_outputlayer(point_refined_feature.squeeze(dim=1))
                         refined_point_features.append(point_refined_feature)
 
-                    refined_point_features = torch.cat(refined_point_features, dim=0).squeeze(dim=1)
+                    refined_point_features = torch.cat(refined_point_features, dim=0)
                     assert refined_point_features.shape[0] == point_features.shape[
                         0], 'point wise features have wrong point numbers'
 
