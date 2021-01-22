@@ -8,7 +8,7 @@ import sys
 
 sys.path.append('../')
 
-# from model.Pointnet2.pointnet2.pointnet2_modules import PointnetFPModule, PointnetSAModule
+from model.Pointnet2.pointnet2.pointnet2_modules import PointnetFPModule, PointnetSAModule
 
 
 class backbone_pointnet2(nn.Module):

@@ -14,8 +14,7 @@ from model.encoder.unet3d import UNet3D
 from model.decoder import decoder
 from model.common import coordinate2index, normalize_3d_coordinate
 
-# from model.Pointnet2.pointnet2.pointnet2_modules import PointnetFPModule, PointnetSAModule
-from model.components import ResidualBlock, VGGBlock, UBlock
+from model.components import ResidualBlock, VGGBlock, UBlock, backbone_pointnet2
 
 
 class PointGroup(nn.Module):
@@ -327,6 +326,8 @@ class PointGroup(nn.Module):
                 self.pointnet_encoder = pointnetpp.PointNetPlusPlus(
                     c_dim=self.m, include_rgb=self.pointnet_include_rgb
                 )
+            elif self.backbone == 'pointnet++_shi':
+                self.pointnet_encoder = backbone_pointnet2()
 
             module_map = {
                 'module.pointnet_encoder': self.pointnet_encoder

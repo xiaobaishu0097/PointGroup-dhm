@@ -22,7 +22,7 @@ DATA:
 
 STRUCTURE:
   model_name: pointgroup
-  backbone: pointnet # pointnet, pointnet++_yanx, pointnet++_shi
+  backbone: pointnet++_shi # pointnet, pointnet++_yanx, pointnet++_shi
   m: 32 # 16 or 32
   block_residual: True
   block_reps: 2
