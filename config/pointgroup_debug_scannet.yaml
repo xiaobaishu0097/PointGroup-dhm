@@ -105,3 +105,4 @@ TEST:
   save_semantic: False
   save_pt_offsets: False
   save_instance: False
+  save_pt_shifted_coords: False

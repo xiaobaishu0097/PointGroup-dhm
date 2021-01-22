@@ -138,6 +138,8 @@ def model_fn_decorator(test=False):
             preds['pt_semantic_labels'] = point_semantic_labels
             preds['pt_offset_labels'] = point_offset_labels
 
+            preds['pt_shifted_coords'] = point_offset_preds[-1] + coords_float
+
         return preds
 
     def model_fn(batch, model, epoch):

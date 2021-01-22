@@ -527,7 +527,7 @@ class PointGroup(nn.Module):
         batch_idxs_ = batch_idxs[object_idxs]
         batch_offsets_ = utils.get_batch_offsets(batch_idxs_, batch_size)
         coords_ = coords[object_idxs]
-        pt_offsets_ = point_offset_preds[object_idxs]
+        pt_offsets_ = point_offset_preds[-1][object_idxs]
 
         semantic_preds_cpu = point_semantic_preds[object_idxs].int().cpu()
 
@@ -545,7 +545,7 @@ class PointGroup(nn.Module):
 
             proposals_idx = proposals_idx_shift
             proposals_offset = proposals_offset_shift
-            scores = torch.ones(proposals_offset_shift.shape[0] - 1, 1).to(point_offset_preds.device)
+            scores = torch.ones(proposals_offset_shift.shape[0] - 1, 1).to(point_offset_preds[0].device)
 
         elif self.cluster_sets == 'P':
             idx, start_len = pointgroup_ops.ballquery_batch_p(coords_, batch_idxs_, batch_offsets_, self.cluster_radius,
@@ -558,7 +558,7 @@ class PointGroup(nn.Module):
 
             proposals_idx = proposals_idx
             proposals_offset = proposals_offset
-            scores = torch.ones(proposals_offset.shape[0] - 1, 1).to(point_offset_preds.device)
+            scores = torch.ones(proposals_offset.shape[0] - 1, 1).to(point_offset_preds[0].device)
 
         return scores, proposals_idx, proposals_offset
 

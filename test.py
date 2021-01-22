@@ -267,6 +267,12 @@ def test(model, model_fn, data_name, epoch):
                 pt_offsets = pt_offsets[-1].cpu().numpy()
                 np.save(os.path.join(result_dir, 'pt_offsets', test_scene_name + '.npy'), pt_offsets)
 
+            if cfg.save_pt_shifted_coords:
+                os.makedirs(os.path.join(result_dir, 'pt_shifted_coords'), exist_ok=True)
+                pt_shifted_coords = preds['pt_shifted_coords']
+                pt_shifted_coords = pt_shifted_coords.cpu().numpy()
+                np.save(os.path.join(result_dir, 'pt_shifted_coords', test_scene_name + '.npy'), pt_shifted_coords)
+
             if cfg.save_grid_points:
                 os.makedirs(os.path.join(result_dir, 'grid_center_preds'), exist_ok=True)
                 os.makedirs(os.path.join(result_dir, 'pt_offsets'), exist_ok=True)
