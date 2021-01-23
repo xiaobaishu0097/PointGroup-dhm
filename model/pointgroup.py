@@ -67,7 +67,7 @@ class PointGroup(nn.Module):
         self.unet3d = None
 
         ### Our target model, based on Panoptic Deeplab
-        if self.model_mode == 0 or self.model_mode == 'Zheng_panoptic_wpointnet_PointGroup':
+        if self.model_mode == 'Centre_clustering' or self.model_mode == 'Zheng_panoptic_wpointnet_PointGroup':
             if self.backbone == 'pointnet':
                 #### PointNet backbone encoder
                 self.pointnet_encoder = pointnet.LocalPoolPointnet(
@@ -573,7 +573,7 @@ class PointGroup(nn.Module):
 
         batch_idxs = batch_idxs.squeeze()
 
-        if self.model_mode == 0:
+        if self.model_mode == 'Centre_clustering':
             semantic_scores = []
             point_offset_preds = []
 
