@@ -15,7 +15,7 @@ from model.decoder import decoder
 from model.common import coordinate2index, normalize_3d_coordinate
 
 from model.components import ResidualBlock, VGGBlock, UBlock
-# from model.components import backbone_pointnet2
+from model.components import backbone_pointnet2
 
 
 class PointGroup(nn.Module):
