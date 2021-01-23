@@ -527,7 +527,7 @@ class PointGroup(nn.Module):
         batch_idxs_ = batch_idxs[object_idxs]
         batch_offsets_ = utils.get_batch_offsets(batch_idxs_, batch_size)
         coords_ = coords[object_idxs]
-        pt_offsets_ = point_offset_preds[-1][object_idxs]
+        pt_offsets_ = point_offset_preds[object_idxs]
 
         semantic_preds_cpu = point_semantic_preds[object_idxs].int().cpu()
 
@@ -647,7 +647,7 @@ class PointGroup(nn.Module):
 
             if (epoch == self.test_epoch):
                 scores, proposals_idx, proposals_offset = self.pointgroup_cluster_algorithm(
-                    coords, point_offset_preds, point_semantic_preds, batch_idxs, input['batch_size']
+                    coords, point_offset_preds[-1], point_semantic_preds, batch_idxs, input['batch_size']
                 )
                 ret['proposal_scores'] = (scores, proposals_idx, proposals_offset)
 
@@ -684,7 +684,7 @@ class PointGroup(nn.Module):
 
             if (epoch == self.test_epoch):
                 scores, proposals_idx, proposals_offset = self.pointgroup_cluster_algorithm(
-                    coords, point_offset_preds, point_semantic_preds, batch_idxs, input['batch_size']
+                    coords, point_offset_preds[-1], point_semantic_preds, batch_idxs, input['batch_size']
                 )
                 ret['proposal_scores'] = (scores, proposals_idx, proposals_offset)
 
@@ -728,7 +728,7 @@ class PointGroup(nn.Module):
 
             if (epoch == self.test_epoch):
                 scores, proposals_idx, proposals_offset = self.pointgroup_cluster_algorithm(
-                    coords, point_offset_preds, point_semantic_preds, batch_idxs, input['batch_size']
+                    coords, point_offset_preds[-1], point_semantic_preds, batch_idxs, input['batch_size']
                 )
                 ret['proposal_scores'] = (scores, proposals_idx, proposals_offset)
 
@@ -763,7 +763,7 @@ class PointGroup(nn.Module):
 
             if (epoch == self.test_epoch):
                 scores, proposals_idx, proposals_offset = self.pointgroup_cluster_algorithm(
-                    coords, point_offset_preds, point_semantic_preds, batch_idxs, input['batch_size']
+                    coords, point_offset_preds[-1], point_semantic_preds, batch_idxs, input['batch_size']
                 )
                 ret['proposal_scores'] = (scores, proposals_idx, proposals_offset)
 
