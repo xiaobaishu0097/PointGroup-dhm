@@ -574,6 +574,9 @@ class PointGroup(nn.Module):
         batch_idxs = batch_idxs.squeeze()
 
         if self.model_mode == 0:
+            semantic_scores = []
+            point_offset_preds = []
+
             point_feats, grid_feats = self.pointnet_backbone_forward(coords, ori_coords, rgb, batch_offsets)
 
             voxel_feats = pointgroup_ops.voxelization(point_feats, input['v2p_map'], input['mode'])  # (M, C), float, cuda
@@ -590,11 +593,11 @@ class PointGroup(nn.Module):
 
             ### point prediction
             #### point semantic label prediction
-            semantic_scores = self.point_semantic(output_feats)  # (N, nClass), float
+            semantic_scores.append(self.point_semantic(output_feats))  # (N, nClass), float
             # point_semantic_preds = semantic_scores
-            point_semantic_preds = semantic_scores.max(1)[1]
+            point_semantic_preds = semantic_scores[0].max(1)[1]
             #### point offset prediction
-            point_offset_preds = self.point_offset(output_feats)  # (N, 3), float32
+            point_offset_preds.append(self.point_offset(output_feats))  # (N, 3), float32
 
             ### centre prediction
             bs, c_dim, grid_size = grid_feats.shape[0], grid_feats.shape[1], grid_feats.shape[2]
