@@ -311,9 +311,15 @@ def get_coords_color(opt):
         label_pred = np.load(semantic_file).astype(np.int)  # 0~19
 
         semantic_valid_indx = label > 1
-        semantic_error_indx = label_pred != label
+        semantic_error_indx = np.zeros_like(label)
+        semantic_error_indx[label_pred != label] = 1
+        semantic_error_indx[~semantic_valid_indx] = 0
+        semantic_error_indx = semantic_error_indx.astype(bool)
 
-
+        rgb = np.zeros_like(rgb)
+        rgb[semantic_error_indx, 0] = 255
+        rgb[semantic_error_indx, 1] = 0
+        rgb[semantic_error_indx, 2] = 0
 
     elif (opt.task == 'instance_pred'):
         assert opt.room_split != 'train'
