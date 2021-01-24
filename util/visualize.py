@@ -321,6 +321,9 @@ def get_coords_color(opt):
         rgb[semantic_error_indx, 1] = 0
         rgb[semantic_error_indx, 2] = 0
 
+    elif opt.task == 'instance_error':
+        assert opt.room_split != 'train'
+
     elif (opt.task == 'instance_pred'):
         assert opt.room_split != 'train'
         instance_file = os.path.join(opt.result_root, opt.room_split, opt.room_name + '.txt')
