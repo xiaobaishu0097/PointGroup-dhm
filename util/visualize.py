@@ -305,6 +305,16 @@ def get_coords_color(opt):
         label_pred_rgb = np.array(itemgetter(*SEMANTIC_NAMES[label_pred])(CLASS_COLOR))
         rgb = label_pred_rgb
 
+    elif opt.task == 'semantic_error':
+        assert opt.room_split != 'train'
+        semantic_file = os.path.join(opt.result_root, opt.room_split, 'semantic_pred', opt.room_name + '.npy')
+        label_pred = np.load(semantic_file).astype(np.int)  # 0~19
+
+        semantic_valid_indx = label > 1
+        semantic_error_indx = label_pred != label
+
+
+
     elif (opt.task == 'instance_pred'):
         assert opt.room_split != 'train'
         instance_file = os.path.join(opt.result_root, opt.room_split, opt.room_name + '.txt')
