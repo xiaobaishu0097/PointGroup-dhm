@@ -348,7 +348,7 @@ def get_coords_color(opt):
             visual_text.append({
                 'xyz':  np.mean(xyz[inst_indx], axis=0),
                 'semantic_str': inst_visual_label_str,
-                'color': (0, , 0),
+                'color': (0, 1, 0),
                 'scale': semantic_label_scale,
             })
 

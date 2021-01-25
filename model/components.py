@@ -12,7 +12,7 @@ from model.Pointnet2.pointnet2.pointnet2_modules import PointnetFPModule, Pointn
 
 
 class backbone_pointnet2(nn.Module):
-    def __init__(self):
+    def __init__(self, output_dim=128):
         super(backbone_pointnet2, self).__init__()
         self.sa1 = PointnetSAModule(mlp=[6, 32, 32, 64], npoint=1024, radius=0.1, nsample=32, bn=True)
         self.sa2 = PointnetSAModule(mlp=[64, 64, 64, 128], npoint=256, radius=0.2, nsample=64, bn=True)
@@ -21,8 +21,7 @@ class backbone_pointnet2(nn.Module):
         self.fp4 = PointnetFPModule(mlp=[768, 256, 256])
         self.fp3 = PointnetFPModule(mlp=[384, 256, 256])
         self.fp2 = PointnetFPModule(mlp=[320, 256, 128])
-        # self.fp1 = PointnetFPModule(mlp=[137, 128, 128, 128, 128])
-        self.fp1 = PointnetFPModule(mlp=[137, 128, 128, 64, 32])
+        self.fp1 = PointnetFPModule(mlp=[137, 128, 128, 128, output_dim])
 
     def forward(self, xyz, points):
         l1_xyz, l1_points = self.sa1(xyz.contiguous(), points)
