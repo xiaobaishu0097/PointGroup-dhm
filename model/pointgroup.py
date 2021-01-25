@@ -1052,6 +1052,9 @@ class PointGroup(nn.Module):
                     # proposals_idx_shift: (sumNPoint, 2), int, dim 0 for cluster_id, dim 1 for corresponding point idxs in N
                     # proposals_offset_shift: (nProposal + 1), int
 
+                    if proposals_idx_shift.shape[0] == 0:
+                        continue
+
                     #### proposals voxelization again
                     input_feats, inp_map = self.clusters_voxelization(
                         proposals_idx_shift, proposals_offset_shift, output_feats, coords,
