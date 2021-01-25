@@ -506,7 +506,7 @@ class PointGroup(nn.Module):
                 ori_coords_input = ori_coords[batch_offsets[sample_indx - 1]:batch_offsets[sample_indx], :].unsqueeze(dim=0)
 
                 point_feat, _ = self.pointnet_encoder(
-                    coords_input, torch.cat((rgb_input, coords_input), dim=2).transpose(1, 2).contiguous()
+                    coords_input, torch.cat((rgb_input, ori_coords_input), dim=2).transpose(1, 2).contiguous()
                 )
 
                 point_feats.append(point_feat.contiguous().squeeze(dim=0))
