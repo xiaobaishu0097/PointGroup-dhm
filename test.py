@@ -79,7 +79,7 @@ def test(model, model_fn, data_name, epoch):
             end1 = time.time() - start1
 
             if not cfg.model_mode.endswith('_PointGroup'):
-                grid_xyz = batch['grid_xyz'].squeeze(dim=0).cuda()
+                grid_xyz = batch['grid_xyz'].cuda()
 
                 ##### get predictions (#1 semantic_pred, pt_offsets; #2 scores, proposals_pred)
 
@@ -87,7 +87,35 @@ def test(model, model_fn, data_name, epoch):
                 pt_coords = preds['pt_coords']
 
                 semantic_scores = preds['semantic']  # (N, nClass=20) float32, cuda
-                semantic_pred = semantic_scores.max(1)[1]  # (N) long, cuda
+                semantic_pred = semantic_scores[-1].max(1)[1]  # (N) long, cuda
+
+                pt_semantic_labels = preds['pt_semantic_labels']
+                pt_offset_labels = preds['pt_offset_labels']
+
+                pt_valid_indx = (pt_semantic_labels > 1)
+
+                if 'pt_semantic_eval' not in point_evaluations:
+                    point_evaluations['pt_semantic_eval'] = {
+                        'True': 0,
+                        'False': 0,
+                    }
+                point_evaluations['pt_semantic_eval']['True'] += (
+                        semantic_pred[pt_valid_indx] == pt_semantic_labels[pt_valid_indx]
+                ).sum()
+                point_evaluations['pt_semantic_eval']['False'] += (
+                        semantic_pred[pt_valid_indx] != pt_semantic_labels[pt_valid_indx]
+                ).sum()
+
+                if 'pt_offset_eval' not in point_evaluations:
+                    point_evaluations['pt_offset_eval'] = []
+                point_evaluations['pt_offset_eval'].append(
+                    (
+                            torch.abs(
+                                pt_offsets[-1][pt_valid_indx] - pt_offset_labels[
+                                    pt_valid_indx]).sum() / pt_valid_indx.sum()
+                    ).cpu().numpy()
+                )
+
                 # semantic_pred = semantic_scores  # (N) long, cuda
                 # valid_index = (semantic_pred != 20)
                 valid_index = (semantic_pred > 1)
@@ -97,9 +125,9 @@ def test(model, model_fn, data_name, epoch):
                 # valid_index = (semantic_pred != 20)
                 # semantic_pred[~valid_index] = 0
 
-                grid_center_preds = torch.sigmoid(preds['grid_center_preds'])
-                grid_center_semantic_preds = preds['grid_center_semantic_preds']
-                grid_center_offset_preds = preds['grid_center_offset_preds']
+                grid_center_preds = torch.sigmoid(preds['centre_preds'])
+                grid_center_semantic_preds = preds['centre_semantic_preds']
+                grid_center_offset_preds = preds['centre_offset_preds']
 
                 grid_pred_max = maxpool3d(grid_center_preds.reshape(1, 1, 32, 32, 32)).reshape(1, 32**3)
                 cent_candidates_indexs = (grid_center_preds == grid_pred_max)
@@ -107,8 +135,9 @@ def test(model, model_fn, data_name, epoch):
                 topk_value_, topk_index_ = torch.topk(grid_center_preds, candidate_num, dim=1)
                 topk_index_ = topk_index_[topk_value_ > true_threshold]
 
-                inst_cent_cand_xyz = (grid_xyz[topk_index_] + grid_center_offset_preds[topk_index_]).unsqueeze(dim=0)
-                pt_cent_xyz = (pt_coords + pt_offsets).permute(1, 0, 2)
+                grid_xyz = grid_xyz.unsqueeze(dim=0)
+                inst_cent_cand_xyz = grid_xyz[:, topk_index_, :] + grid_center_offset_preds[:, topk_index_, :]
+                pt_cent_xyz = (pt_coords + pt_offsets[-1]).unsqueeze(dim=1)
                 # pt_cent_xyz = pt_coords.permute(1, 0, 2)
                 # l2 distance
                 pt_inst_cent_dist = torch.norm(

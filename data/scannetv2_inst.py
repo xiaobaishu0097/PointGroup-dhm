@@ -629,6 +629,7 @@ class ScannetDatast:
         point_feats = []  # (N, 3) (rgb)
         point_semantic_labels = []
         point_instance_infos = []
+        grid_xyzs = []
 
         batch_offsets = [0]
         total_inst_num = 0
@@ -651,12 +652,27 @@ class ScannetDatast:
             ### offset
             xyz -= xyz.min(0)
 
+            ### get instance center heatmap
+            grid_xyz = np.zeros((32 ** 3, 3), dtype=np.float32)
+            grid_xyz += xyz_middle.min(axis=0, keepdims=True)
+            grid_size = (xyz_middle.max(axis=0, keepdims=True) - xyz_middle.min(axis=0, keepdims=True)) / 32
+            grid_xyz += grid_size / 2
+            grid_xyz = grid_xyz.reshape(32, 32, 32, 3)
+            for index in range(32):
+                grid_xyz[index, :, :, 0] = grid_xyz[index, :, :, 0] + index * grid_size[0, 0]
+                grid_xyz[:, index, :, 1] = grid_xyz[:, index, :, 1] + index * grid_size[0, 1]
+                grid_xyz[:, :, index, 2] = grid_xyz[:, :, index, 2] + index * grid_size[0, 2]
+            grid_xyz = grid_xyz.reshape(-1, 3)
+
             ### merge the scene to the batch
             batch_offsets.append(batch_offsets[-1] + xyz.shape[0])
             # variables for backbone
             point_locs.append(torch.cat((torch.LongTensor(xyz.shape[0], 1).fill_(i), torch.from_numpy(xyz).long()), dim=1))  # (N, 4) (sample_index, xyz)
             point_coords.append(torch.from_numpy(np.concatenate((xyz_middle, xyz_origin), axis=1)))  # (N, 6) (shifted_xyz, original_xyz)
             point_feats.append(torch.from_numpy(rgb) + torch.randn(3) * 0.1)  # (N, 3) (rgb)
+
+            grid_xyzs.append(torch.from_numpy(grid_xyz))
+
             if self.test_split == 'val':
                 point_semantic_labels.append(torch.from_numpy(label))  # (N)
                 xyz, valid_idxs = self.crop(xyz)
@@ -673,6 +689,9 @@ class ScannetDatast:
         point_locs = torch.cat(point_locs, 0)  # (N) (sample_index)
         point_coords = torch.cat(point_coords, 0).to(torch.float32)  # (N, 6) (shifted_xyz, original_xyz)
         point_feats = torch.cat(point_feats, 0)  # (N, 3) (rgb)
+
+        grid_xyzs = torch.cat(grid_xyzs, 0)
+
         if cfg.pos_enc == 'XYZ':
             point_positional_encoding = torch.cat(
                 (
@@ -710,6 +729,7 @@ class ScannetDatast:
                 'voxel_locs': voxel_locs,  # (nVoxel, 4)
                 'p2v_map': p2v_map,  # (N)
                 'v2p_map': v2p_map,  # (nVoxel, 19?)
+                'grid_xyz': grid_xyzs,
                 # variables for other uses
                 'id': id,
                 'batch_offsets': batch_offsets,  # int (B+1)
@@ -726,6 +746,7 @@ class ScannetDatast:
             'voxel_locs': voxel_locs,  # (nVoxel, 4)
             'p2v_map': p2v_map,  # (N)
             'v2p_map': v2p_map,  # (nVoxel, 19?)
+            'grid_xyz': grid_xyzs,
             # variables for other uses
             'id': id,
             'batch_offsets': batch_offsets,  # int (B+1)
