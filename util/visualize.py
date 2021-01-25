@@ -59,7 +59,7 @@ SEMANTIC_NAME2INDEX = {
     'shower curtain': 15, 'toilet': 16, 'sink': 17, 'bathtub': 18, 'otherfurniture': 19
 }
 
-def visualize_pts_rgb(fig, pts, rgb, scale=0.02):
+def visualize_pts_rgb(fig, pts, rgb, scale=0.02, visual_text=None):
     pxs = pts[:, 0]
     pys = pts[:, 1]
     pzs = pts[:, 2]
@@ -74,6 +74,12 @@ def visualize_pts_rgb(fig, pts, rgb, scale=0.02):
                            scale_mode='vector',
                            scale_factor=scale,
                            figure=fig)
+    if visual_text is not None:
+        for text in visual_text:
+            mlab.text3d(
+                text['xyz'][0], text['xyz'][1], text['xyz'][2], text['semantic_str'],
+                color=text['color'], scale=text['scale']
+            )
     points.module_manager.scalar_lut_manager.lut.table = pt_colors
 
 scaledGaussian = lambda x : exp(-(1/2)*((x/0.25)**2))
@@ -86,6 +92,7 @@ def get_coords_color(opt):
     else:
         xyz, rgb, label, inst_label = torch.load(input_file)
     rgb = (rgb + 1) * 127.5
+    visual_text = None
 
     if opt.task == 'offset_error':
         assert opt.room_split != 'test'
@@ -321,6 +328,30 @@ def get_coords_color(opt):
         rgb[semantic_error_indx, 1] = 0
         rgb[semantic_error_indx, 2] = 0
 
+        semantic_label_scale = (0.02, 0.02, 0.02)
+
+        sem_error_inst_label = inst_label[semantic_error_indx]
+        visual_text = []
+        for inst in np.unique(sem_error_inst_label):
+            inst_indx = (inst_label == inst)
+            true_semantic_label = np.unique(label[inst_indx])
+            assert len(true_semantic_label) == 1, 'single instance has multiple labels'
+            true_semantic_label_str = SEMANTIC_NAMES[int(true_semantic_label)]
+
+            false_semantic_label = np.unique(label_pred[inst_indx][label_pred[inst_indx] != label[inst_indx]])
+            false_semantic_label = [SEMANTIC_NAMES[int(label_indx)] for label_indx in false_semantic_label]
+            separator = ', '
+            false_semantic_label_str = separator.join(false_semantic_label)
+
+            inst_visual_label_str = 'True: {}; False: {}'.format(true_semantic_label_str, false_semantic_label_str)
+
+            visual_text.append({
+                'xyz':  np.mean(xyz[inst_indx], axis=0),
+                'semantic_str': inst_visual_label_str,
+                'color': (0, , 0),
+                'scale': semantic_label_scale,
+            })
+
     elif opt.task == 'instance_error':
         assert opt.room_split != 'train'
 
@@ -349,7 +380,7 @@ def get_coords_color(opt):
         xyz = xyz[sem_valid]
         rgb = rgb[sem_valid]
 
-    return xyz, rgb
+    return xyz, rgb, visual_text
 
 
 
@@ -365,9 +396,9 @@ if __name__ == '__main__':
 
     print(opt.room_name)
 
-    xyz, rgb = get_coords_color(opt)
+    xyz, rgb, visual_text = get_coords_color(opt)
 
     fig = mlab.figure(figure=None, bgcolor=(1.0, 1.0, 1.0), size=((800, 800)))
-    visualize_pts_rgb(fig, xyz, rgb)
+    visualize_pts_rgb(fig, xyz, rgb, visual_text=visual_text)
     mlab.show()
 
