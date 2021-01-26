@@ -23,16 +23,16 @@ DATA:
 STRUCTURE:
   model_name: pointgroup
   backbone: pointnet++_shi # pointnet, pointnet++_yanx, pointnet++_shi
-  m: 128 # 16 or 32
+  m: 32 # 16 or 32
   block_residual: True
   block_reps: 2
   scatter_type: max
   unet3d_num_levels: 3
-  model_mode: PointNet_point_prediction_test_PointGroup
+  model_mode: Yu_rc_scorenet_confidence_PointGroup
   # Centre_clustering or Zheng_panoptic_wpointnet_PointGroup or Zheng_upper_wpointnet_PointGroup or Zheng_panoptic_wopointnet_PointGroup
   # or Zheng_upper_wopointnet_PointGroup or Jiang_original_PointGroup or Yu_refine_clustering_PointGroup
   # or Li_simple_backbone_PointGroup or Yu_refine_clustering_scorenet_PointGroup
-  # or PointNet_point_prediction_test_PointGroup
+  # or PointNet_point_prediction_test_PointGroup or Yu_rc_scorenet_confidence_PointGroup
 
   use_coords: True
   use_ori_coords: True
@@ -87,7 +87,7 @@ GROUP:
   cluster_npoint_thre: 50
   cluster_sets: P # P or Q
 
-  prepare_epochs: 128
+  prepare_epochs: 0
 
 TEST:
   split: val

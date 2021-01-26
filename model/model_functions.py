@@ -26,6 +26,7 @@ def model_fn_decorator(test=False):
     centre_semantic_criterion = nn.CrossEntropyLoss(ignore_index=cfg.ignore_label).cuda()
     centre_offset_criterion = nn.L1Loss().cuda()
     score_criterion = nn.BCELoss(reduction='none').cuda()
+    confidence_criterion = nn.BCELoss(reduction='none').cuda()
 
     def test_model_fn(batch, model, epoch):
         coords = batch['point_locs'].cuda()  # (N, 1 + 3), long, cuda, dimension 0 for batch_idx
@@ -233,6 +234,12 @@ def model_fn_decorator(test=False):
         if (epoch > cfg.prepare_epochs) and (cfg.model_mode == 'Jiang_original_PointGroup'):
             loss_inp['proposal_scores'] = (scores, proposals_idx, proposals_offset, instance_pointnum)
 
+        if 'proposal_confidences' in ret.keys():
+            proposals_confidence_preds, proposals_idx_shifts, proposals_offset_shifts = ret['proposal_confidences']
+            loss_inp['proposal_confidences'] = (
+                proposals_confidence_preds, proposals_idx_shifts, proposals_offset_shifts, instance_pointnum
+            )
+
         loss, loss_out, infos = loss_fn(loss_inp, epoch)
 
         ##### accuracy / visual_dict / meter_dict
@@ -418,6 +425,30 @@ def model_fn_decorator(test=False):
 
             loss_out['score_loss'] = (score_loss, gt_ious.shape[0])
 
+        if 'proposal_confidences' in loss_inp.keys():
+            proposals_confidence_preds, proposals_idx_shifts, proposals_offset_shifts, instance_pointnum = loss_inp['proposal_confidences']
+
+            # scores: (nProposal, 1), float32
+            # proposals_idx: (sumNPoint, 2), int, cpu, dim 0 for cluster_id, dim 1 for corresponding point idxs in N
+            # proposals_offset: (nProposal + 1), int, cpu
+            # instance_pointnum: (total_nInst), int
+
+            confidence_loss = torch.zeros(1).cuda()
+
+            for proposal_index in range(len(proposals_confidence_preds)):
+                ious = pointgroup_ops.get_iou(
+                    proposals_idx_shifts[proposal_index][:, 1].cuda(), proposals_offset_shifts[proposal_index].cuda(),
+                    instance_labels, instance_pointnum
+                ) # (nProposal, nInstance), float
+                gt_ious, gt_instance_idxs = ious.max(1)  # (nProposal) float, long
+                gt_scores = get_segmented_scores(gt_ious, cfg.fg_thresh, cfg.bg_thresh)
+
+                conf_loss = confidence_criterion(torch.sigmoid(proposals_confidence_preds[proposal_index].view(-1)),
+                                                 gt_scores)
+                confidence_loss += conf_loss.mean()
+
+            loss_out['score_loss'] = (confidence_loss, gt_ious.shape[0])
+
         '''total loss'''
         loss = cfg.loss_weight[3] * semantic_loss + cfg.loss_weight[4] * offset_norm_loss + \
                cfg.loss_weight[5] * offset_dir_loss
@@ -428,6 +459,8 @@ def model_fn_decorator(test=False):
                     cfg.loss_weight[2] * centre_offset_loss
         if (epoch > cfg.prepare_epochs) and (cfg.model_mode == 'Jiang_original_PointGroup'):
             loss += (cfg.loss_weight[7] * score_loss)
+        if 'proposal_confidences' in loss_inp.keys():
+            loss += confidence_loss
 
         return loss, loss_out, infos
 
