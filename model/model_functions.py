@@ -66,7 +66,7 @@ def model_fn_decorator(test=False):
 
         point_semantic_scores = []
         point_semantic_labels[point_semantic_labels == -100] = 0
-        point_semantic_scores.append(torch.nn.functional.one_hot(point_semantic_labels))
+        point_semantic_scores.append(torch.nn.functional.one_hot(point_semantic_labels, num_classes=20))
 
         input_ = {
             'pt_feats': feats,
