@@ -963,13 +963,13 @@ class PointGroup(nn.Module):
             ### only used to evaluate based on ground truth
             # semantic_scores.append(input['point_semantic_scores'][0])  # (N, nClass), float
             ### ground truth for each category
-            # CATE_NUM = 19
+            # CATE_NUM = 0
             # semantic_output = self.point_semantic(output_feats)
             # if (input['point_semantic_scores'][0].max(dim=1)[1] == CATE_NUM).sum() > 0:
             #     semantic_output[input['point_semantic_scores'][0].max(dim=1)[1] == CATE_NUM] = \
             #     input['point_semantic_scores'][0][input['point_semantic_scores'][0].max(dim=1)[1] == CATE_NUM].float()
-            #     semantic_output[semantic_output.max(dim=1)[1] == CATE_NUM] = \
-            #     input['point_semantic_scores'][0][semantic_output.max(dim=1)[1] == CATE_NUM].float()
+                # semantic_output[semantic_output.max(dim=1)[1] == CATE_NUM] = \
+                # input['point_semantic_scores'][0][semantic_output.max(dim=1)[1] == CATE_NUM].float()
             # semantic_scores.append(semantic_output)
 
             point_semantic_preds = semantic_scores[0].max(1)[1]
