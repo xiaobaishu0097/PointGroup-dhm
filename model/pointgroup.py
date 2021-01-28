@@ -15,7 +15,7 @@ from model.decoder import decoder
 from model.common import coordinate2index, normalize_3d_coordinate
 
 from model.components import ResidualBlock, VGGBlock, UBlock
-from model.components import backbone_pointnet2
+from model.components import backbone_pointnet2, backbone_pointnet2_deeper
 
 
 class PointGroup(nn.Module):
@@ -398,6 +398,14 @@ class PointGroup(nn.Module):
                 )
             elif self.backbone == 'pointnet++_shi':
                 self.pointnet_encoder = backbone_pointnet2(output_dim=m)
+
+            module_map = {
+                'module.pointnet_encoder': self.pointnet_encoder
+            }
+
+        elif self.model_mode == 'PointNet_sample_PointGroup':
+            #### PointNet backbone encoder
+            self.pointnet_encoder = backbone_pointnet2(output_dim=m)
 
             module_map = {
                 'module.pointnet_encoder': self.pointnet_encoder
@@ -1434,8 +1442,30 @@ class PointGroup(nn.Module):
             ret['point_semantic_scores'] = point_semantic_scores
             ret['point_offset_preds'] = point_offset_preds
 
-
         elif self.model_mode == 'PointNet_point_prediction_test_PointGroup':
+            point_offset_preds = []
+            point_semantic_scores = []
+
+            point_feats, _ = self.pointnet_backbone_forward(coords, ori_coords, rgb, batch_offsets)
+
+            ### point prediction
+            #### point semantic label prediction
+            point_semantic_scores.append(self.point_semantic(point_feats))  # (N, nClass), float
+            point_semantic_preds = point_semantic_scores[-1].max(1)[1]
+
+            #### point offset prediction
+            point_offset_preds.append(self.point_offset(point_feats))  # (N, 3), float32
+
+            if (epoch == self.test_epoch):
+                scores, proposals_idx, proposals_offset = self.pointgroup_cluster_algorithm(
+                    coords, point_offset_preds[-1], point_semantic_preds, batch_idxs, input['batch_size']
+                )
+                ret['proposal_scores'] = (scores, proposals_idx, proposals_offset)
+
+            ret['point_semantic_scores'] = point_semantic_scores
+            ret['point_offset_preds'] = point_offset_preds
+
+        elif self.model_mode == 'PointNet_sample_PointGroup':
             point_offset_preds = []
             point_semantic_scores = []
 

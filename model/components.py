@@ -40,6 +40,43 @@ class backbone_pointnet2(nn.Module):
         return point_features, global_features
 
 
+class backbone_pointnet2_deeper(nn.Module):
+    def __init__(self, output_dim=128):
+        super(backbone_pointnet2_deeper, self).__init__()
+        self.sa1 = PointnetSAModule(mlp=[6, 32, 32, 64], npoint=1024, radius=0.1, nsample=32, bn=True)
+        self.sa2 = PointnetSAModule(mlp=[64, 64, 64, 128], npoint=256, radius=0.2, nsample=64, bn=True)
+        self.sa3 = PointnetSAModule(mlp=[128, 128, 128, 256], npoint=64, radius=0.4, nsample=128, bn=True)
+        self.sa4 = PointnetSAModule(mlp=[256, 256, 256, 512], npoint=32, radius=0.8, nsample=256, bn=True)
+        self.sa5 = PointnetSAModule(mlp=[512, 512, 512, 1024], npoint=16, radius=1.6, nsample=512, bn=True)
+        self.sa6 = PointnetSAModule(mlp=[1024, 1024, 1024, 2048], npoint=None, radius=None, nsample=None, bn=True)
+        self.fp6 = PointnetFPModule(mlp=[3072, 1024, 1024])
+        self.fp5 = PointnetFPModule(mlp=[1536, 512, 512])
+        self.fp4 = PointnetFPModule(mlp=[768, 256, 256])
+        self.fp3 = PointnetFPModule(mlp=[384, 256, 256])
+        self.fp2 = PointnetFPModule(mlp=[320, 256, 128])
+        self.fp1 = PointnetFPModule(mlp=[137, 128, 128, 128, output_dim])
+
+    def forward(self, xyz, points):
+        l1_xyz, l1_points = self.sa1(xyz.contiguous(), points)
+        l2_xyz, l2_points = self.sa2(l1_xyz, l1_points)
+        l3_xyz, l3_points = self.sa3(l2_xyz, l2_points)
+        l4_xyz, l4_points = self.sa4(l3_xyz, l3_points)
+        l5_xyz, l5_points = self.sa5(l4_xyz, l4_points)
+        l6_xyz, l6_points = self.sa6(l5_xyz, l5_points)
+        l5_points = self.fp6(l5_xyz, l6_xyz, l4_points, l6_points)
+        l4_points = self.fp5(l4_xyz, l5_xyz, l4_points, l5_points)
+        l3_points = self.fp4(l3_xyz, l4_xyz, l3_points, l4_points)
+        l2_points = self.fp3(l2_xyz, l3_xyz, l2_points, l3_points)
+        l1_points = self.fp2(l1_xyz, l2_xyz, l1_points, l2_points)
+        l0_points = self.fp1(xyz.contiguous(), l1_xyz, torch.cat((xyz.transpose(1, 2), points), dim=1), l1_points)
+
+        # global_features = l4_points.view(-1, 512)
+        global_features = l3_points.view(-1, 512)
+        point_features = l0_points.transpose(1, 2)
+
+        return point_features, global_features
+
+
 class ResidualBlock(SparseModule):
     def __init__(self, in_channels, out_channels, norm_fn, indice_key=None):
         super().__init__()
