@@ -1510,60 +1510,80 @@ class PointGroup(nn.Module):
 
             ### furthest point sample
             for sample_indx in range(1, len(batch_offsets)):
-                point_coords = coords[batch_offsets[sample_indx - 1]:batch_offsets[sample_indx], :].clone().unsqueeze(dim=0)
-                point_rgb = rgb[batch_offsets[sample_indx - 1]:batch_offsets[sample_indx], :].clone().unsqueeze(dim=0)
+                point_coords = coords[batch_offsets[sample_indx - 1]:batch_offsets[sample_indx], :].clone()
+                point_rgb = rgb[batch_offsets[sample_indx - 1]:batch_offsets[sample_indx], :].clone()
 
-                point_coords = torch.cat(
-                    (point_coords,
-                     torch.arange(0, point_coords.shape[1], dtype=torch.float32).unsqueeze(dim=0).unsqueeze(dim=2).cuda()),
-                    dim=2
-                )
+                num_point = point_coords.shape[0]
 
-                batch_point_coords = []
-                batch_point_rgb = []
+                # point_coords = torch.cat(
+                #     (point_coords,
+                #      torch.arange(0, point_coords.shape[1], dtype=torch.float32).unsqueeze(dim=0).unsqueeze(dim=2).cuda()),
+                #     dim=2
+                # )
 
-                # TODO: to slow
-                for _ in range(point_coords.shape[1] // self.pointnet_max_npoint):
-                    sampled_index = torch.ones(point_coords.shape[1]).byte()
-                    selected_index = pointnet2_utils.furthest_point_sample(
-                        point_coords[:, :, :3].contiguous(), self.pointnet_max_npoint).squeeze(dim=0).long()
-                    sampled_index[selected_index] = 0
+                # batch_point_coords = []
+                # batch_point_rgb = []
 
-                    batch_point_coords.append(point_coords[:, selected_index, :])
-                    batch_point_rgb.append(point_rgb[:, selected_index, :])
+                # # TODO: to slow
+                # for _ in range(point_coords.shape[1] // self.pointnet_max_npoint):
+                #     sampled_index = torch.ones(point_coords.shape[1]).byte()
+                #     selected_index = pointnet2_utils.furthest_point_sample(
+                #         point_coords[:, :, :3].contiguous(), self.pointnet_max_npoint).squeeze(dim=0).long()
+                #     sampled_index[selected_index] = 0
+                #
+                #     batch_point_coords.append(point_coords[:, selected_index, :])
+                #     batch_point_rgb.append(point_rgb[:, selected_index, :])
+                #
+                #     point_coords = point_coords[:, sampled_index, :]
+                #     point_rgb = point_rgb[:, sampled_index, :]
+                #
+                # batch_point_coords = torch.cat(batch_point_coords, dim=0)
+                # batch_point_rgb = torch.cat(batch_point_rgb, dim=0)
 
-                    point_coords = point_coords[:, sampled_index, :]
-                    point_rgb = point_rgb[:, sampled_index, :]
+                batch_num = num_point // self.pointnet_max_npoint
+                shuffle_index = torch.randperm(num_point)
+                return_index = torch.sort(shuffle_index)[1]
+                point_coords = point_coords[shuffle_index, :]
 
-                batch_point_coords = torch.cat(batch_point_coords, dim=0)
-                batch_point_rgb = torch.cat(batch_point_rgb, dim=0)
+                if num_point % self.pointnet_max_npoint != 0:
+                    point_coords_last = point_coords[batch_num * self.pointnet_max_npoint:, :].unsqueeze(dim=0)
+                    point_rgb_last = point_rgb[batch_num * self.pointnet_max_npoint:, :].unsqueeze(dim=0)
 
-                batch_point_coords_order = batch_point_coords[:, :, 3].unsqueeze(dim=2)
-                batch_point_coords = batch_point_coords[:, :, :3]
+                point_coords = point_coords[:batch_num * self.pointnet_max_npoint, :]
+                point_rgb = point_rgb[:batch_num * self.pointnet_max_npoint, :]
+
+                point_coords = point_coords.reshape(batch_num, self.pointnet_max_npoint, 3)
+                point_rgb = point_rgb.reshape(batch_num, self.pointnet_max_npoint, 3)
+
+                # batch_point_coords_order = batch_point_coords[:, :, 3].unsqueeze(dim=2)
+                # batch_point_coords = batch_point_coords[:, :, :3]
 
                 point_feat, _ = self.pointnet_encoder(
-                    batch_point_coords, torch.cat((batch_point_rgb, batch_point_coords), dim=2).transpose(1, 2).contiguous()
+                    point_coords, torch.cat((point_rgb, point_coords), dim=2).transpose(1, 2).contiguous()
                 )
-                point_feat = torch.cat((point_feat, batch_point_coords_order), dim=2)
 
-                point_feat = point_feat.reshape(-1, self.m + 1)
+                # point_feat = torch.cat((point_feat, batch_point_coords_order), dim=2)
 
-                point_coords_order = point_coords[:, :, 3].unsqueeze(dim=2)
-                point_coords = point_coords[:, :, :3]
+                point_feat = point_feat.reshape(-1, self.m)
 
-                if point_coords.shape[1] % self.pointnet_max_npoint != 0:
+                # point_coords_order = point_coords[:, :, 3].unsqueeze(dim=2)
+                # point_coords = point_coords[:, :, :3]
+
+                if num_point % self.pointnet_max_npoint != 0:
                     point_feat_last, _ = self.pointnet_encoder(
-                        point_coords, torch.cat((point_rgb, point_coords), dim=2).transpose(1, 2).contiguous()
+                        point_coords_last, torch.cat((point_rgb_last, point_coords_last), dim=2).transpose(1, 2).contiguous()
                     )
-                    point_feat_last = torch.cat((point_feat_last, point_coords_order), dim=2)
+
+                    # point_feat_last = torch.cat((point_feat_last, point_coords_order), dim=2)
 
                     point_feat = torch.cat((point_feat, point_feat_last.squeeze(dim=0)), dim=0)
 
-                _, indices = torch.sort(point_feat[:, -1])
-                point_feat = point_feat[indices, :]
-                point_feat = point_feat[:, :-1]
+                point_feat = point_feat[return_index, :]
+                # _, indices = torch.sort(point_feat[:, -1])
+                # point_feat = point_feat[indices, :]
+                # point_feat = point_feat[:, :-1]
 
-                point_feats.append(point_feat.contiguous().squeeze(dim=0))
+                point_feats.append(point_feat.contiguous())
 
             point_feats = torch.cat(point_feats)
             assert point_feats.shape[0] == coords.shape[0], 'we lose some points'
