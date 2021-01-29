@@ -15,6 +15,7 @@ def model_fn_decorator(test=False):
 
     #### criterion
     semantic_criterion = nn.CrossEntropyLoss(ignore_index=cfg.ignore_label).cuda()
+    stuff_criterion = nn.CrossEntropyLoss(ignore_index=cfg.ignore_label).cuda()
     # if cfg.offset_norm_criterion == 'l1':
     #     offset_norm_criterion = nn.SmoothL1Loss().cuda()
     if cfg.offset_norm_criterion == 'l2':
@@ -240,6 +241,10 @@ def model_fn_decorator(test=False):
                 proposals_confidence_preds, proposals_idx_shifts, proposals_offset_shifts, instance_pointnum
             )
 
+        if 'stuff_preds' in ret.keys():
+            stuff_preds = ret['stuff_preds']
+            loss_inp['stuff_preds'] = (stuff_preds)
+
         loss, loss_out, infos = loss_fn(loss_inp, epoch)
 
         ##### accuracy / visual_dict / meter_dict
@@ -449,6 +454,13 @@ def model_fn_decorator(test=False):
 
             loss_out['score_loss'] = (confidence_loss, gt_ious.shape[0])
 
+        if 'stuff_preds' in loss_inp.keys():
+            stuff_prediction = loss_inp['stuff_preds']
+            stuff_labels = torch.zeros(stuff_prediction.shape[0]).long().cuda()
+            stuff_labels[semantic_labels > 1] = 1
+            stuff_loss = stuff_criterion(stuff_prediction, stuff_labels)
+            loss_out['stuff_loss'] = (stuff_loss, stuff_prediction.shape[0])
+
         '''total loss'''
         loss = cfg.loss_weight[3] * semantic_loss + cfg.loss_weight[4] * offset_norm_loss + \
                cfg.loss_weight[5] * offset_dir_loss
@@ -461,6 +473,8 @@ def model_fn_decorator(test=False):
             loss += (cfg.loss_weight[7] * score_loss)
         if 'proposal_confidences' in loss_inp.keys():
             loss += confidence_loss
+        if 'stuff_preds' in loss_inp.keys():
+            loss += stuff_loss
 
         return loss, loss_out, infos
 
