@@ -9,6 +9,7 @@ sys.path.append('../')
 
 from lib.pointgroup_ops.functions import pointgroup_ops
 from util import utils
+
 from model.encoder import pointnet, pointnetpp
 from model.encoder.unet3d import UNet3D
 from model.decoder import decoder
@@ -16,6 +17,8 @@ from model.common import coordinate2index, normalize_3d_coordinate
 
 from model.components import ResidualBlock, VGGBlock, UBlock
 from model.components import backbone_pointnet2, backbone_pointnet2_deeper
+
+from model.Pointnet2.pointnet2 import pointnet2_utils
 
 
 class PointGroup(nn.Module):
@@ -53,6 +56,8 @@ class PointGroup(nn.Module):
         self.pointnet_include_rgb = cfg.pointnet_include_rgb
         self.refine_times = cfg.refine_times
         self.add_pos_enc_ref = cfg.add_pos_enc_ref
+
+        self.pointnet_max_npoint = 8196
 
         norm_fn = functools.partial(nn.BatchNorm1d, eps=1e-4, momentum=0.1)
 
@@ -403,6 +408,14 @@ class PointGroup(nn.Module):
                 'module.pointnet_encoder': self.pointnet_encoder
             }
 
+        elif self.model_mode == 'PointNet_deeper_PointGroup':
+            #### PointNet backbone encoder
+            self.pointnet_encoder = backbone_pointnet2_deeper(output_dim=m)
+
+            module_map = {
+                'module.pointnet_encoder': self.pointnet_encoder
+            }
+
         elif self.model_mode == 'PointNet_sample_PointGroup':
             #### PointNet backbone encoder
             self.pointnet_encoder = backbone_pointnet2(output_dim=m)
@@ -410,6 +423,7 @@ class PointGroup(nn.Module):
             module_map = {
                 'module.pointnet_encoder': self.pointnet_encoder
             }
+
 
         ### point prediction
         self.point_offset = nn.Sequential(
@@ -1465,9 +1479,39 @@ class PointGroup(nn.Module):
             ret['point_semantic_scores'] = point_semantic_scores
             ret['point_offset_preds'] = point_offset_preds
 
+        elif self.model_mode == 'PointNet_deeper_PointGroup':
+            point_offset_preds = []
+            point_semantic_scores = []
+
+            point_feats, _ = self.pointnet_backbone_forward(coords, ori_coords, rgb, batch_offsets)
+
+            ### point prediction
+            #### point semantic label prediction
+            point_semantic_scores.append(self.point_semantic(point_feats))  # (N, nClass), float
+            point_semantic_preds = point_semantic_scores[-1].max(1)[1]
+
+            #### point offset prediction
+            point_offset_preds.append(self.point_offset(point_feats))  # (N, 3), float32
+
+            if (epoch == self.test_epoch):
+                scores, proposals_idx, proposals_offset = self.pointgroup_cluster_algorithm(
+                    coords, point_offset_preds[-1], point_semantic_preds, batch_idxs, input['batch_size']
+                )
+                ret['proposal_scores'] = (scores, proposals_idx, proposals_offset)
+
+            ret['point_semantic_scores'] = point_semantic_scores
+            ret['point_offset_preds'] = point_offset_preds
+
         elif self.model_mode == 'PointNet_sample_PointGroup':
             point_offset_preds = []
             point_semantic_scores = []
+
+            ### furthest point sample
+            point_coords = coords.clone().unsqueeze(dim=0)
+            for _ in range(point_coords.shape[1] // self.pointnet_max_npoint):
+                sampled_index = torch.ones(point_coords.shape[1])
+                selected_index = pointnet2_utils.furthest_point_sample(point_coords.contiguous(), 8196).squeeze(dim=0).long()
+                sampled_index[selected_index] = 0
 
             point_feats, _ = self.pointnet_backbone_forward(coords, ori_coords, rgb, batch_offsets)
 

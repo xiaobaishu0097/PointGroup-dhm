@@ -63,7 +63,7 @@ class backbone_pointnet2_deeper(nn.Module):
         l4_xyz, l4_points = self.sa4(l3_xyz, l3_points)
         l5_xyz, l5_points = self.sa5(l4_xyz, l4_points)
         l6_xyz, l6_points = self.sa6(l5_xyz, l5_points)
-        l5_points = self.fp6(l5_xyz, l6_xyz, l4_points, l6_points)
+        l5_points = self.fp6(l5_xyz, l6_xyz, l5_points, l6_points)
         l4_points = self.fp5(l4_xyz, l5_xyz, l4_points, l5_points)
         l3_points = self.fp4(l3_xyz, l4_xyz, l3_points, l4_points)
         l2_points = self.fp3(l2_xyz, l3_xyz, l2_points, l3_points)
