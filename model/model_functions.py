@@ -80,6 +80,8 @@ def model_fn_decorator(test=False):
             'point_semantic_scores': point_semantic_scores,
         }
 
+        model.eval()
+
         ret = model(
             input_, p2v_map, coords_float, rgb, ori_coords, point_positional_encoding,
             coords[:, 0].int(), batch_offsets, epoch
