@@ -372,8 +372,8 @@ class PointGroup(nn.Module):
             self.proposal_transformer = ProposalTransformer(
                 d_model=self.m,
                 nhead=cfg.multi_heads,
-                num_decoder_layers=1,
-                dim_feedforward=32,
+                num_decoder_layers=cfg.num_decoder_layers,
+                dim_feedforward=cfg.dim_feedforward,
                 dropout=0.0,
             )
 

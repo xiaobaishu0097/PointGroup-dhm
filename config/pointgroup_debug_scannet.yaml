@@ -65,6 +65,8 @@ TRAIN:
   clip: False
   add_pos_enc_ref: False
   pos_enc: XYZ
+  num_decoder_layers: 1
+  dim_feedforward: 64
 
   constrastive_loss: True
 
