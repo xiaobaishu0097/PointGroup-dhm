@@ -85,7 +85,7 @@ class PointGroup(nn.Module):
                 )
 
             elif self.backbone == 'pointnet++_shi':
-                self.pointnet_encoder = backbone_pointnet2()
+                self.pointnet_encoder = backbone_pointnet2(output_dim=m)
 
             self.unet3d = UNet3D(
                 num_levels=cfg.unet3d_num_levels, f_maps=m, in_channels=m, out_channels=m
