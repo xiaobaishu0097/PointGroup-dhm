@@ -306,12 +306,12 @@ def model_fn_decorator(test=False):
                 pt_diff = pt_offset - gt_offsets  # (N, 3)
                 pt_dist = torch.sum(torch.abs(pt_diff), dim=-1)  # (N)
                 valid = (instance_labels != cfg.ignore_label).float()
-                offset_norm_loss = torch.sum(pt_dist * valid) / (torch.sum(valid) + 1e-6)
+                offset_norm_loss += torch.sum(pt_dist * valid) / (torch.sum(valid) + 1e-6)
             if cfg.offset_norm_criterion == 'l2':
-                offset_norm_loss = offset_norm_criterion(pt_offset[pt_valid_index], gt_offsets[pt_valid_index])
+                offset_norm_loss += offset_norm_criterion(pt_offset[pt_valid_index], gt_offsets[pt_valid_index])
             elif cfg.offset_norm_criterion == 'triplet':
                 ### offset l1 distance loss: learn to move towards the true instance centre
-                offset_norm_loss = offset_norm_criterion(pt_offset[pt_valid_index], gt_offsets[pt_valid_index])
+                offset_norm_loss += offset_norm_criterion(pt_offset[pt_valid_index], gt_offsets[pt_valid_index])
 
                 # positive_offset = instance_info[:, 0:3].unsqueeze(dim=1).repeat(1, instance_centre.shape[0], 1)
                 # negative_offset = instance_centre.unsqueeze(dim=0).repeat(coords.shape[0], 1, 1)
@@ -378,7 +378,7 @@ def model_fn_decorator(test=False):
             pt_offsets_norm = torch.norm(pt_offset, p=2, dim=1)
             pt_offsets_ = pt_offset / (pt_offsets_norm.unsqueeze(-1) + 1e-8)
             direction_diff = - (gt_offsets_ * pt_offsets_).sum(-1)  # (N)
-            offset_dir_loss = torch.sum(direction_diff * valid) / (torch.sum(valid) + 1e-6)
+            offset_dir_loss += torch.sum(direction_diff * valid) / (torch.sum(valid) + 1e-6)
 
         loss_out['offset_norm_loss'] = (offset_norm_loss, valid.sum())
         loss_out['offset_dir_loss'] = (offset_dir_loss, valid.sum())
