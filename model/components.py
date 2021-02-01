@@ -9,6 +9,7 @@ import sys
 sys.path.append('../')
 
 from model.Pointnet2.pointnet2.pointnet2_modules import PointnetFPModule, PointnetSAModule
+from .transformer import Transformer, TransformerEncoderLayer, TransformerEncoder, TransformerDecoderLayer, TransformerDecoder
 
 
 class backbone_pointnet2(nn.Module):
@@ -188,3 +189,30 @@ class WeightedFocalLoss(nn.Module):
         pt = torch.exp(-BCE_loss)
         F_loss = at * (1 - pt.view(-1)) ** self.gamma * BCE_loss.view(-1)
         return F_loss.mean()
+
+
+class ProposalTransformer(Transformer):
+    def __init__(self, d_model=256, nhead=8, num_encoder_layers=1,
+                 num_decoder_layers=6, dim_feedforward=512, dropout=0.1,
+                 activation="relu", normalize_before=False,
+                 return_intermediate_dec=False):
+        super(ProposalTransformer, self).__init__()
+
+        decoder_layer = TransformerDecoderLayer(d_model, nhead, dim_feedforward,
+                                                dropout, activation, normalize_before)
+        decoder_norm = nn.LayerNorm(d_model)
+        self.decoder = TransformerDecoder(decoder_layer, num_decoder_layers, decoder_norm,
+                                          return_intermediate=return_intermediate_dec)
+
+        self._reset_parameters()
+
+        self.d_model = d_model
+        self.nhead = nhead
+
+    def forward(self, src, query_embed):
+        bs, n, c = src.shape
+        src = src.permute(1, 0, 2)
+        query_embed = query_embed.permute(2, 0, 1)
+
+        hs = self.decoder(query_embed, src)
+        return hs.transpose(0, 1), src.permute(1, 2, 0).view(bs, c, n)
