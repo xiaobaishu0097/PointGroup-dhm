@@ -1810,11 +1810,9 @@ class PointGroup(nn.Module):
             output_feats = output.features[input_map.long()]
             output_feats = output_feats.squeeze(dim=0)
 
-            output_feats = output_feats + stuff_output_feats
-
             ### point prediction
             #### point semantic label prediction
-            point_semantic_scores.append(self.point_semantic(output_feats))  # (N, nClass), float
+            point_semantic_scores.append(self.point_semantic(output_feats + stuff_output_feats))  # (N, nClass), float
             # point_semantic_preds = semantic_scores
             point_semantic_preds = point_semantic_scores[-1].max(1)[1]
 
