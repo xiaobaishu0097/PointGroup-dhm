@@ -138,6 +138,8 @@ def model_fn_decorator(test=False):
             if (epoch == cfg.test_epoch) and ('proposal_scores' in ret.keys()):
                 preds['score'] = scores
                 preds['proposals'] = (proposals_idx, proposals_offset)
+            if 'stuff_preds' in ret.keys():
+                preds['stuff_preds'] = ret['stuff_preds']
 
             preds['pt_semantic_labels'] = point_semantic_labels
             preds['pt_offset_labels'] = point_offset_labels
