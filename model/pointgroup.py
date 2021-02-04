@@ -729,9 +729,12 @@ class PointGroup(nn.Module):
 
         return point_feats, grid_feats
 
-    def pointgroup_cluster_algorithm(self, coords, point_offset_preds, point_semantic_preds, batch_idxs, batch_size):
+    def pointgroup_cluster_algorithm(self, coords, point_offset_preds, point_semantic_preds, batch_idxs, batch_size, stuff_preds=None):
         #### get prooposal clusters
-        object_idxs = torch.nonzero(point_semantic_preds > 1).view(-1)
+        if stuff_preds is None:
+            object_idxs = torch.nonzero(point_semantic_preds > 1).view(-1)
+        else:
+            object_idxs = torch.nonzero(stuff_preds == 1).view(-1)
         coords = coords.squeeze()
 
         batch_idxs_ = batch_idxs[object_idxs]
@@ -1770,7 +1773,7 @@ class PointGroup(nn.Module):
                 self.cluster_sets = 'Q'
                 scores, proposals_idx, proposals_offset = self.pointgroup_cluster_algorithm(
                     coords, point_offset_preds[-1], point_semantic_preds,
-                    batch_idxs, input['batch_size']
+                    batch_idxs, input['batch_size'], stuff_preds=stuff_preds.max(1)[1]
                 )
                 ret['proposal_scores'] = (scores, proposals_idx, proposals_offset)
 
