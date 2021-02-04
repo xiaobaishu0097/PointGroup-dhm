@@ -288,7 +288,12 @@ def model_fn_decorator(test=False):
 
         semantic_loss = torch.zeros(1).cuda()
         for semantic_score in semantic_scores:
-            semantic_loss += semantic_criterion(semantic_score, semantic_labels)
+            if cfg.model_mode == 'Yu_stuff_sep_PointGroup':
+                nonstuff_indx = (semantic_labels > 1)
+                nonstuff_semantic_labels = semantic_labels[nonstuff_indx] - 2
+                semantic_loss += semantic_criterion(semantic_score[nonstuff_indx], nonstuff_semantic_labels)
+            else:
+                semantic_loss += semantic_criterion(semantic_score, semantic_labels)
 
         loss_out['semantic_loss'] = (semantic_loss, semantic_scores[0].shape[0])
 
