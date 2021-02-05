@@ -632,10 +632,10 @@ class PointGroup(nn.Module):
         )
         module_map['module.point_offset'] = self.point_offset
 
-        if self.model_mode != 'Yu_stuff_sep_PointGroup':
-            self.point_semantic = nn.Linear(m, classes)
-        else:
+        if (self.model_mode == 'Yu_stuff_sep_PointGroup') or (self.model_mode == 'Yu_stuff_remove_PointGroup'):
             self.point_semantic = nn.Linear(m, classes - 2)
+        else:
+            self.point_semantic = nn.Linear(m, classes)
         module_map['module.point_semantic'] = self.point_semantic
 
         #### centre prediction

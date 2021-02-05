@@ -188,6 +188,10 @@ def model_fn_decorator(test=False):
         coords_float = coords_float[:, :3]
 
         nonstuff_feats = feats[labels > 1]
+        nonstuff_spatial_shape = batch['nonstuff_spatial_shape']
+        nonstuff_voxel_locs = batch['nonstuff_voxel_locs'].cuda()
+        nonstuff_p2v_map = batch['nonstuff_p2v_map'].cuda()
+        nonstuff_v2p_map = batch['nonstuff_v2p_map'].cuda()
 
         input_ = {
             'pt_feats': feats,
@@ -197,6 +201,11 @@ def model_fn_decorator(test=False):
             'spatial_shape': spatial_shape,
             'batch_size': cfg.batch_size,
             'nonstuff_feats': nonstuff_feats,
+            'nonstuff_spatial_shape': nonstuff_spatial_shape,
+            'nonstuff_voxel_locs': nonstuff_voxel_locs.int(),
+            'nonstuff_p2v_map': nonstuff_p2v_map,
+            'nonstuff_v2p_map': nonstuff_v2p_map,
+            'point_locs': coords,
         }
 
         ret = model(
@@ -229,17 +238,17 @@ def model_fn_decorator(test=False):
 
         loss_inp = {}
 
-        if point_offset_preds.shape[0] == coords_float.shape[0]:
+        if point_offset_preds[0].shape[0] == coords_float.shape[0]:
             loss_inp['pt_offsets'] = (
                 point_offset_preds, coords_float, instance_info, instance_centres, instance_labels
             )
-            loss_inp['semantic_scores'] = (point_semantic_scores, labels.squeeze(dim=0))
-        elif point_offset_preds.shape[0] == nonstuff_feats.shape[0]:
+            loss_inp['semantic_scores'] = (point_semantic_scores, labels)
+        elif point_offset_preds[0].shape[0] == nonstuff_feats.shape[0]:
             loss_inp['pt_offsets'] = (
                 point_offset_preds, coords_float[labels > 1], instance_info[labels > 1],
-                instance_centres[labels > 1], instance_labels[labels > 1]
+                instance_centres, instance_labels[labels > 1]
             )
-            loss_inp['semantic_scores'] = (point_semantic_scores, labels.squeeze(dim=0))
+            loss_inp['semantic_scores'] = (point_semantic_scores, labels[labels > 1])
 
         if 'centre_preds' in ret.keys():
             loss_inp['centre_preds'] = (centre_preds, instance_heatmap)
@@ -257,7 +266,7 @@ def model_fn_decorator(test=False):
 
         if 'stuff_preds' in ret.keys():
             stuff_preds = ret['stuff_preds']
-            loss_inp['stuff_preds'] = (stuff_preds)
+            loss_inp['stuff_preds'] = (stuff_preds, labels)
 
         loss, loss_out, infos = loss_fn(loss_inp, epoch)
 
@@ -298,7 +307,7 @@ def model_fn_decorator(test=False):
 
         semantic_loss = torch.zeros(1).cuda()
         for semantic_score in semantic_scores:
-            if cfg.model_mode == 'Yu_stuff_sep_PointGroup':
+            if (cfg.model_mode == 'Yu_stuff_sep_PointGroup') or (cfg.model_mode == 'Yu_stuff_remove_PointGroup'):
                 nonstuff_indx = (semantic_labels > 1)
                 nonstuff_semantic_labels = semantic_labels[nonstuff_indx] - 2
                 semantic_loss += semantic_criterion(semantic_score[nonstuff_indx], nonstuff_semantic_labels)
@@ -474,7 +483,7 @@ def model_fn_decorator(test=False):
             loss_out['score_loss'] = (confidence_loss, gt_ious.shape[0])
 
         if 'stuff_preds' in loss_inp.keys():
-            stuff_prediction = loss_inp['stuff_preds']
+            stuff_prediction, semantic_labels = loss_inp['stuff_preds']
             stuff_labels = torch.zeros(stuff_prediction.shape[0]).long().cuda()
             stuff_labels[semantic_labels > 1] = 1
             stuff_loss = stuff_criterion(stuff_prediction, stuff_labels)

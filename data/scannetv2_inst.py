@@ -440,7 +440,10 @@ class ScannetDatast:
             'batch_offsets': batch_offsets,  # int (B+1)
             'spatial_shape': spatial_shape,  # long (3)
             # nonstuff related
-            
+            'nonstuff_spatial_shape': nonstuff_spatial_shape,
+            'nonstuff_voxel_locs': nonstuff_voxel_locs,
+            'nonstuff_p2v_map': nonstuff_p2v_map,
+            'nonstuff_v2p_map': nonstuff_v2p_map,
         }
 
     def valMerge(self, id):
