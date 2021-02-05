@@ -497,7 +497,7 @@ def model_fn_decorator(test=False):
             stuff_output_feats, semantic_labels = loss_inp['stuff_output_feats']
             stuff_indx = (semantic_labels < 2)
             stuff_output_feats = stuff_output_feats[stuff_indx]
-            stuff_feats_norm = torch.mean(torch.norm(stuff_output_feats, dim=1))
+            stuff_feats_norm = torch.norm(torch.mean(stuff_output_feats, dim=0), p=2, dim=0)
 
         '''total loss'''
         loss = cfg.loss_weight[3] * semantic_loss + cfg.loss_weight[4] * offset_norm_loss + \
