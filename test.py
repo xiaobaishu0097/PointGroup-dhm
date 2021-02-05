@@ -110,9 +110,8 @@ def test(model, model_fn, data_name, epoch):
                     point_evaluations['pt_offset_eval'] = []
                 point_evaluations['pt_offset_eval'].append(
                     (
-                            torch.abs(
-                                pt_offsets[-1][pt_valid_indx] - pt_offset_labels[
-                                    pt_valid_indx]).sum() / pt_valid_indx.sum()
+                        torch.abs(
+                            pt_offsets[-1][pt_valid_indx] - pt_offset_labels[pt_valid_indx]).sum() / pt_valid_indx.sum()
                     ).cpu().numpy()
                 )
 
@@ -203,13 +202,11 @@ def test(model, model_fn, data_name, epoch):
                 pt_semantic_labels = preds['pt_semantic_labels']
                 pt_offset_labels = preds['pt_offset_labels']
 
-                if cfg.model_mode == 'Yu_stuff_sep_PointGroup':
-                    stuff_preds = preds['stuff_preds'].max(1)[1]
-                    stuff_labels = torch.zeros(stuff_preds.shape[0]).long().cuda()
-                    stuff_labels[pt_semantic_labels > 1] = 1
-                    pt_valid_indx = (stuff_labels == 1)
-                else:
-                    pt_valid_indx = (pt_semantic_labels > 1)
+                # stuff_preds = preds['stuff_preds'].max(1)[1]
+                # stuff_labels = torch.zeros(stuff_preds.shape[0]).long().cuda()
+                # stuff_labels[pt_semantic_labels > 1] = 1
+                # pt_valid_indx = (stuff_labels == 1)
+                pt_valid_indx = (pt_semantic_labels > 1)
 
                 if 'pt_semantic_eval' not in point_evaluations:
                     point_evaluations['pt_semantic_eval'] = {
