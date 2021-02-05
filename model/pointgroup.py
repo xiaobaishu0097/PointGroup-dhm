@@ -2045,6 +2045,7 @@ class PointGroup(nn.Module):
             ret['point_semantic_scores'] = point_semantic_scores
             ret['point_offset_preds'] = point_offset_preds
             ret['stuff_preds'] = stuff_preds
+            ret['stuff_output_feats'] = stuff_output_feats
 
         elif self.model_mode == 'Yu_RC_ScoreNet_Conf_Transformer_PointGroup':
             point_offset_preds = []
