@@ -514,7 +514,7 @@ def model_fn_decorator(test=False):
         if 'stuff_preds' in loss_inp.keys():
             loss += stuff_loss
         if 'stuff_output_feats' in loss_inp.keys():
-            loss += stuff_feats_norm
+            loss += cfg.loss_weight[8] * stuff_feats_norm
 
         return loss, loss_out, infos
 
