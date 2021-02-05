@@ -404,9 +404,15 @@ class ScannetDatast:
         instance_pointnum = torch.tensor(instance_pointnum, dtype=torch.int) # int (total_nInst)
 
         spatial_shape = np.clip((point_locs.max(0)[0][1:] + 1).numpy(), self.full_scale[0], None)  # long (3)
+        nonstuff_spatial_shape = np.clip(
+            (point_locs[point_semantic_labels > 1].max(0)[0][1:] + 1).numpy(), self.full_scale[0], None)  # long (3)
 
         ### voxelize
         voxel_locs, p2v_map, v2p_map = pointgroup_ops.voxelization_idx(point_locs, self.batch_size, self.mode)
+
+        nonstuff_voxel_locs, nonstuff_p2v_map, nonstuff_v2p_map = pointgroup_ops.voxelization_idx(
+            point_locs[point_semantic_labels > 1], self.batch_size, self.mode
+        )
 
         #TODO: check size first; rewrite padding part later
         return {
@@ -433,6 +439,8 @@ class ScannetDatast:
             'id': id,
             'batch_offsets': batch_offsets,  # int (B+1)
             'spatial_shape': spatial_shape,  # long (3)
+            # nonstuff related
+            
         }
 
     def valMerge(self, id):

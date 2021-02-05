@@ -78,6 +78,7 @@ def model_fn_decorator(test=False):
             'batch_size': cfg.batch_size,
             'point_offset_preds': point_offset_labels,
             'point_semantic_scores': point_semantic_scores,
+            'point_locs': coords,
         }
 
         model.eval()
@@ -186,6 +187,8 @@ def model_fn_decorator(test=False):
 
         coords_float = coords_float[:, :3]
 
+        nonstuff_feats = feats[labels > 1]
+
         input_ = {
             'pt_feats': feats,
             'v2p_map': v2p_map,
@@ -193,6 +196,7 @@ def model_fn_decorator(test=False):
             'voxel_coords': voxel_coords.int(),
             'spatial_shape': spatial_shape,
             'batch_size': cfg.batch_size,
+            'nonstuff_feats': nonstuff_feats,
         }
 
         ret = model(
@@ -225,11 +229,17 @@ def model_fn_decorator(test=False):
 
         loss_inp = {}
 
-        loss_inp['pt_offsets'] = (
-            point_offset_preds, coords_float.squeeze(dim=0), instance_info.squeeze(dim=0),
-            instance_centres.squeeze(dim=0), instance_labels.squeeze(dim=0)
-        )
-        loss_inp['semantic_scores'] = (point_semantic_scores, labels.squeeze(dim=0))
+        if point_offset_preds.shape[0] == coords_float.shape[0]:
+            loss_inp['pt_offsets'] = (
+                point_offset_preds, coords_float, instance_info, instance_centres, instance_labels
+            )
+            loss_inp['semantic_scores'] = (point_semantic_scores, labels.squeeze(dim=0))
+        elif point_offset_preds.shape[0] == nonstuff_feats.shape[0]:
+            loss_inp['pt_offsets'] = (
+                point_offset_preds, coords_float[labels > 1], instance_info[labels > 1],
+                instance_centres[labels > 1], instance_labels[labels > 1]
+            )
+            loss_inp['semantic_scores'] = (point_semantic_scores, labels.squeeze(dim=0))
 
         if 'centre_preds' in ret.keys():
             loss_inp['centre_preds'] = (centre_preds, instance_heatmap)
