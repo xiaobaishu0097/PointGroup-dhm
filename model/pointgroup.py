@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from torch_scatter import scatter_mean
+import numpy as np
 import spconv
 import functools
 import sys
@@ -59,6 +60,8 @@ class PointGroup(nn.Module):
         self.add_pos_enc_ref = cfg.add_pos_enc_ref
 
         self.pointnet_max_npoint = 8196
+
+        self.full_scale = cfg.full_scale
 
         norm_fn = functools.partial(nn.BatchNorm1d, eps=1e-4, momentum=0.1)
 
@@ -1949,7 +1952,7 @@ class PointGroup(nn.Module):
 
             ### point prediction
             #### point semantic label prediction
-            point_semantic_scores.append(self.point_semantic(output_feats + stuff_output_feats))  # (N, nClass), float
+            point_semantic_scores.append(self.point_semantic(output_feats))  # (N, nClass), float
             # point_semantic_preds = semantic_scores
             point_semantic_preds = point_semantic_scores[-1].max(1)[1] + 2
 
@@ -1974,12 +1977,12 @@ class PointGroup(nn.Module):
 
             voxel_stuff_feats = pointgroup_ops.voxelization(input['pt_feats'], input['v2p_map'], input['mode'])  # (M, C), float, cuda
 
-            input_ = spconv.SparseConvTensor(
+            stuff_input_ = spconv.SparseConvTensor(
                 voxel_stuff_feats, input['voxel_coords'],
                 input['spatial_shape'], input['batch_size']
             )
 
-            stuff_output = self.stuff_conv(input_)
+            stuff_output = self.stuff_conv(stuff_input_)
             stuff_output = self.stuff_unet(stuff_output)
             stuff_output = self.stuff_output_layer(stuff_output)
             stuff_output_feats = stuff_output.features[input_map.long()]
@@ -1988,33 +1991,43 @@ class PointGroup(nn.Module):
             stuff_preds = self.stuff_linear(stuff_output_feats)
 
             if 'nonstuff_feats' in input.keys():
-                voxel_feats = pointgroup_ops.voxelization(
-                    input['nonstuff_feats'], input['v2p_map'][stuff_preds.max(1)[1] == 1],
-                    input['mode']
-                )  # (M, C), float, cuda
-            else:
-                nonstuff_voxel_locs, nonstuff_p2v_map, nonstuff_v2p_map = pointgroup_ops.voxelization_idx(
-                    input['point_locs'][stuff_preds.max(1)[1] == 1], self.batch_size, self.mode
-                )
-                voxel_feats = pointgroup_ops.voxelization(
-                    input['pt_feats'][stuff_preds.max(1)[1] == 1], nonstuff_p2v_map,
+                nonstuff_voxel_feats = pointgroup_ops.voxelization(
+                    input['nonstuff_feats'], input['nonstuff_v2p_map'],
                     input['mode']
                 )  # (M, C), float, cuda
 
+                nonstuff_voxel_locs = input['nonstuff_voxel_locs']
+                nonstuff_spatial_shape = input['nonstuff_spatial_shape']
+                nonstuff_input_map = input['nonstuff_p2v_map']
+            else:
+                nonstuff_voxel_locs, _, nonstuff_v2p_map = pointgroup_ops.voxelization_idx(
+                    input['point_locs'][stuff_preds.max(1)[1] == 1], self.batch_size, self.mode
+                )
+
+                nonstuff_voxel_feats = pointgroup_ops.voxelization(
+                    input['pt_feats'][stuff_preds.max(1)[1] == 1], nonstuff_v2p_map,
+                    input['mode']
+                )  # (M, C), float, cuda
+
+                nonstuff_spatial_shape = np.clip(
+                    (input['point_locs'][stuff_preds.max(1)[1] == 1].max(0)[0][1:] + 1).numpy(),
+                    self.full_scale[0], None
+                )  # long (3)
+                nonstuff_input_map = input_map[stuff_preds.max(1)[1] == 1]
+
             input_ = spconv.SparseConvTensor(
-                voxel_feats, nonstuff_voxel_locs,
-                input['spatial_shape'], input['batch_size']
+                nonstuff_voxel_feats, nonstuff_voxel_locs, nonstuff_spatial_shape, input['batch_size']
             )
 
             output = self.input_conv(input_)
             output = self.unet(output)
             output = self.output_layer(output)
-            output_feats = output.features[input_map.long()]
+            output_feats = output.features[nonstuff_input_map.long()]
             output_feats = output_feats.squeeze(dim=0)
 
             ### point prediction
             #### point semantic label prediction
-            point_semantic_scores.append(self.point_semantic(output_feats + stuff_output_feats))  # (N, nClass), float
+            point_semantic_scores.append(self.point_semantic(output_feats))  # (N, nClass), float
             # point_semantic_preds = semantic_scores
             point_semantic_preds = point_semantic_scores[-1].max(1)[1] + 2
 
