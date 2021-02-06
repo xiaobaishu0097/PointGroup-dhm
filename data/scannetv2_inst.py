@@ -228,6 +228,7 @@ class ScannetDatast:
 
     def trainMerge(self, id):
         ret_dict = {}
+        
         # variables for backbone
         point_locs = [] # (N, 4) (sample_index, xyz)
         point_coords = []  # (N, 6) (shifted_xyz, original_xyz)
