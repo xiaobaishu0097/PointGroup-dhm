@@ -166,10 +166,11 @@ def model_fn_decorator(test=False):
         instance_pointnum = batch['instance_pointnum'].cuda()  # (total_nInst), int, cuda
         instance_centres = batch['instance_centres'].cuda()
 
-        instance_heatmap = batch['grid_centre_heatmap'].cuda()
-        grid_centre_gt = batch['grid_centre_indicator'].cuda()
-        centre_offset_labels = batch['grid_centre_offset_labels'].cuda()
-        centre_semantic_labels = batch['grid_centre_semantic_labels'].cuda()
+        if 'Centre' in cfg.model_mode.split('_'):
+            instance_heatmap = batch['grid_centre_heatmap'].cuda()
+            grid_centre_gt = batch['grid_centre_indicator'].cuda()
+            centre_offset_labels = batch['grid_centre_offset_labels'].cuda()
+            centre_semantic_labels = batch['grid_centre_semantic_labels'].cuda()
 
         batch_offsets = batch['batch_offsets'].cuda()  # (B + 1), int, cuda
 
@@ -187,12 +188,6 @@ def model_fn_decorator(test=False):
 
         coords_float = coords_float[:, :3]
 
-        nonstuff_feats = feats[labels > 1]
-        nonstuff_spatial_shape = batch['nonstuff_spatial_shape']
-        nonstuff_voxel_locs = batch['nonstuff_voxel_locs'].cuda()
-        nonstuff_p2v_map = batch['nonstuff_p2v_map'].cuda()
-        nonstuff_v2p_map = batch['nonstuff_v2p_map'].cuda()
-
         input_ = {
             'pt_feats': feats,
             'v2p_map': v2p_map,
@@ -200,13 +195,21 @@ def model_fn_decorator(test=False):
             'voxel_coords': voxel_coords.int(),
             'spatial_shape': spatial_shape,
             'batch_size': cfg.batch_size,
-            'nonstuff_feats': nonstuff_feats,
-            'nonstuff_spatial_shape': nonstuff_spatial_shape,
-            'nonstuff_voxel_locs': nonstuff_voxel_locs.int(),
-            'nonstuff_p2v_map': nonstuff_p2v_map,
-            'nonstuff_v2p_map': nonstuff_v2p_map,
             'point_locs': coords,
         }
+
+        if 'stuff' in cfg.model_mode.split('_'):
+            nonstuff_feats = feats[labels > 1]
+            nonstuff_spatial_shape = batch['nonstuff_spatial_shape']
+            nonstuff_voxel_locs = batch['nonstuff_voxel_locs'].cuda()
+            nonstuff_p2v_map = batch['nonstuff_p2v_map'].cuda()
+            nonstuff_v2p_map = batch['nonstuff_v2p_map'].cuda()
+
+            input_['nonstuff_feats'] = nonstuff_feats
+            input_['nonstuff_spatial_shape'] = nonstuff_spatial_shape
+            input_['nonstuff_voxel_locs'] = nonstuff_voxel_locs.int()
+            input_['nonstuff_p2v_map'] = nonstuff_p2v_map
+            input_['nonstuff_v2p_map'] = nonstuff_v2p_map
 
         ret = model(
             input_, p2v_map, coords_float, rgb, ori_coords, point_positional_encoding,

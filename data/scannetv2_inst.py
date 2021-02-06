@@ -227,6 +227,7 @@ class ScannetDatast:
         return pos_en
 
     def trainMerge(self, id):
+        ret_dict = {}
         # variables for backbone
         point_locs = [] # (N, 4) (sample_index, xyz)
         point_coords = []  # (N, 6) (shifted_xyz, original_xyz)
@@ -294,57 +295,58 @@ class ScannetDatast:
             instance_label[np.where(instance_label != -100)] += total_inst_num
             total_inst_num += inst_num
 
-            ### get instance centre heatmap
-            grid_xyz = np.zeros((32 ** 3, 3), dtype=np.float32)
-            grid_xyz += xyz_middle.min(axis=0, keepdims=True)
-            grid_size = (xyz_middle.max(axis=0, keepdims=True) - xyz_middle.min(axis=0, keepdims=True)) / 32
-            grid_xyz += grid_size / 2
-            grid_xyz = grid_xyz.reshape(32, 32, 32, 3)
-            for index in range(32):
-                grid_xyz[index, :, :, 0] = grid_xyz[index, :, :, 0] + index * grid_size[0, 0]
-                grid_xyz[:, index, :, 1] = grid_xyz[:, index, :, 1] + index * grid_size[0, 1]
-                grid_xyz[:, :, index, 2] = grid_xyz[:, :, index, 2] + index * grid_size[0, 2]
-            grid_xyz = grid_xyz.reshape(-1, 3)
+            if 'Centre' in cfg.model_mode.split('_'):
+                ### get instance centre heatmap
+                grid_xyz = np.zeros((32 ** 3, 3), dtype=np.float32)
+                grid_xyz += xyz_middle.min(axis=0, keepdims=True)
+                grid_size = (xyz_middle.max(axis=0, keepdims=True) - xyz_middle.min(axis=0, keepdims=True)) / 32
+                grid_xyz += grid_size / 2
+                grid_xyz = grid_xyz.reshape(32, 32, 32, 3)
+                for index in range(32):
+                    grid_xyz[index, :, :, 0] = grid_xyz[index, :, :, 0] + index * grid_size[0, 0]
+                    grid_xyz[:, index, :, 1] = grid_xyz[:, index, :, 1] + index * grid_size[0, 1]
+                    grid_xyz[:, :, index, 2] = grid_xyz[:, :, index, 2] + index * grid_size[0, 2]
+                grid_xyz = grid_xyz.reshape(-1, 3)
 
-            ### size adaptive gaussian function or fixed sigma gaussian
-            if not self.heatmap_sigma:
-                grid_infos = generate_adaptive_heatmap(
-                    torch.tensor(grid_xyz, dtype=torch.float64), torch.tensor(inst_centres), torch.tensor(inst_size),
-                    torch.tensor(inst_label), min_IoU=self.min_IoU, min_radius=np.linalg.norm(grid_size),
+                ### size adaptive gaussian function or fixed sigma gaussian
+                if not self.heatmap_sigma:
+                    grid_infos = generate_adaptive_heatmap(
+                        torch.tensor(grid_xyz, dtype=torch.float64), torch.tensor(inst_centres), torch.tensor(inst_size),
+                        torch.tensor(inst_label), min_IoU=self.min_IoU, min_radius=np.linalg.norm(grid_size),
+                    )
+                    grid_centre_heatmap = grid_infos['heatmap']
+                    grid_instance_label = grid_infos['grid_instance_label']
+                    grid_instance_label[grid_instance_label == 20] = -100
+                else:
+                    grid_centre_heatmap = generate_heatmap(grid_xyz.astype(np.double), np.asarray(inst_centres),
+                                                    sigma=self.heatmap_sigma)
+
+                norm_coords = normalize_3d_coordinate(
+                    torch.cat((torch.from_numpy(xyz_middle), torch.from_numpy(np.asarray(inst_centres))), dim=0).unsqueeze(
+                        dim=0).clone()
                 )
-                grid_centre_heatmap = grid_infos['heatmap']
-                grid_instance_label = grid_infos['grid_instance_label']
-                grid_instance_label[grid_instance_label == 20] = -100
-            else:
-                grid_centre_heatmap = generate_heatmap(grid_xyz.astype(np.double), np.asarray(inst_centres),
-                                                sigma=self.heatmap_sigma)
+                norm_inst_centres = norm_coords[:, -len(inst_centres):, :]
+                grid_centre_gt = coordinate2index(norm_inst_centres, 32, coord_type='3d').squeeze()
+                if grid_centre_gt.ndimension() == 0:
+                    grid_centre_gt = grid_centre_gt.unsqueeze(dim=0)
+                assert grid_centre_gt.ndimension() == 1, 'the dimension of grid_centre_gt is {}'.format(
+                    grid_centre_gt.ndimension())
+                grid_centre_indicator = torch.cat(
+                    (torch.LongTensor(grid_centre_gt.shape[-1], 1).fill_(i), grid_centre_gt.unsqueeze(dim=-1)), dim=1
+                )
 
-            norm_coords = normalize_3d_coordinate(
-                torch.cat((torch.from_numpy(xyz_middle), torch.from_numpy(np.asarray(inst_centres))), dim=0).unsqueeze(
-                    dim=0).clone()
-            )
-            norm_inst_centres = norm_coords[:, -len(inst_centres):, :]
-            grid_centre_gt = coordinate2index(norm_inst_centres, 32, coord_type='3d').squeeze()
-            if grid_centre_gt.ndimension() == 0:
-                grid_centre_gt = grid_centre_gt.unsqueeze(dim=0)
-            assert grid_centre_gt.ndimension() == 1, 'the dimension of grid_centre_gt is {}'.format(
-                grid_centre_gt.ndimension())
-            grid_centre_indicator = torch.cat(
-                (torch.LongTensor(grid_centre_gt.shape[-1], 1).fill_(i), grid_centre_gt.unsqueeze(dim=-1)), dim=1
-            )
-
-            ### only the centre grid point require to predict the offset vector
-            grid_cent_xyz = grid_xyz[grid_centre_gt]
-            grid_centre_offset = grid_cent_xyz - np.array(inst_centres)
-            grid_centre_offset = grid_centre_offset.squeeze()
-            grid_centre_offset = torch.from_numpy(grid_centre_offset)
-            if grid_centre_offset.ndimension() == 1:
-                grid_centre_offset = grid_centre_offset.unsqueeze(dim=0)
-            assert grid_centre_offset.ndimension() == 2, 'the dimension of grid_centre_gt is {}'.format(
-                grid_centre_offset.ndimension())
-            grid_centre_offset_label = torch.cat(
-                (torch.DoubleTensor(grid_centre_offset.shape[0], 1).fill_(i), grid_centre_offset), dim=1
-            )
+                ### only the centre grid point require to predict the offset vector
+                grid_cent_xyz = grid_xyz[grid_centre_gt]
+                grid_centre_offset = grid_cent_xyz - np.array(inst_centres)
+                grid_centre_offset = grid_centre_offset.squeeze()
+                grid_centre_offset = torch.from_numpy(grid_centre_offset)
+                if grid_centre_offset.ndimension() == 1:
+                    grid_centre_offset = grid_centre_offset.unsqueeze(dim=0)
+                assert grid_centre_offset.ndimension() == 2, 'the dimension of grid_centre_gt is {}'.format(
+                    grid_centre_offset.ndimension())
+                grid_centre_offset_label = torch.cat(
+                    (torch.DoubleTensor(grid_centre_offset.shape[0], 1).fill_(i), grid_centre_offset), dim=1
+                )
 
             ### merge the scene to the batch
             batch_offsets.append(batch_offsets[-1] + xyz.shape[0])
@@ -362,11 +364,14 @@ class ScannetDatast:
                     dim=1
                 )
             )  # (nInst, 4) (sample_index, instance_centre_xyz)
-            # variables for grid-wise predictions
-            grid_centre_heatmaps.append(grid_centre_heatmap.unsqueeze(dim=0))  # (B, nGrid)
-            grid_centre_indicators.append(grid_centre_indicator)  # (NGrid, 2) (sample_index, grid_index)
-            grid_centre_offset_labels.append(grid_centre_offset_label)  # (NGrid, 4) (sample_index, grid_centre_offset)
-            grid_centre_semantic_labels.append(grid_instance_label.unsqueeze(dim=0))  # (B, nGrid)
+
+            if 'Centre' in cfg.model_mode.split('_'):
+                # variables for grid-wise predictions
+                grid_centre_heatmaps.append(grid_centre_heatmap.unsqueeze(dim=0))  # (B, nGrid)
+                grid_centre_indicators.append(grid_centre_indicator)  # (NGrid, 2) (sample_index, grid_index)
+                grid_centre_offset_labels.append(grid_centre_offset_label)  # (NGrid, 4) (sample_index, grid_centre_offset)
+                grid_centre_semantic_labels.append(grid_instance_label.unsqueeze(dim=0))  # (B, nGrid)
+
             # variable for other uses
             instance_pointnum.extend(inst_pointnum)
 
@@ -395,58 +400,66 @@ class ScannetDatast:
         point_instance_labels = torch.cat(point_instance_labels, 0).long()  # (N)
         point_instance_infos = torch.cat(point_instance_infos, 0).to(torch.float32) # (N, 9) (cx, cy, cz, minx, miny, minz, maxx, maxy, maxz)
         instance_centres = torch.cat(instance_centres, 0)  # (nInst, 3) (instance_centre_xyz)
-        # variables for grid-wise predictions
-        grid_centre_heatmaps = torch.cat(grid_centre_heatmaps, 0).to(torch.float32)  # (B, nGrid)
-        grid_centre_indicators = torch.cat(grid_centre_indicators, 0)  # (NInst, 2) (sample_index, grid_index)
-        grid_centre_offset_labels = torch.cat(grid_centre_offset_labels, 0).to(torch.float32)  # (NInst, 4) (sample_index, grid_centre_offset)
-        grid_centre_semantic_labels = torch.cat(grid_centre_semantic_labels, 0)  # (B, nGrid)
+
+        # variables for backbone
+        ret_dict['point_locs'] = point_locs # (N, 4) (sample_index, xyz)
+        ret_dict['point_coords'] = point_coords # (N, 6) (shifted_xyz, original_xyz)
+        ret_dict['point_feats'] = point_feats # (N, 3) (rgb)
+        ret_dict['point_positional_encoding'] = point_positional_encoding # (N, 32) (0, xyz-18dim, 0, rgb-12dim)
+        ret_dict['point_semantic_labels'] = point_semantic_labels  # (N)
+        ret_dict['point_instance_labels'] = point_instance_labels  # (N)
+        ret_dict['point_instance_infos'] = point_instance_infos  # (N, 9)
+        ret_dict['instance_centres'] = instance_centres  # (nInst, 3) (instance_xyz)
+
+        if 'Centre' in cfg.model_mode.split('_'):
+            # variables for grid-wise predictions
+            grid_centre_heatmaps = torch.cat(grid_centre_heatmaps, 0).to(torch.float32)  # (B, nGrid)
+            grid_centre_indicators = torch.cat(grid_centre_indicators, 0)  # (NInst, 2) (sample_index, grid_index)
+            grid_centre_offset_labels = torch.cat(grid_centre_offset_labels, 0).to(torch.float32)  # (NInst, 4) (sample_index, grid_centre_offset)
+            grid_centre_semantic_labels = torch.cat(grid_centre_semantic_labels, 0)  # (B, nGrid)
+
+            # variables for grid-wise predictions
+            ret_dict['grid_centre_heatmap'] = grid_centre_heatmaps  # (B, nGrid)
+            ret_dict['grid_centre_indicator'] = grid_centre_indicators  # (NGrid, 2) (sample_index, grid_index)
+            ret_dict['grid_centre_offset_labels'] = grid_centre_offset_labels  # (NGrid, 4) (sample_index, grid_centre_offset)
+            ret_dict['grid_centre_semantic_labels'] = grid_centre_semantic_labels  # (B, nGrid)
+
         # variable for other uses
         instance_pointnum = torch.tensor(instance_pointnum, dtype=torch.int) # int (total_nInst)
 
         spatial_shape = np.clip((point_locs.max(0)[0][1:] + 1).numpy(), self.full_scale[0], None)  # long (3)
-        nonstuff_spatial_shape = np.clip(
-            (point_locs[point_semantic_labels > 1].max(0)[0][1:] + 1).numpy(), self.full_scale[0], None)  # long (3)
 
         ### voxelize
         voxel_locs, p2v_map, v2p_map = pointgroup_ops.voxelization_idx(point_locs, self.batch_size, self.mode)
 
-        nonstuff_voxel_locs, nonstuff_p2v_map, nonstuff_v2p_map = pointgroup_ops.voxelization_idx(
-            point_locs[point_semantic_labels > 1], self.batch_size, self.mode
-        )
+        # variables for point-wise predictions
+        ret_dict['voxel_locs'] = voxel_locs  # (nVoxel, 4)
+        ret_dict['p2v_map'] = p2v_map  # (N)
+        ret_dict['v2p_map'] = v2p_map  # (nVoxel, 19?)
+        # variables for other uses
+        ret_dict['instance_pointnum'] = instance_pointnum  # (nInst) # currently used in Jiang_PointGroup
+        ret_dict['id'] = id
+        ret_dict['batch_offsets'] = batch_offsets  # int (B+1)
+        ret_dict['spatial_shape'] = spatial_shape  # long (3)
 
-        #TODO: check size first; rewrite padding part later
-        return {
-            # variables for backbone
-            'point_locs': point_locs, # (N, 4) (sample_index, xyz)
-            'point_coords': point_coords, # (N, 6) (shifted_xyz, original_xyz)
-            'point_feats': point_feats, # (N, 3) (rgb)
-            'point_positional_encoding': point_positional_encoding, # (N, 32) (0, xyz-18dim, 0, rgb-12dim)
-            # variables for point-wise predictions
-            'voxel_locs': voxel_locs,  # (nVoxel, 4)
-            'p2v_map': p2v_map,  # (N)
-            'v2p_map': v2p_map,  # (nVoxel, 19?)
-            'point_semantic_labels': point_semantic_labels,  # (N)
-            'point_instance_labels': point_instance_labels,  # (N)
-            'point_instance_infos': point_instance_infos,  # (N, 9)
-            'instance_centres': instance_centres,  # (nInst, 3) (instance_xyz)
-            # variables for grid-wise predictions
-            'grid_centre_heatmap': grid_centre_heatmaps,  # (B, nGrid)
-            'grid_centre_indicator': grid_centre_indicators,  # (NGrid, 2) (sample_index, grid_index)
-            'grid_centre_offset_labels': grid_centre_offset_labels,  # (NGrid, 4) (sample_index, grid_centre_offset)
-            'grid_centre_semantic_labels': grid_centre_semantic_labels,  # (B, nGrid)
-            # variables for other uses
-            'instance_pointnum': instance_pointnum,  # (nInst) # currently used in Jiang_PointGroup
-            'id': id,
-            'batch_offsets': batch_offsets,  # int (B+1)
-            'spatial_shape': spatial_shape,  # long (3)
+        if 'stuff' in cfg.model_mode.split('_'):
+            nonstuff_spatial_shape = np.clip(
+                (point_locs[point_semantic_labels > 1].max(0)[0][1:] + 1).numpy(), self.full_scale[0], None)  # long (3)
+            nonstuff_voxel_locs, nonstuff_p2v_map, nonstuff_v2p_map = pointgroup_ops.voxelization_idx(
+                point_locs[point_semantic_labels > 1], self.batch_size, self.mode
+            )
+
             # nonstuff related
-            'nonstuff_spatial_shape': nonstuff_spatial_shape,
-            'nonstuff_voxel_locs': nonstuff_voxel_locs,
-            'nonstuff_p2v_map': nonstuff_p2v_map,
-            'nonstuff_v2p_map': nonstuff_v2p_map,
-        }
+            ret_dict['nonstuff_spatial_shape'] = nonstuff_spatial_shape
+            ret_dict['nonstuff_voxel_locs'] = nonstuff_voxel_locs
+            ret_dict['nonstuff_p2v_map'] = nonstuff_p2v_map
+            ret_dict['nonstuff_v2p_map'] = nonstuff_v2p_map
+
+        return ret_dict
 
     def valMerge(self, id):
+        ret_dict = {}
+
         # variables for backbone
         point_locs = [] # (N, 4) (sample_index, xyz)
         point_coords = []  # (N, 6) (shifted_xyz, original_xyz)
@@ -501,48 +514,49 @@ class ScannetDatast:
             instance_label[np.where(instance_label != -100)] += total_inst_num
             total_inst_num += inst_num
 
-            ### get instance centre heatmap
-            grid_xyz = np.zeros((32 ** 3, 3), dtype=np.float32)
-            grid_xyz += xyz_middle.min(axis=0, keepdims=True)
-            grid_size = (xyz_middle.max(axis=0, keepdims=True) - xyz_middle.min(axis=0, keepdims=True)) / 32
-            grid_xyz += grid_size / 2
-            grid_xyz = grid_xyz.reshape(32, 32, 32, 3)
-            for index in range(32):
-                grid_xyz[index, :, :, 0] = grid_xyz[index, :, :, 0] + index * grid_size[0, 0]
-                grid_xyz[:, index, :, 1] = grid_xyz[:, index, :, 1] + index * grid_size[0, 1]
-                grid_xyz[:, :, index, 2] = grid_xyz[:, :, index, 2] + index * grid_size[0, 2]
-            grid_xyz = grid_xyz.reshape(-1, 3)
+            if 'Centre' in cfg.model_mode.split('_'):
+                ### get instance centre heatmap
+                grid_xyz = np.zeros((32 ** 3, 3), dtype=np.float32)
+                grid_xyz += xyz_middle.min(axis=0, keepdims=True)
+                grid_size = (xyz_middle.max(axis=0, keepdims=True) - xyz_middle.min(axis=0, keepdims=True)) / 32
+                grid_xyz += grid_size / 2
+                grid_xyz = grid_xyz.reshape(32, 32, 32, 3)
+                for index in range(32):
+                    grid_xyz[index, :, :, 0] = grid_xyz[index, :, :, 0] + index * grid_size[0, 0]
+                    grid_xyz[:, index, :, 1] = grid_xyz[:, index, :, 1] + index * grid_size[0, 1]
+                    grid_xyz[:, :, index, 2] = grid_xyz[:, :, index, 2] + index * grid_size[0, 2]
+                grid_xyz = grid_xyz.reshape(-1, 3)
 
-            ### size adaptive gaussian function or fixed sigma gaussian
-            if not self.heatmap_sigma:
-                grid_infos = generate_adaptive_heatmap(
-                    torch.tensor(grid_xyz, dtype=torch.float64), torch.tensor(inst_centres), torch.tensor(inst_size),
-                    torch.tensor(inst_label), min_IoU=self.min_IoU, min_radius=np.linalg.norm(grid_size),
+                ### size adaptive gaussian function or fixed sigma gaussian
+                if not self.heatmap_sigma:
+                    grid_infos = generate_adaptive_heatmap(
+                        torch.tensor(grid_xyz, dtype=torch.float64), torch.tensor(inst_centres), torch.tensor(inst_size),
+                        torch.tensor(inst_label), min_IoU=self.min_IoU, min_radius=np.linalg.norm(grid_size),
+                    )
+                    grid_centre_heatmap = grid_infos['heatmap']
+                    grid_instance_label = grid_infos['grid_instance_label']
+                    grid_instance_label[grid_instance_label == 20] = -100
+                else:
+                    grid_centre_heatmap = generate_heatmap(grid_xyz.astype(np.double), np.asarray(inst_centres),
+                                                    sigma=self.heatmap_sigma)
+
+                norm_coords = normalize_3d_coordinate(
+                    torch.cat((torch.from_numpy(xyz_middle), torch.from_numpy(np.asarray(inst_centres))), dim=0).unsqueeze(
+                        dim=0).clone()
                 )
-                grid_centre_heatmap = grid_infos['heatmap']
-                grid_instance_label = grid_infos['grid_instance_label']
-                grid_instance_label[grid_instance_label == 20] = -100
-            else:
-                grid_centre_heatmap = generate_heatmap(grid_xyz.astype(np.double), np.asarray(inst_centres),
-                                                sigma=self.heatmap_sigma)
+                norm_inst_centres = norm_coords[:, -len(inst_centres):, :]
+                grid_centre_gt = coordinate2index(norm_inst_centres, 32, coord_type='3d').squeeze()
+                grid_centre_indicator = torch.cat(
+                    (torch.LongTensor(grid_centre_gt.shape[0], 1).fill_(i), grid_centre_gt.unsqueeze(dim=-1)), dim=1
+                )
 
-            norm_coords = normalize_3d_coordinate(
-                torch.cat((torch.from_numpy(xyz_middle), torch.from_numpy(np.asarray(inst_centres))), dim=0).unsqueeze(
-                    dim=0).clone()
-            )
-            norm_inst_centres = norm_coords[:, -len(inst_centres):, :]
-            grid_centre_gt = coordinate2index(norm_inst_centres, 32, coord_type='3d').squeeze()
-            grid_centre_indicator = torch.cat(
-                (torch.LongTensor(grid_centre_gt.shape[0], 1).fill_(i), grid_centre_gt.unsqueeze(dim=-1)), dim=1
-            )
-
-            ### only the centre grid point require to predict the offset vector
-            grid_cent_xyz = grid_xyz[grid_centre_gt]
-            grid_centre_offset = grid_cent_xyz - np.array(inst_centres)
-            grid_centre_offset = grid_centre_offset.squeeze()
-            grid_centre_offset_label = torch.cat(
-                (torch.DoubleTensor(grid_centre_offset.shape[0], 1).fill_(i), torch.from_numpy(grid_centre_offset)), dim=1
-            )
+                ### only the centre grid point require to predict the offset vector
+                grid_cent_xyz = grid_xyz[grid_centre_gt]
+                grid_centre_offset = grid_cent_xyz - np.array(inst_centres)
+                grid_centre_offset = grid_centre_offset.squeeze()
+                grid_centre_offset_label = torch.cat(
+                    (torch.DoubleTensor(grid_centre_offset.shape[0], 1).fill_(i), torch.from_numpy(grid_centre_offset)), dim=1
+                )
 
             ### merge the scene to the batch
             batch_offsets.append(batch_offsets[-1] + xyz.shape[0])
@@ -560,11 +574,14 @@ class ScannetDatast:
                     dim=1
                 )
             )  # (nInst, 4) (sample_index, instance_centre_xyz)
-            # variables for grid-wise predictions
-            grid_centre_heatmaps.append(grid_centre_heatmap.unsqueeze(dim=0))  # (B, nGrid)
-            grid_centre_indicators.append(grid_centre_indicator)  # (NGrid, 2) (sample_index, grid_index)
-            grid_centre_offset_labels.append(grid_centre_offset_label)  # (NGrid, 4) (sample_index, grid_centre_offset)
-            grid_centre_semantic_labels.append(grid_instance_label.unsqueeze(dim=0))  # (B, nGrid)
+
+            if 'Centre' in cfg.model_mode.split('_'):
+                # variables for grid-wise predictions
+                grid_centre_heatmaps.append(grid_centre_heatmap.unsqueeze(dim=0))  # (B, nGrid)
+                grid_centre_indicators.append(grid_centre_indicator)  # (NGrid, 2) (sample_index, grid_index)
+                grid_centre_offset_labels.append(grid_centre_offset_label)  # (NGrid, 4) (sample_index, grid_centre_offset)
+                grid_centre_semantic_labels.append(grid_instance_label.unsqueeze(dim=0))  # (B, nGrid)
+
             # variable for other uses
             instance_pointnum.extend(inst_pointnum)
 
@@ -593,58 +610,67 @@ class ScannetDatast:
         point_instance_labels = torch.cat(point_instance_labels, 0).long()  # (N)
         point_instance_infos = torch.cat(point_instance_infos, 0).to(torch.float32) # (N, 9) (cx, cy, cz, minx, miny, minz, maxx, maxy, maxz)
         instance_centres = torch.cat(instance_centres, 0)  # (nInst, 3) (instance_centre_xyz)
-        # variables for grid-wise predictions
-        grid_centre_heatmaps = torch.cat(grid_centre_heatmaps, 0).to(torch.float32)  # (B, nGrid)
-        grid_centre_indicators = torch.cat(grid_centre_indicators, 0)  # (NInst, 2) (sample_index, grid_index)
-        grid_centre_offset_labels = torch.cat(grid_centre_offset_labels, 0).to(torch.float32)  # (NInst, 4) (sample_index, grid_centre_offset)
-        grid_centre_semantic_labels = torch.cat(grid_centre_semantic_labels, 0)  # (B, nGrid)
+
+        # variables for backbone
+        ret_dict['point_locs'] = point_locs  # (N, 4) (sample_index, xyz)
+        ret_dict['point_coords'] = point_coords  # (N, 6) (shifted_xyz, original_xyz)
+        ret_dict['point_feats'] = point_feats  # (N, 3) (rgb)
+        ret_dict['point_positional_encoding'] = point_positional_encoding  # (N, 32) (0, xyz-18dim, 0, rgb-12dim)
+        ret_dict['point_semantic_labels'] = point_semantic_labels  # (N)
+        ret_dict['point_instance_labels'] = point_instance_labels  # (N)
+        ret_dict['point_instance_infos'] = point_instance_infos  # (N, 9)
+        ret_dict['instance_centres'] = instance_centres  # (nInst, 3) (instance_xyz)
+
+        if 'Centre' in cfg.model_mode.split('_'):
+            # variables for grid-wise predictions
+            grid_centre_heatmaps = torch.cat(grid_centre_heatmaps, 0).to(torch.float32)  # (B, nGrid)
+            grid_centre_indicators = torch.cat(grid_centre_indicators, 0)  # (NInst, 2) (sample_index, grid_index)
+            grid_centre_offset_labels = torch.cat(grid_centre_offset_labels, 0).to(torch.float32)  # (NInst, 4) (sample_index, grid_centre_offset)
+            grid_centre_semantic_labels = torch.cat(grid_centre_semantic_labels, 0)  # (B, nGrid)
+
+            # variables for grid-wise predictions
+            ret_dict['grid_centre_heatmap'] = grid_centre_heatmaps  # (B, nGrid)
+            ret_dict['grid_centre_indicator'] = grid_centre_indicators  # (NGrid, 2) (sample_index, grid_index)
+            ret_dict['grid_centre_offset_labels'] = grid_centre_offset_labels  # (NGrid, 4) (sample_index, grid_centre_offset)
+            ret_dict['grid_centre_semantic_labels'] = grid_centre_semantic_labels  # (B, nGrid)
+
         # variable for other uses
         instance_pointnum = torch.tensor(instance_pointnum, dtype=torch.int) # int (total_nInst)
 
         spatial_shape = np.clip((point_locs.max(0)[0][1:] + 1).numpy(), self.full_scale[0], None)  # long (3)
-        nonstuff_spatial_shape = np.clip(
-            (point_locs[point_semantic_labels > 1].max(0)[0][1:] + 1).numpy(), self.full_scale[0], None)  # long (3)
 
         ### voxelize
         voxel_locs, p2v_map, v2p_map = pointgroup_ops.voxelization_idx(point_locs, self.batch_size, self.mode)
 
-        nonstuff_voxel_locs, nonstuff_p2v_map, nonstuff_v2p_map = pointgroup_ops.voxelization_idx(
-            point_locs[point_semantic_labels > 1], self.batch_size, self.mode
-        )
+        # variables for point-wise predictions
+        ret_dict['voxel_locs'] = voxel_locs  # (nVoxel, 4)
+        ret_dict['p2v_map'] = p2v_map  # (N)
+        ret_dict['v2p_map'] = v2p_map  # (nVoxel, 19?)
+        # variables for other uses
+        ret_dict['instance_pointnum'] = instance_pointnum  # (nInst) # currently used in Jiang_PointGroup
+        ret_dict['id'] = id
+        ret_dict['batch_offsets'] = batch_offsets  # int (B+1)
+        ret_dict['spatial_shape'] = spatial_shape  # long (3)
 
-        #TODO: check size first; rewrite padding part later
-        return {
-            # variables for backbone
-            'point_locs': point_locs, # (N, 4) (sample_index, xyz)
-            'point_coords': point_coords, # (N, 6) (shifted_xyz, original_xyz)
-            'point_feats': point_feats, # (N, 3) (rgb)
-            'point_positional_encoding': point_positional_encoding,
-            # variables for point-wise predictions
-            'voxel_locs': voxel_locs,  # (nVoxel, 4)
-            'p2v_map': p2v_map,  # (N)
-            'v2p_map': v2p_map,  # (nVoxel, 19?)
-            'point_semantic_labels': point_semantic_labels,  # (N)
-            'point_instance_labels': point_instance_labels,  # (N)
-            'point_instance_infos': point_instance_infos,  # (N, 9)
-            'instance_centres': instance_centres,  # (nInst, 3) (instance_xyz)
-            # variables for grid-wise predictions
-            'grid_centre_heatmap': grid_centre_heatmaps,  # (B, nGrid)
-            'grid_centre_indicator': grid_centre_indicators,  # (NGrid, 2) (sample_index, grid_index)
-            'grid_centre_offset_labels': grid_centre_offset_labels,  # (NGrid, 4) (sample_index, grid_centre_offset)
-            'grid_centre_semantic_labels': grid_centre_semantic_labels,  # (B, nGrid)
-            # variables for other uses
-            'instance_pointnum': instance_pointnum,  # (nInst) # currently used in Jiang_PointGroup
-            'id': id,
-            'batch_offsets': batch_offsets,  # int (B+1)
-            'spatial_shape': spatial_shape,  # long (3)
+
+        if 'stuff' in cfg.model_mode.split('_'):
+            nonstuff_spatial_shape = np.clip(
+                (point_locs[point_semantic_labels > 1].max(0)[0][1:] + 1).numpy(), self.full_scale[0], None)  # long (3)
+            nonstuff_voxel_locs, nonstuff_p2v_map, nonstuff_v2p_map = pointgroup_ops.voxelization_idx(
+                point_locs[point_semantic_labels > 1], self.batch_size, self.mode
+            )
+
             # nonstuff related
-            'nonstuff_spatial_shape': nonstuff_spatial_shape,
-            'nonstuff_voxel_locs': nonstuff_voxel_locs,
-            'nonstuff_p2v_map': nonstuff_p2v_map,
-            'nonstuff_v2p_map': nonstuff_v2p_map,
-        }
+            ret_dict['nonstuff_spatial_shape'] = nonstuff_spatial_shape
+            ret_dict['nonstuff_voxel_locs'] = nonstuff_voxel_locs
+            ret_dict['nonstuff_p2v_map'] = nonstuff_p2v_map
+            ret_dict['nonstuff_v2p_map'] = nonstuff_v2p_map
+
+        return ret_dict
 
     def testMerge(self, id):
+        ret_dict = {}
+
         # variables for backbone
         point_locs = [] # (N, 4) (sample_index, xyz)
         point_coords = []  # (N, 6) (shifted_xyz, original_xyz)
@@ -674,17 +700,18 @@ class ScannetDatast:
             ### offset
             xyz -= xyz.min(0)
 
-            ### get instance center heatmap
-            grid_xyz = np.zeros((32 ** 3, 3), dtype=np.float32)
-            grid_xyz += xyz_middle.min(axis=0, keepdims=True)
-            grid_size = (xyz_middle.max(axis=0, keepdims=True) - xyz_middle.min(axis=0, keepdims=True)) / 32
-            grid_xyz += grid_size / 2
-            grid_xyz = grid_xyz.reshape(32, 32, 32, 3)
-            for index in range(32):
-                grid_xyz[index, :, :, 0] = grid_xyz[index, :, :, 0] + index * grid_size[0, 0]
-                grid_xyz[:, index, :, 1] = grid_xyz[:, index, :, 1] + index * grid_size[0, 1]
-                grid_xyz[:, :, index, 2] = grid_xyz[:, :, index, 2] + index * grid_size[0, 2]
-            grid_xyz = grid_xyz.reshape(-1, 3)
+            if 'Centre' in cfg.model_mode.split('_'):
+                ### get instance center heatmap
+                grid_xyz = np.zeros((32 ** 3, 3), dtype=np.float32)
+                grid_xyz += xyz_middle.min(axis=0, keepdims=True)
+                grid_size = (xyz_middle.max(axis=0, keepdims=True) - xyz_middle.min(axis=0, keepdims=True)) / 32
+                grid_xyz += grid_size / 2
+                grid_xyz = grid_xyz.reshape(32, 32, 32, 3)
+                for index in range(32):
+                    grid_xyz[index, :, :, 0] = grid_xyz[index, :, :, 0] + index * grid_size[0, 0]
+                    grid_xyz[:, index, :, 1] = grid_xyz[:, index, :, 1] + index * grid_size[0, 1]
+                    grid_xyz[:, :, index, 2] = grid_xyz[:, :, index, 2] + index * grid_size[0, 2]
+                grid_xyz = grid_xyz.reshape(-1, 3)
 
             ### merge the scene to the batch
             batch_offsets.append(batch_offsets[-1] + xyz.shape[0])
@@ -693,7 +720,8 @@ class ScannetDatast:
             point_coords.append(torch.from_numpy(np.concatenate((xyz_middle, xyz_origin), axis=1)))  # (N, 6) (shifted_xyz, original_xyz)
             point_feats.append(torch.from_numpy(rgb) + torch.randn(3) * 0.1)  # (N, 3) (rgb)
 
-            grid_xyzs.append(torch.from_numpy(grid_xyz))
+            if 'Centre' in cfg.model_mode.split('_'):
+                grid_xyzs.append(torch.from_numpy(grid_xyz))
 
             if self.test_split == 'val':
                 point_semantic_labels.append(torch.from_numpy(label))  # (N)
@@ -712,8 +740,6 @@ class ScannetDatast:
         point_coords = torch.cat(point_coords, 0).to(torch.float32)  # (N, 6) (shifted_xyz, original_xyz)
         point_feats = torch.cat(point_feats, 0)  # (N, 3) (rgb)
 
-        grid_xyzs = torch.cat(grid_xyzs, 0)
-
         if cfg.pos_enc == 'XYZ':
             point_positional_encoding = torch.cat(
                 (
@@ -728,49 +754,37 @@ class ScannetDatast:
                     torch.zeros(point_coords.shape[0], 1), self.positional_encoding_func(point_feats, 2)
                 ), dim=1
             )
+
+        # variables for backbone
+        ret_dict['point_locs'] = point_locs  # (N, 4) (sample_index, xyz)
+        ret_dict['point_coords'] = point_coords  # (N, 6) (shifted_xyz, original_xyz)
+        ret_dict['point_feats'] = point_feats  # (N, 3) (rgb)
+        ret_dict['point_positional_encoding'] = point_positional_encoding
+
+        if 'Centre' in cfg.model_mode.split('_'):
+            grid_xyzs = torch.cat(grid_xyzs, 0)
+
+            ret_dict['grid_xyz'] = grid_xyzs
+
         if self.test_split == 'val':
             point_semantic_labels = torch.cat(point_semantic_labels, 0).long()  # (N)
             point_instance_infos = torch.cat(point_instance_infos, 0).to(torch.float32) # (N, 9) (cx, cy, cz, minx, miny, minz, maxx, maxy, maxz)
+
+            ret_dict['point_semantic_labels'] = point_semantic_labels  # (N)
+            ret_dict['point_instance_infos'] = point_instance_infos
 
         spatial_shape = np.clip((point_locs.max(0)[0][1:] + 1).numpy(), self.full_scale[0], None)  # long (3)
 
         ### voxelize
         voxel_locs, p2v_map, v2p_map = pointgroup_ops.voxelization_idx(point_locs, self.batch_size, self.mode)
 
-        #TODO: check size first; rewrite padding part later
-        if self.test_split == 'val':
-            return {
-                # variables for backbone
-                'point_locs': point_locs, # (N, 4) (sample_index, xyz)
-                'point_coords': point_coords, # (N, 6) (shifted_xyz, original_xyz)
-                'point_feats': point_feats, # (N, 3) (rgb)
-                'point_semantic_labels': point_semantic_labels,  # (N)
-                'point_instance_infos': point_instance_infos,
-                'point_positional_encoding': point_positional_encoding,
-                # variables for point-wise predictions
-                'voxel_locs': voxel_locs,  # (nVoxel, 4)
-                'p2v_map': p2v_map,  # (N)
-                'v2p_map': v2p_map,  # (nVoxel, 19?)
-                'grid_xyz': grid_xyzs,
-                # variables for other uses
-                'id': id,
-                'batch_offsets': batch_offsets,  # int (B+1)
-                'spatial_shape': spatial_shape,  # long (3)
-            }
+        # variables for point-wise predictions
+        ret_dict['voxel_locs'] = voxel_locs  # (nVoxel, 4)
+        ret_dict['p2v_map'] = p2v_map  # (N)
+        ret_dict['v2p_map'] = v2p_map  # (nVoxel, 19?)
+        # variables for other uses
+        ret_dict['id'] = id
+        ret_dict['batch_offsets'] = batch_offsets  # int (B+1)
+        ret_dict['spatial_shape'] = spatial_shape  # long (3)
 
-        return {
-            # variables for backbone
-            'point_locs': point_locs,  # (N, 4) (sample_index, xyz)
-            'point_coords': point_coords,  # (N, 6) (shifted_xyz, original_xyz)
-            'point_feats': point_feats,  # (N, 3) (rgb)
-            'point_positional_encoding': point_positional_encoding,
-            # variables for point-wise predictions
-            'voxel_locs': voxel_locs,  # (nVoxel, 4)
-            'p2v_map': p2v_map,  # (N)
-            'v2p_map': v2p_map,  # (nVoxel, 19?)
-            'grid_xyz': grid_xyzs,
-            # variables for other uses
-            'id': id,
-            'batch_offsets': batch_offsets,  # int (B+1)
-            'spatial_shape': spatial_shape,  # long (3)
-        }
+        return ret_dict
