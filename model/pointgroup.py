@@ -452,7 +452,14 @@ class PointGroup(nn.Module):
                 norm_fn(m),
                 nn.ReLU()
             )
-            self.proposal_confidence_linear = nn.Linear(m, 1)
+
+            self.proposal_point_semantic = nn.Linear(m, classes)
+            self.proposal_point_offset = nn.Sequential(
+                nn.Linear(m, m, bias=True),
+                norm_fn(m),
+                nn.ReLU(),
+                nn.Linear(m, 3, bias=True),
+            )
 
             module_map = {
                 'module.input_conv': self.input_conv,
@@ -460,7 +467,8 @@ class PointGroup(nn.Module):
                 'module.output_layer': self.output_layer,
                 'module.proposal_unet': self.proposal_unet,
                 'module.proposal_outputlayer': self.proposal_outputlayer,
-                'module.proposal_confidence_linear': self.proposal_confidence_linear,
+                'module.proposal_point_semantic': self.proposal_point_semantic,
+                'module.proposal_point_offset': self.proposal_point_offset,
             }
 
         elif self.model_mode == 'PointNet_point_prediction_test_PointGroup':
@@ -1461,8 +1469,6 @@ class PointGroup(nn.Module):
             #### point offset prediction
             point_offset_preds.append(self.point_offset(output_feats))  # (N, 3), float32
 
-            point_features = output_feats.clone()
-
             if (epoch > self.prepare_epochs):
                 #### get prooposal clusters
                 object_idxs = torch.nonzero(point_semantic_preds > 1).view(-1)
@@ -1507,33 +1513,27 @@ class PointGroup(nn.Module):
                 local_proposals_offset = torch.cat(local_proposals_offset, dim=0)
 
                 #### proposals voxelization again
-                # input_feats, inp_map = self.clusters_voxelization(
-                #     proposals_idx_shift, proposals_offset_shift, output_feats, coords,
-                #     self.score_fullscale, self.score_scale, self.mode
-                # )
                 input_feats, inp_map = self.clusters_voxelization(
                     local_proposals_idx, local_proposals_offset, output_feats, coords,
                     self.score_fullscale, self.score_scale, self.mode
                 )
 
                 #### cluster features
-                clusters = self.cluster_unet(input_feats)
-                clusters = self.cluster_outputlayer(clusters)
-                cluster_feature = clusters.features[inp_map.long()]  # (sumNPoint, C)
+                proposals = self.proposal_unet(input_feats)
+                proposals = self.proposal_outputlayer(proposals)
+                proposals_point_features = proposals.features[inp_map.long()]  # (sumNPoint, C)
 
-                clusters_pts_idxs = proposals_idx_shift[proposals_offset_shift[:-1].long()][:, 1].cuda()
-
-                clusters_batch_idxs = clusters_pts_idxs.clone()
-                for _batch_idx in range(len(batch_offsets_) - 1, 0, -1):
-                    clusters_batch_idxs[clusters_pts_idxs < batch_offsets_[_batch_idx]] = _batch_idx
+                refined_point_features = torch.zeros_like(output_feats).cuda()
+                refined_point_features[:np.minimum((local_proposals_idx[:, 1].max() + 1).item(), coords.shape[0]), :] = \
+                    scatter_mean(proposals_point_features, local_proposals_idx[:, 1].cuda(), dim=0)
 
                 ### refined point prediction
                 #### refined point semantic label prediction
-                point_semantic_scores.append(self.point_semantic(refined_point_features))  # (N, nClass), float
+                point_semantic_scores.append(self.proposal_point_semantic(output_feats + refined_point_features))  # (N, nClass), float
                 point_semantic_preds = point_semantic_scores[-1].max(1)[1]
 
                 #### point offset prediction
-                point_offset_preds.append(self.point_offset(refined_point_features))  # (N, 3), float32
+                point_offset_preds.append(self.proposal_point_offset(output_feats + refined_point_features))  # (N, 3), float32
 
             if (epoch == self.test_epoch):
                 self.cluster_sets = 'Q'
@@ -1545,6 +1545,8 @@ class PointGroup(nn.Module):
 
             ret['point_semantic_scores'] = point_semantic_scores
             ret['point_offset_preds'] = point_offset_preds
+
+            ret['output_feats'] = output_feats + refined_point_features
 
         elif self.model_mode == 'Yu_rc_v2_PointGroup':
             point_offset_preds = []
@@ -2043,7 +2045,7 @@ class PointGroup(nn.Module):
             ret['point_semantic_scores'] = point_semantic_scores
             ret['point_offset_preds'] = point_offset_preds
             ret['stuff_preds'] = stuff_preds
-            ret['stuff_output_feats'] = stuff_output_feats
+            ret['output_feats'] = stuff_output_feats
 
         elif self.model_mode == 'Yu_RC_ScoreNet_Conf_Transformer_PointGroup':
             point_offset_preds = []

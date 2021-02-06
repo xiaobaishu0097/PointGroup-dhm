@@ -271,9 +271,9 @@ def model_fn_decorator(test=False):
             stuff_preds = ret['stuff_preds']
             loss_inp['stuff_preds'] = (stuff_preds, labels)
 
-        if 'stuff_output_feats' in ret.keys():
-            stuff_output_feats = ret['stuff_output_feats']
-            loss_inp['stuff_output_feats'] = (stuff_output_feats, labels)
+        if 'output_feats' in ret.keys():
+            stuff_output_feats = ret['output_feats']
+            loss_inp['output_feats'] = (stuff_output_feats, labels)
 
         loss, loss_out, infos = loss_fn(loss_inp, epoch)
 
@@ -496,11 +496,11 @@ def model_fn_decorator(test=False):
             stuff_loss = stuff_criterion(stuff_prediction, stuff_labels)
             loss_out['stuff_loss'] = (stuff_loss, stuff_prediction.shape[0])
 
-        if 'stuff_output_feats' in loss_inp.keys():
-            stuff_output_feats, semantic_labels = loss_inp['stuff_output_feats']
+        if 'output_feats' in loss_inp.keys():
+            output_feats, semantic_labels = loss_inp['output_feats']
             stuff_indx = (semantic_labels < 2)
-            stuff_output_feats = stuff_output_feats[stuff_indx]
-            stuff_feats_norm = torch.norm(torch.mean(stuff_output_feats, dim=0), p=2, dim=0)
+            stuff_output_feats = output_feats[stuff_indx]
+            stuff_feats_norm_loss = torch.norm(torch.mean(stuff_output_feats, dim=0), p=2, dim=0)
 
         '''total loss'''
         loss = cfg.loss_weight[3] * semantic_loss + cfg.loss_weight[4] * offset_norm_loss + \
@@ -516,8 +516,8 @@ def model_fn_decorator(test=False):
             loss += confidence_loss
         if 'stuff_preds' in loss_inp.keys():
             loss += stuff_loss
-        if 'stuff_output_feats' in loss_inp.keys():
-            loss += cfg.loss_weight[8] * stuff_feats_norm
+        if 'output_feats' in loss_inp.keys():
+            loss += cfg.loss_weight[8] * stuff_feats_norm_loss
 
         return loss, loss_out, infos
 
