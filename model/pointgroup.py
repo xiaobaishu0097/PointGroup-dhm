@@ -1546,7 +1546,10 @@ class PointGroup(nn.Module):
             ret['point_semantic_scores'] = point_semantic_scores
             ret['point_offset_preds'] = point_offset_preds
 
-            ret['output_feats'] = output_feats + refined_point_features
+            if (epoch > self.prepare_epochs):
+                ret['output_feats'] = output_feats + refined_point_features
+            else:
+                ret['output_feats'] = output_feats
 
         elif self.model_mode == 'Yu_rc_v2_PointGroup':
             point_offset_preds = []
