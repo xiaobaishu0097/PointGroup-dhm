@@ -1,3 +1,5 @@
+import time
+
 import torch
 import torch.nn as nn
 from torch_scatter import scatter_mean
@@ -432,6 +434,35 @@ class PointGroup(nn.Module):
                 'module.point_feed_forward_norm': self.point_feed_forward_norm
             }
 
+        elif self.model_mode == 'Yu_local_proposal_PointGroup':
+            self.input_conv = spconv.SparseSequential(
+                spconv.SubMConv3d(input_c, m, kernel_size=3, padding=1, bias=False, indice_key='subm1')
+            )
+
+            self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
+                               indice_key_id=1)
+
+            self.output_layer = spconv.SparseSequential(
+                norm_fn(m),
+                nn.ReLU()
+            )
+
+            self.proposal_unet = UBlock([m, 2 * m], norm_fn, 2, block, indice_key_id=1)
+            self.proposal_outputlayer = spconv.SparseSequential(
+                norm_fn(m),
+                nn.ReLU()
+            )
+            self.proposal_confidence_linear = nn.Linear(m, 1)
+
+            module_map = {
+                'module.input_conv': self.input_conv,
+                'module.unet': self.unet,
+                'module.output_layer': self.output_layer,
+                'module.proposal_unet': self.proposal_unet,
+                'module.proposal_outputlayer': self.proposal_outputlayer,
+                'module.proposal_confidence_linear': self.proposal_confidence_linear,
+            }
+
         elif self.model_mode == 'PointNet_point_prediction_test_PointGroup':
             #### PointNet backbone encoder
             if self.backbone == 'pointnet':
@@ -446,22 +477,6 @@ class PointGroup(nn.Module):
                 )
             elif self.backbone == 'pointnet++_shi':
                 self.pointnet_encoder = backbone_pointnet2(output_dim=m)
-
-            module_map = {
-                'module.pointnet_encoder': self.pointnet_encoder
-            }
-
-        elif self.model_mode == 'PointNet_deeper_PointGroup':
-            #### PointNet backbone encoder
-            self.pointnet_encoder = backbone_pointnet2_deeper(output_dim=m)
-
-            module_map = {
-                'module.pointnet_encoder': self.pointnet_encoder
-            }
-
-        elif self.model_mode == 'PointNet_sample_PointGroup':
-            #### PointNet backbone encoder
-            self.pointnet_encoder = backbone_pointnet2(output_dim=m)
 
             module_map = {
                 'module.pointnet_encoder': self.pointnet_encoder
@@ -723,8 +738,7 @@ class PointGroup(nn.Module):
         assert clusters_coords.shape.numel() == ((clusters_coords >= 0) * (clusters_coords < fullscale)).sum()
 
         clusters_coords = clusters_coords.long()
-        clusters_coords = torch.cat([clusters_idx[:, 0].view(-1, 1).long(), clusters_coords.cpu()],
-                                    1)  # (sumNPoint, 1 + 3)
+        clusters_coords = torch.cat([clusters_idx[:, 0].view(-1, 1).long(), clusters_coords.cpu()], 1)  # (sumNPoint, 1 + 3)
 
         out_coords, inp_map, out_map = pointgroup_ops.voxelization_idx(clusters_coords, int(clusters_idx[-1, 0]) + 1,
                                                                        mode)
@@ -1421,6 +1435,117 @@ class PointGroup(nn.Module):
             ret['point_semantic_scores'] = point_semantic_scores
             ret['point_offset_preds'] = point_offset_preds
 
+        elif self.model_mode == 'Yu_local_proposal_PointGroup':
+            point_offset_preds = []
+            point_semantic_scores = []
+
+            voxel_feats = pointgroup_ops.voxelization(input['pt_feats'], input['v2p_map'],
+                                                      input['mode'])  # (M, C), float, cuda
+
+            input_ = spconv.SparseConvTensor(
+                voxel_feats, input['voxel_coords'],
+                input['spatial_shape'], input['batch_size']
+            )
+            output = self.input_conv(input_)
+            output = self.unet(output)
+            output = self.output_layer(output)
+            output_feats = output.features[input_map.long()]
+            output_feats = output_feats.squeeze(dim=0)
+
+            ### point prediction
+            #### point semantic label prediction
+            point_semantic_scores.append(self.point_semantic(output_feats))  # (N, nClass), float
+            # point_semantic_preds = semantic_scores
+            point_semantic_preds = point_semantic_scores[-1].max(1)[1]
+
+            #### point offset prediction
+            point_offset_preds.append(self.point_offset(output_feats))  # (N, 3), float32
+
+            point_features = output_feats.clone()
+
+            if (epoch > self.prepare_epochs):
+                #### get prooposal clusters
+                object_idxs = torch.nonzero(point_semantic_preds > 1).view(-1)
+
+                batch_idxs_ = batch_idxs[object_idxs]
+                batch_offsets_ = utils.get_batch_offsets(batch_idxs_, input['batch_size'])
+                coords_ = coords[object_idxs]
+                pt_offsets_ = point_offset_preds[-1][object_idxs]
+
+                semantic_preds_cpu = point_semantic_preds[object_idxs].int().cpu()
+
+                idx_shift, start_len_shift = pointgroup_ops.ballquery_batch_p(coords_ + pt_offsets_, batch_idxs_,
+                                                                              batch_offsets_, self.cluster_radius,
+                                                                              self.cluster_shift_meanActive)
+                proposals_idx_shift, proposals_offset_shift = pointgroup_ops.bfs_cluster(semantic_preds_cpu,
+                                                                                         idx_shift.cpu(),
+                                                                                         start_len_shift.cpu(),
+                                                                                         self.cluster_npoint_thre)
+                proposals_idx_shift[:, 1] = object_idxs[proposals_idx_shift[:, 1].long()].int()
+                # proposals_idx_shift: (sumNPoint, 2), int, dim 0 for cluster_id, dim 1 for corresponding point idxs in N
+                # proposals_offset_shift: (nProposal + 1), int
+
+                local_proposals_idx = []
+                local_proposals_offset = []
+                local_proposals_offset.append(torch.zeros(1).int())
+                for proposal_offset_index in range(1, len(proposals_offset_shift)):
+                    points_cluster_index = proposals_idx_shift[
+                                     proposals_offset_shift[proposal_offset_index - 1]:
+                                     proposals_offset_shift[proposal_offset_index], 1]
+                    proposal_centre_coord = coords[points_cluster_index.long(), :].mean(dim=0)
+                    local_proposal_size = torch.norm(
+                        coords[points_cluster_index.long(), :] - proposal_centre_coord, dim=1).max() * 1.10
+                    local_index = (torch.norm(coords - proposal_centre_coord, dim=1) < local_proposal_size).nonzero()
+                    local_index = torch.cat(
+                        (torch.LongTensor(local_index.shape[0], 1).fill_(proposal_offset_index - 1), local_index.cpu()),
+                        dim=1)
+
+                    local_proposals_idx.append(local_index)
+                    local_proposals_offset.append(local_proposals_offset[-1] + local_index.shape[0])
+
+                local_proposals_idx = torch.cat(local_proposals_idx, dim=0)
+                local_proposals_offset = torch.cat(local_proposals_offset, dim=0)
+
+                #### proposals voxelization again
+                # input_feats, inp_map = self.clusters_voxelization(
+                #     proposals_idx_shift, proposals_offset_shift, output_feats, coords,
+                #     self.score_fullscale, self.score_scale, self.mode
+                # )
+                input_feats, inp_map = self.clusters_voxelization(
+                    local_proposals_idx, local_proposals_offset, output_feats, coords,
+                    self.score_fullscale, self.score_scale, self.mode
+                )
+
+                #### cluster features
+                clusters = self.cluster_unet(input_feats)
+                clusters = self.cluster_outputlayer(clusters)
+                cluster_feature = clusters.features[inp_map.long()]  # (sumNPoint, C)
+
+                clusters_pts_idxs = proposals_idx_shift[proposals_offset_shift[:-1].long()][:, 1].cuda()
+
+                clusters_batch_idxs = clusters_pts_idxs.clone()
+                for _batch_idx in range(len(batch_offsets_) - 1, 0, -1):
+                    clusters_batch_idxs[clusters_pts_idxs < batch_offsets_[_batch_idx]] = _batch_idx
+
+                ### refined point prediction
+                #### refined point semantic label prediction
+                point_semantic_scores.append(self.point_semantic(refined_point_features))  # (N, nClass), float
+                point_semantic_preds = point_semantic_scores[-1].max(1)[1]
+
+                #### point offset prediction
+                point_offset_preds.append(self.point_offset(refined_point_features))  # (N, 3), float32
+
+            if (epoch == self.test_epoch):
+                self.cluster_sets = 'Q'
+                scores, proposals_idx, proposals_offset = self.pointgroup_cluster_algorithm(
+                    coords, point_offset_preds[-1], point_semantic_preds,
+                    batch_idxs, input['batch_size']
+                )
+                ret['proposal_scores'] = (scores, proposals_idx, proposals_offset)
+
+            ret['point_semantic_scores'] = point_semantic_scores
+            ret['point_offset_preds'] = point_offset_preds
+
         elif self.model_mode == 'Yu_rc_v2_PointGroup':
             point_offset_preds = []
             point_semantic_scores = []
@@ -1675,133 +1800,6 @@ class PointGroup(nn.Module):
             point_offset_preds.append(self.point_offset(point_feats))  # (N, 3), float32
 
             if (epoch == self.test_epoch):
-                scores, proposals_idx, proposals_offset = self.pointgroup_cluster_algorithm(
-                    coords, point_offset_preds[-1], point_semantic_preds, batch_idxs, input['batch_size']
-                )
-                ret['proposal_scores'] = (scores, proposals_idx, proposals_offset)
-
-            ret['point_semantic_scores'] = point_semantic_scores
-            ret['point_offset_preds'] = point_offset_preds
-
-        elif self.model_mode == 'PointNet_deeper_PointGroup':
-            point_offset_preds = []
-            point_semantic_scores = []
-
-            point_feats, _ = self.pointnet_backbone_forward(coords, ori_coords, rgb, batch_offsets)
-
-            ### point prediction
-            #### point semantic label prediction
-            point_semantic_scores.append(self.point_semantic(point_feats))  # (N, nClass), float
-            point_semantic_preds = point_semantic_scores[-1].max(1)[1]
-
-            #### point offset prediction
-            point_offset_preds.append(self.point_offset(point_feats))  # (N, 3), float32
-
-            if (epoch == self.test_epoch):
-                self.cluster_sets = 'Q'
-                scores, proposals_idx, proposals_offset = self.pointgroup_cluster_algorithm(
-                    coords, point_offset_preds[-1], point_semantic_preds, batch_idxs, input['batch_size']
-                )
-                ret['proposal_scores'] = (scores, proposals_idx, proposals_offset)
-
-            ret['point_semantic_scores'] = point_semantic_scores
-            ret['point_offset_preds'] = point_offset_preds
-
-        elif self.model_mode == 'PointNet_sample_PointGroup':
-            point_offset_preds = []
-            point_semantic_scores = []
-
-            point_feats = []
-
-            ### furthest point sample
-            for sample_indx in range(1, len(batch_offsets)):
-                point_coords = coords[batch_offsets[sample_indx - 1]:batch_offsets[sample_indx], :].clone()
-                point_rgb = rgb[batch_offsets[sample_indx - 1]:batch_offsets[sample_indx], :].clone()
-
-                num_point = point_coords.shape[0]
-
-                # point_coords = torch.cat(
-                #     (point_coords,
-                #      torch.arange(0, point_coords.shape[1], dtype=torch.float32).unsqueeze(dim=0).unsqueeze(dim=2).cuda()),
-                #     dim=2
-                # )
-
-                # batch_point_coords = []
-                # batch_point_rgb = []
-
-                # for _ in range(point_coords.shape[1] // self.pointnet_max_npoint):
-                #     sampled_index = torch.ones(point_coords.shape[1]).byte()
-                #     selected_index = pointnet2_utils.furthest_point_sample(
-                #         point_coords[:, :, :3].contiguous(), self.pointnet_max_npoint).squeeze(dim=0).long()
-                #     sampled_index[selected_index] = 0
-                #
-                #     batch_point_coords.append(point_coords[:, selected_index, :])
-                #     batch_point_rgb.append(point_rgb[:, selected_index, :])
-                #
-                #     point_coords = point_coords[:, sampled_index, :]
-                #     point_rgb = point_rgb[:, sampled_index, :]
-                #
-                # batch_point_coords = torch.cat(batch_point_coords, dim=0)
-                # batch_point_rgb = torch.cat(batch_point_rgb, dim=0)
-
-                batch_num = num_point // self.pointnet_max_npoint
-                shuffle_index = torch.randperm(num_point)
-                return_index = torch.sort(shuffle_index)[1]
-                point_coords = point_coords[shuffle_index, :]
-
-                if num_point % self.pointnet_max_npoint != 0:
-                    point_coords_last = point_coords[batch_num * self.pointnet_max_npoint:, :].unsqueeze(dim=0)
-                    point_rgb_last = point_rgb[batch_num * self.pointnet_max_npoint:, :].unsqueeze(dim=0)
-
-                point_coords = point_coords[:batch_num * self.pointnet_max_npoint, :]
-                point_rgb = point_rgb[:batch_num * self.pointnet_max_npoint, :]
-
-                point_coords = point_coords.reshape(batch_num, self.pointnet_max_npoint, 3)
-                point_rgb = point_rgb.reshape(batch_num, self.pointnet_max_npoint, 3)
-
-                # batch_point_coords_order = batch_point_coords[:, :, 3].unsqueeze(dim=2)
-                # batch_point_coords = batch_point_coords[:, :, :3]
-
-                point_feat, _ = self.pointnet_encoder(
-                    point_coords, torch.cat((point_rgb, point_coords), dim=2).transpose(1, 2).contiguous()
-                )
-
-                # point_feat = torch.cat((point_feat, batch_point_coords_order), dim=2)
-
-                point_feat = point_feat.reshape(-1, self.m)
-
-                # point_coords_order = point_coords[:, :, 3].unsqueeze(dim=2)
-                # point_coords = point_coords[:, :, :3]
-
-                if num_point % self.pointnet_max_npoint != 0:
-                    point_feat_last, _ = self.pointnet_encoder(
-                        point_coords_last, torch.cat((point_rgb_last, point_coords_last), dim=2).transpose(1, 2).contiguous()
-                    )
-
-                    # point_feat_last = torch.cat((point_feat_last, point_coords_order), dim=2)
-
-                    point_feat = torch.cat((point_feat, point_feat_last.squeeze(dim=0)), dim=0)
-
-                point_feat = point_feat[return_index, :]
-                # _, indices = torch.sort(point_feat[:, -1])
-                # point_feat = point_feat[indices, :]
-                # point_feat = point_feat[:, :-1]
-
-                point_feats.append(point_feat.contiguous())
-
-            point_feats = torch.cat(point_feats)
-            assert point_feats.shape[0] == coords.shape[0], 'we lose some points'
-
-            ### point prediction
-            #### point semantic label prediction
-            point_semantic_scores.append(self.point_semantic(point_feats))  # (N, nClass), float
-            point_semantic_preds = point_semantic_scores[-1].max(1)[1]
-
-            #### point offset prediction
-            point_offset_preds.append(self.point_offset(point_feats))  # (N, 3), float32
-
-            if (epoch == self.test_epoch):
-                self.cluster_sets = 'Q'
                 scores, proposals_idx, proposals_offset = self.pointgroup_cluster_algorithm(
                     coords, point_offset_preds[-1], point_semantic_preds, batch_idxs, input['batch_size']
                 )
