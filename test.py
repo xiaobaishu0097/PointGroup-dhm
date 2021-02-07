@@ -319,8 +319,8 @@ def test(model, model_fn, data_name, epoch):
                 pt_offsets = pt_offsets.cpu().numpy()
                 semantic_pred = semantic_pred.cpu().numpy()
                 np.save(os.path.join(result_dir, 'grid_center_preds', test_scene_name + '.npy'), grid_center_preds)
-                np.save(os.path.join(result_dir, 'pt_offsets', test_scene_name + '.npy'), pt_offsets)
-                np.save(os.path.join(result_dir, 'semantic_pred', test_scene_name + '.npy'), semantic_pred)
+                np.save(os.path.join(result_dir, 'pt_offsets', test_scene_name + '.npy'), pt_offsets[-1])
+                np.save(os.path.join(result_dir, 'semantic_pred', test_scene_name + '.npy'), semantic_pred[-1])
 
             if(epoch > cfg.prepare_epochs and cfg.save_instance):
                 f = open(os.path.join(result_dir, test_scene_name + '.txt'), 'w')
