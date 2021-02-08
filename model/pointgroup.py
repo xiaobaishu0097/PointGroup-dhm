@@ -64,6 +64,7 @@ class PointGroup(nn.Module):
         self.pointnet_max_npoint = 8196
 
         self.full_scale = cfg.full_scale
+        self.batch_size = cfg.batch_size
 
         norm_fn = functools.partial(nn.BatchNorm1d, eps=1e-4, momentum=0.1)
 
