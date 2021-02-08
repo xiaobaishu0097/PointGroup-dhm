@@ -500,6 +500,11 @@ def generate_adaptive_heatmap(
     if instance_label is not None:
         grid_instance_label = instance_label[instance_label_indexs]
 
+        invalid_index = (heatmap == 0)
+        grid_instance_label[invalid_index] = 20
+        grid_instance_label[grid_instance_label == 0] = 20
+        grid_instance_label[grid_instance_label == 1] = 20
+
         invalid_grid_index = grid_instance_label == 20
         heatmap[invalid_grid_index] = 0
 

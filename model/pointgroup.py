@@ -646,6 +646,56 @@ class PointGroup(nn.Module):
                 'module.output_layer': self.output_layer,
             }
 
+        elif self.model_mode == 'Centre_sample_cluster':
+            if self.backbone == 'pointnet':
+                #### PointNet backbone encoder
+                self.pointnet_encoder = pointnet.LocalPoolPointnet(
+                    c_dim=m, dim=6, hidden_dim=m, scatter_type=cfg.scatter_type, grid_resolution=32,
+                    plane_type='grid', padding=0.1, n_blocks=5
+                )
+
+            elif self.backbone == 'pointnet++_yanx':
+                self.pointnet_encoder = pointnetpp.PointNetPlusPlus(
+                    c_dim=self.m, include_rgb=self.pointnet_include_rgb
+                )
+
+            elif self.backbone == 'pointnet++_shi':
+                self.pointnet_encoder = backbone_pointnet2(output_dim=m)
+
+            self.unet3d = UNet3D(
+                num_levels=cfg.unet3d_num_levels, f_maps=m, in_channels=m, out_channels=m
+            )
+
+            self.decoder = decoder.LocalDecoder(
+                dim=3,
+                c_dim=32,
+                hidden_size=32,
+            )
+
+            ### point prediction branch
+            ### sparse 3D U-Net
+            self.input_conv = spconv.SparseSequential(
+                spconv.SubMConv3d(input_c, m, kernel_size=3, padding=1, bias=False, indice_key='subm1')
+            )
+
+            self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
+                               indice_key_id=1)
+
+            self.output_layer = spconv.SparseSequential(
+                norm_fn(m),
+                nn.ReLU()
+            )
+
+            ### centre prediction branch
+            ### convolutional occupancy networks decoder
+            self.centre_decoder = decoder.LocalDecoder(
+                dim=3,
+                c_dim=32,
+                hidden_size=32,
+            )
+
+            module_map = {}
+
         ### point prediction
         self.point_offset = nn.Sequential(
             nn.Linear(m, m, bias=True),
@@ -2175,5 +2225,77 @@ class PointGroup(nn.Module):
 
             ret['point_semantic_scores'] = point_semantic_scores
             ret['point_offset_preds'] = point_offset_preds
+
+        elif self.model_mode == 'Centre_sample_cluster':
+            semantic_scores = []
+            point_offset_preds = []
+
+            ### lower branch --> grid-wise predictions
+            point_feats = []
+            grid_feats = []
+
+            queries_feats = []
+
+            for sample_indx in range(1, len(batch_offsets)):
+                coords_input = coords[batch_offsets[sample_indx - 1]:batch_offsets[sample_indx], :].unsqueeze(dim=0)
+                rgb_input = rgb[batch_offsets[sample_indx - 1]:batch_offsets[sample_indx], :].unsqueeze(dim=0)
+
+                point_feat, _ = self.pointnet_encoder(
+                    coords_input, torch.cat((rgb_input, coords_input), dim=2).transpose(1, 2).contiguous()
+                )
+                grid_feats.append(self.generate_grid_features(coords_input, point_feat))
+
+                decoder_input = {'grid': grid_feats[-1]}
+                centre_queries_coords_input = input['centre_queries_coords'][
+                                              input['centre_queries_batch_offsets'][sample_indx - 1]:
+                                              input['centre_queries_batch_offsets'][sample_indx], :].unsqueeze(dim=0)
+                queries_feats.append(self.decoder(centre_queries_coords_input, decoder_input).squeeze(dim=0))
+
+            grid_feats = torch.cat(grid_feats, dim=0).contiguous()
+            queries_feats = torch.cat(queries_feats, dim=0).contiguous()
+
+            ### upper branch --> point-wise predictions
+            voxel_feats = pointgroup_ops.voxelization(
+                input['pt_feats'], input['v2p_map'], input['mode'])  # (M, C), float, cuda
+
+            input_ = spconv.SparseConvTensor(
+                voxel_feats, input['voxel_coords'],
+                input['spatial_shape'], input['batch_size']
+            )
+            output = self.input_conv(input_)
+            output = self.unet(output)
+            output = self.output_layer(output)
+            output_feats = output.features[input_map.long()]
+            output_feats = output_feats.squeeze(dim=0)
+
+            ### point prediction
+            #### point semantic label prediction
+            semantic_scores.append(self.point_semantic(output_feats))  # (N, nClass), float
+
+            #### point offset prediction
+            point_offset_preds.append(self.point_offset(output_feats))  # (N, 3), float32
+
+            ### centre prediction
+            bs, c_dim, grid_size = grid_feats.shape[0], grid_feats.shape[1], grid_feats.shape[2]
+            grid_feats = grid_feats.reshape(bs, c_dim, -1).permute(0, 2, 1)
+
+            centre_preds = self.centre_pred(grid_feats)
+            centre_semantic_preds = self.centre_semantic(grid_feats)
+            centre_offset_preds = self.centre_offset(grid_feats)
+
+            queries_preds = self.centre_pred(queries_feats)
+            queries_semantic_preds = self.centre_semantic(queries_feats)
+            queries_offset_preds = self.centre_offset(queries_feats)
+
+            ret['point_semantic_scores'] = semantic_scores
+            ret['point_offset_preds'] = point_offset_preds
+
+            ret['centre_preds'] = centre_preds
+            ret['centre_semantic_preds'] = centre_semantic_preds
+            ret['centre_offset_preds'] = centre_offset_preds
+
+            ret['queries_preds'] = queries_preds
+            ret['queries_semantic_preds'] = queries_semantic_preds
+            ret['queries_offset_preds'] = queries_offset_preds
 
         return ret
