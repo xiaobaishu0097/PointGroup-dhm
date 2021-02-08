@@ -26,7 +26,7 @@ def model_fn_decorator(test=False):
     centre_criterion = WeightedFocalLoss(alpha=cfg.focal_loss_alpha, gamma=cfg.focal_loss_gamma).cuda()
     centre_semantic_criterion = nn.CrossEntropyLoss(ignore_index=cfg.ignore_label).cuda()
     centre_offset_criterion = nn.L1Loss().cuda()
-    centre_query_criterion = nn.BCELoss().cuda()
+    centre_query_criterion = nn.BCEWithLogitsLoss().cuda()
     score_criterion = nn.BCELoss(reduction='none').cuda()
     confidence_criterion = nn.BCELoss(reduction='none').cuda()
 
