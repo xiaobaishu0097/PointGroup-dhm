@@ -316,10 +316,10 @@ def test(model, model_fn, data_name, epoch):
                 os.makedirs(os.path.join(result_dir, 'pt_offsets'), exist_ok=True)
                 os.makedirs(os.path.join(result_dir, 'semantic_pred'), exist_ok=True)
                 grid_center_preds = grid_center_preds.cpu().numpy()
-                pt_offsets = pt_offsets.cpu().numpy()
+                pt_offsets = pt_offsets[-1].cpu().numpy()
                 semantic_pred = semantic_pred.cpu().numpy()
                 np.save(os.path.join(result_dir, 'grid_center_preds', test_scene_name + '.npy'), grid_center_preds)
-                np.save(os.path.join(result_dir, 'pt_offsets', test_scene_name + '.npy'), pt_offsets[-1])
+                np.save(os.path.join(result_dir, 'pt_offsets', test_scene_name + '.npy'), pt_offsets)
                 np.save(os.path.join(result_dir, 'semantic_pred', test_scene_name + '.npy'), semantic_pred[-1])
 
             if(epoch > cfg.prepare_epochs and cfg.save_instance):
