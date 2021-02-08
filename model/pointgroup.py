@@ -2054,9 +2054,12 @@ class PointGroup(nn.Module):
                 nonstuff_spatial_shape = input['nonstuff_spatial_shape']
                 nonstuff_input_map = input['nonstuff_p2v_map']
             else:
-                nonstuff_voxel_locs, _, nonstuff_v2p_map = pointgroup_ops.voxelization_idx(
-                    input['point_locs'][stuff_preds.max(1)[1] == 1], self.batch_size, self.mode
+                nonstuff_voxel_locs, nonstuff_p2v_map, nonstuff_v2p_map = pointgroup_ops.voxelization_idx(
+                    input['point_locs'][stuff_preds.max(1)[1] == 1].cpu().clone(), self.batch_size, self.mode
                 )
+
+                nonstuff_voxel_locs = nonstuff_voxel_locs.int().cuda()
+                nonstuff_v2p_map = nonstuff_v2p_map.cuda()
 
                 nonstuff_voxel_feats = pointgroup_ops.voxelization(
                     input['pt_feats'][stuff_preds.max(1)[1] == 1], nonstuff_v2p_map,
@@ -2064,10 +2067,10 @@ class PointGroup(nn.Module):
                 )  # (M, C), float, cuda
 
                 nonstuff_spatial_shape = np.clip(
-                    (input['point_locs'][stuff_preds.max(1)[1] == 1].max(0)[0][1:] + 1).numpy(),
+                    (input['point_locs'][stuff_preds.max(1)[1] == 1].max(0)[0][1:] + 1).cpu().numpy(),
                     self.full_scale[0], None
                 )  # long (3)
-                nonstuff_input_map = input_map[stuff_preds.max(1)[1] == 1]
+                nonstuff_input_map = nonstuff_p2v_map.cuda()
 
             input_ = spconv.SparseConvTensor(
                 nonstuff_voxel_feats, nonstuff_voxel_locs, nonstuff_spatial_shape, input['batch_size']
@@ -2083,15 +2086,20 @@ class PointGroup(nn.Module):
             #### point semantic label prediction
             point_semantic_scores.append(self.point_semantic(output_feats))  # (N, nClass), float
             # point_semantic_preds = semantic_scores
-            point_semantic_preds = point_semantic_scores[-1].max(1)[1] + 2
+            nonstuff_point_semantic_preds = point_semantic_scores[-1].max(1)[1] + 2
+            point_semantic_pred_full = torch.zeros(coords.shape[0], dtype=torch.long).cuda()
+            point_semantic_pred_full[(stuff_preds.max(1)[1] == 1).nonzero().squeeze(dim=1).long()] = nonstuff_point_semantic_preds
 
             #### point offset prediction
-            point_offset_preds.append(self.point_offset(output_feats))  # (N, 3), float32
+            nonstuff_point_offset_pred = self.point_offset(output_feats)
+            point_offset_pred = torch.zeros((coords.shape[0], 3), dtype=torch.float).cuda()
+            point_offset_pred[(stuff_preds.max(1)[1] == 1).nonzero().squeeze(dim=1).long()] = nonstuff_point_offset_pred
+            point_offset_preds.append(nonstuff_point_offset_pred)  # (N, 3), float32
 
             if (epoch == self.test_epoch):
                 self.cluster_sets = 'Q'
                 scores, proposals_idx, proposals_offset = self.pointgroup_cluster_algorithm(
-                    coords, point_offset_preds[-1], point_semantic_preds,
+                    coords, point_offset_pred, point_semantic_pred_full,
                     batch_idxs, input['batch_size'], stuff_preds=stuff_preds.max(1)[1]
                 )
                 ret['proposal_scores'] = (scores, proposals_idx, proposals_offset)
@@ -2100,6 +2108,7 @@ class PointGroup(nn.Module):
             ret['point_offset_preds'] = point_offset_preds
             ret['stuff_preds'] = stuff_preds
             ret['output_feats'] = stuff_output_feats
+            ret['point_semantic_pred_full'] = point_semantic_pred_full
 
         elif self.model_mode == 'Yu_RC_ScoreNet_Conf_Transformer_PointGroup':
             point_offset_preds = []

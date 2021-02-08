@@ -142,11 +142,14 @@ def model_fn_decorator(test=False):
                 preds['proposals'] = (proposals_idx, proposals_offset)
             if 'stuff_preds' in ret.keys():
                 preds['stuff_preds'] = ret['stuff_preds']
+            if 'point_semantic_pred_full' in ret.keys():
+                preds['point_semantic_pred_full'] = ret['point_semantic_pred_full']
 
             preds['pt_semantic_labels'] = point_semantic_labels
             preds['pt_offset_labels'] = point_offset_labels
 
-            preds['pt_shifted_coords'] = point_offset_preds[-1] + coords_float
+            if point_offset_preds[-1].shape[0] == coords_float.shape[0]:
+                preds['pt_shifted_coords'] = point_offset_preds[-1] + coords_float
 
         return preds
 

@@ -193,8 +193,11 @@ def test(model, model_fn, data_name, epoch):
 
             elif cfg.model_mode.endswith('_PointGroup'):
                 ##### get predictions (#1 semantic_pred, pt_offsets; #2 scores, proposals_pred)
-                semantic_scores = preds['semantic']  # (N, nClass=20) float32, cuda
-                semantic_pred = semantic_scores[-1].max(1)[1]  # (N) long, cuda
+                if preds['semantic'][-1].shape[0] == N:
+                    semantic_scores = preds['semantic']  # (N, nClass=20) float32, cuda
+                    semantic_pred = semantic_scores[-1].max(1)[1]  # (N) long, cuda
+                else:
+                    semantic_pred = preds['point_semantic_pred_full']
                 # semantic_pred = semantic_scores.max(1)[1]  # (N) long, cuda
 
                 pt_offsets = preds['pt_offsets']  # (N, 3), float32, cuda
@@ -206,7 +209,7 @@ def test(model, model_fn, data_name, epoch):
                 # stuff_labels = torch.zeros(stuff_preds.shape[0]).long().cuda()
                 # stuff_labels[pt_semantic_labels > 1] = 1
                 # pt_valid_indx = (stuff_labels == 1)
-                pt_valid_indx = (pt_semantic_labels > 1)
+                pt_valid_indx = (pt_semantic_labels == 0)
 
                 if 'pt_semantic_eval' not in point_evaluations:
                     point_evaluations['pt_semantic_eval'] = {
@@ -214,10 +217,10 @@ def test(model, model_fn, data_name, epoch):
                         'False': 0,
                     }
                 point_evaluations['pt_semantic_eval']['True'] += (
-                    semantic_pred[pt_valid_indx] == pt_semantic_labels[pt_valid_indx]
+                        semantic_pred[pt_valid_indx] == pt_semantic_labels[pt_valid_indx]
                 ).sum()
                 point_evaluations['pt_semantic_eval']['False'] += (
-                    semantic_pred[pt_valid_indx] != pt_semantic_labels[pt_valid_indx]
+                        semantic_pred[pt_valid_indx] != pt_semantic_labels[pt_valid_indx]
                 ).sum()
                 # point_evaluations['pt_semantic_eval']['True'] += (
                 #     stuff_preds[pt_valid_indx] == stuff_labels[pt_valid_indx]
@@ -226,13 +229,15 @@ def test(model, model_fn, data_name, epoch):
                 #     stuff_preds[pt_valid_indx] != stuff_labels[pt_valid_indx]
                 # ).sum()
 
-                if 'pt_offset_eval' not in point_evaluations:
-                    point_evaluations['pt_offset_eval'] = []
-                point_evaluations['pt_offset_eval'].append(
-                    (
-                        torch.abs(pt_offsets[-1][pt_valid_indx] - pt_offset_labels[pt_valid_indx]).sum() / pt_valid_indx.sum()
-                    ).cpu().numpy()
-                )
+                if preds['semantic'][-1].shape[0] == N:
+
+                    if 'pt_offset_eval' not in point_evaluations:
+                        point_evaluations['pt_offset_eval'] = []
+                    point_evaluations['pt_offset_eval'].append(
+                        (
+                            torch.abs(pt_offsets[-1][pt_valid_indx] - pt_offset_labels[pt_valid_indx]).sum() / pt_valid_indx.sum()
+                        ).cpu().numpy()
+                    )
 
                 if (epoch == cfg.test_epoch):
                     scores = preds['score']  # (nProposal, 1) float, cuda
@@ -351,13 +356,19 @@ def test(model, model_fn, data_name, epoch):
 
         logger.info(
             'point-wise prediction evaluation results: \n'
-            'semantic prediction accuracy: {:.6f} offset prediction distance: {:6f}'.format(
+            'semantic prediction accuracy: {:.6f}'.format(
                 point_evaluations['pt_semantic_eval']['True'].cpu().numpy() / (
-                    point_evaluations['pt_semantic_eval']['True'] + point_evaluations['pt_semantic_eval']['False']
+                        point_evaluations['pt_semantic_eval']['True'] + point_evaluations['pt_semantic_eval']['False']
                 ).cpu().numpy(),
-                np.mean(point_evaluations['pt_offset_eval'])
             )
         )
+
+        if preds['semantic'][-1].shape[0] == N:
+            logger.info(
+                'offset prediction distance: {:6f}'.format(
+                    np.mean(point_evaluations['pt_offset_eval'])
+                )
+            )
 
 
 def non_max_suppression(ious, scores, threshold):
