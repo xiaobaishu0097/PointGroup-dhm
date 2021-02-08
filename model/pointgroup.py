@@ -2106,7 +2106,7 @@ class PointGroup(nn.Module):
                     coords, point_offset_pred, point_semantic_pred_full,
                     batch_idxs, input['batch_size'], stuff_preds=stuff_preds.max(1)[1]
                 )
-                
+
                 ret['proposal_scores'] = (scores, proposals_idx, proposals_offset)
                 ret['point_semantic_pred_full'] = point_semantic_pred_full
 
