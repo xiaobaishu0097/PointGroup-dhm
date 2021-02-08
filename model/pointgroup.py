@@ -2086,29 +2086,34 @@ class PointGroup(nn.Module):
             #### point semantic label prediction
             point_semantic_scores.append(self.point_semantic(output_feats))  # (N, nClass), float
             # point_semantic_preds = semantic_scores
-            nonstuff_point_semantic_preds = point_semantic_scores[-1].max(1)[1] + 2
-            point_semantic_pred_full = torch.zeros(coords.shape[0], dtype=torch.long).cuda()
-            point_semantic_pred_full[(stuff_preds.max(1)[1] == 1).nonzero().squeeze(dim=1).long()] = nonstuff_point_semantic_preds
 
             #### point offset prediction
             nonstuff_point_offset_pred = self.point_offset(output_feats)
-            point_offset_pred = torch.zeros((coords.shape[0], 3), dtype=torch.float).cuda()
-            point_offset_pred[(stuff_preds.max(1)[1] == 1).nonzero().squeeze(dim=1).long()] = nonstuff_point_offset_pred
             point_offset_preds.append(nonstuff_point_offset_pred)  # (N, 3), float32
 
             if (epoch == self.test_epoch):
                 self.cluster_sets = 'Q'
+
+                nonstuff_point_semantic_preds = point_semantic_scores[-1].max(1)[1] + 2
+                point_semantic_pred_full = torch.zeros(coords.shape[0], dtype=torch.long).cuda()
+                point_semantic_pred_full[
+                    (stuff_preds.max(1)[1] == 1).nonzero().squeeze(dim=1).long()] = nonstuff_point_semantic_preds
+
+                point_offset_pred = torch.zeros((coords.shape[0], 3), dtype=torch.float).cuda()
+                point_offset_pred[(stuff_preds.max(1)[1] == 1).nonzero().squeeze(dim=1).long()] = nonstuff_point_offset_pred
+
                 scores, proposals_idx, proposals_offset = self.pointgroup_cluster_algorithm(
                     coords, point_offset_pred, point_semantic_pred_full,
                     batch_idxs, input['batch_size'], stuff_preds=stuff_preds.max(1)[1]
                 )
+                
                 ret['proposal_scores'] = (scores, proposals_idx, proposals_offset)
+                ret['point_semantic_pred_full'] = point_semantic_pred_full
 
             ret['point_semantic_scores'] = point_semantic_scores
             ret['point_offset_preds'] = point_offset_preds
             ret['stuff_preds'] = stuff_preds
             ret['output_feats'] = stuff_output_feats
-            ret['point_semantic_pred_full'] = point_semantic_pred_full
 
         elif self.model_mode == 'Yu_RC_ScoreNet_Conf_Transformer_PointGroup':
             point_offset_preds = []

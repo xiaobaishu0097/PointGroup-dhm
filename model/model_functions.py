@@ -24,6 +24,7 @@ def model_fn_decorator(test=False):
         offset_norm_criterion = nn.SmoothL1Loss().cuda()
         offset_norm_triplet_criterion = nn.TripletMarginLoss(margin=cfg.triplet_margin, p=cfg.triplet_p).cuda()
     centre_criterion = WeightedFocalLoss(alpha=cfg.focal_loss_alpha, gamma=cfg.focal_loss_gamma).cuda()
+    centre_balance_criterion = nn.CrossEntropyLoss(ignore_index=cfg.ignore_label).cuda()
     centre_semantic_criterion = nn.CrossEntropyLoss(ignore_index=cfg.ignore_label).cuda()
     centre_offset_criterion = nn.L1Loss().cuda()
     centre_query_criterion = nn.BCEWithLogitsLoss().cuda()
@@ -340,7 +341,7 @@ def model_fn_decorator(test=False):
             if (cfg.model_mode == 'Yu_stuff_sep_PointGroup') or (cfg.model_mode == 'Yu_stuff_remove_PointGroup'):
                 nonstuff_indx = (semantic_labels > 1)
                 nonstuff_semantic_labels = semantic_labels[nonstuff_indx] - 2
-                semantic_loss += semantic_criterion(semantic_score[nonstuff_indx], nonstuff_semantic_labels)
+                semantic_loss += centre_balance_criterion(semantic_score[nonstuff_indx], nonstuff_semantic_labels)
             else:
                 semantic_loss += semantic_criterion(semantic_score, semantic_labels)
 
