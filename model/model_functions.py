@@ -519,6 +519,7 @@ def model_fn_decorator(test=False):
             stuff_labels = torch.zeros(stuff_prediction.shape[0]).long().cuda()
             stuff_labels[semantic_labels > 1] = 1
             stuff_loss = stuff_criterion(stuff_prediction, stuff_labels)
+            stuff_loss = (cfg.focal_loss_alpha * (1 - torch.exp(-stuff_loss)) ** cfg.focal_loss_gamma * stuff_loss).mean()  # mean over the batch
             loss_out['stuff_loss'] = (stuff_loss, stuff_prediction.shape[0])
 
         if 'output_feats' in loss_inp.keys():
