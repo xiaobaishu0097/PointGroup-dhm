@@ -2455,14 +2455,17 @@ class PointGroup(nn.Module):
                 self.cluster_sets = 'Q'
 
                 nonstuff_point_semantic_preds = point_semantic_scores[-1].max(1)[1]
+
+                stuff_valid = torch.zeros(coords.shape[0], dtype=torch.long).cuda()
+                stuff_valid[(stuff_preds.max(1)[1] == 1).nonzero().squeeze(dim=1).long()] = 1
+                # stuff_valid[(stuff_preds.max(1)[0] > 0.5).nonzero().squeeze(dim=1).long()] = 0
+                # stuff_valid[(nonstuff_point_semantic_preds.max(1)[1] > 1).nonzero().squeeze(dim=1).long()] = 1
+
                 point_semantic_pred_full = torch.zeros(coords.shape[0], dtype=torch.long).cuda()
-                point_semantic_pred_full[
-                    (stuff_preds.max(1)[1] == 1).nonzero().squeeze(dim=1).long()] = nonstuff_point_semantic_preds[
-                    (stuff_preds.max(1)[1] == 1).nonzero().squeeze(dim=1).long()]
+                point_semantic_pred_full[stuff_valid] = nonstuff_point_semantic_preds[stuff_valid]
 
                 point_offset_pred = torch.zeros((coords.shape[0], 3), dtype=torch.float).cuda()
-                point_offset_pred[(stuff_preds.max(1)[1] == 1).nonzero().squeeze(dim=1).long()] = nonstuff_point_offset_pred[
-                    (stuff_preds.max(1)[1] == 1).nonzero().squeeze(dim=1).long()]
+                point_offset_pred[stuff_valid] = nonstuff_point_offset_pred[stuff_valid]
 
                 scores, proposals_idx, proposals_offset = self.pointgroup_cluster_algorithm(
                     coords, point_offset_pred, point_semantic_pred_full,
