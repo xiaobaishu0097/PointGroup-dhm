@@ -1385,6 +1385,7 @@ class PointGroup(nn.Module):
 
             ret['point_semantic_scores'] = semantic_scores
             ret['point_offset_preds'] = point_offset_preds
+            ret['output_feats'] = output_feats
 
         elif self.model_mode == 'Li_simple_backbone_PointGroup':
             point_offset_preds = []
@@ -2087,7 +2088,7 @@ class PointGroup(nn.Module):
 
             ret['point_semantic_scores'] = point_semantic_scores
             ret['point_offset_preds'] = point_offset_preds
-            ret['stuff_preds'] = stuff_preds
+            ret['output_feats'] = stuff_preds
 
         elif self.model_mode == 'Yu_stuff_remove_PointGroup':
             point_offset_preds = []
