@@ -117,7 +117,7 @@ def test(model, model_fn, data_name, epoch):
 
                 # semantic_pred = semantic_scores  # (N) long, cuda
                 # valid_index = (semantic_pred != 20)
-                valid_index = (semantic_pred > 1)
+                valid_index = (semantic_pred == 0)
 
                 # semantic_pred = semantic_scores
                 # semantic_pred[semantic_pred == -100] = 20

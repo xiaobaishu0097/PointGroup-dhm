@@ -90,12 +90,12 @@ def checkpoint_save(model, exp_path, exp_name, epoch, save_freq=16, use_cuda=Tru
     if use_cuda:
         model.cuda()
 
-    #remove previous checkpoints unless they are a power of 2 or a multiple of 16 to save disk space
-    epoch = epoch - 1
-    f = os.path.join(exp_path, exp_name + '-%09d'%epoch + '.pth')
-    if os.path.isfile(f):
-        if not is_multiple(epoch, save_freq) and not is_power2(epoch):
-            os.remove(f)
+    # #remove previous checkpoints unless they are a power of 2 or a multiple of 16 to save disk space
+    # epoch = epoch - 1
+    # f = os.path.join(exp_path, exp_name + '-%09d'%epoch + '.pth')
+    # if os.path.isfile(f):
+    #     if not is_multiple(epoch, save_freq) and not is_power2(epoch):
+    #         os.remove(f)
 
 
 def load_model_param(model, pretrained_dict, prefix=""):
