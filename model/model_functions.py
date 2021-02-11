@@ -80,6 +80,7 @@ def model_fn_decorator(test=False):
             'point_offset_preds': point_offset_labels,
             'point_semantic_scores': point_semantic_scores,
             'point_locs': coords,
+            'test': True,
         }
 
         model.eval()
@@ -194,6 +195,7 @@ def model_fn_decorator(test=False):
             'spatial_shape': spatial_shape,
             'batch_size': cfg.batch_size,
             'point_locs': coords,
+            'test': False,
         }
 
         if 'Centre' in cfg.model_mode.split('_'):

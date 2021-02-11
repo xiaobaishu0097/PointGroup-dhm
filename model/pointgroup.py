@@ -2327,14 +2327,16 @@ class PointGroup(nn.Module):
                 )
                 grid_feats.append(self.generate_grid_features(coords_input, point_feat))
 
-                decoder_input = {'grid': grid_feats[-1]}
-                centre_queries_coords_input = input['centre_queries_coords'][
-                                              input['centre_queries_batch_offsets'][sample_indx - 1]:
-                                              input['centre_queries_batch_offsets'][sample_indx], :].unsqueeze(dim=0)
-                queries_feats.append(self.decoder(centre_queries_coords_input, decoder_input).squeeze(dim=0))
+                if not input['test']:
+                    decoder_input = {'grid': grid_feats[-1]}
+                    centre_queries_coords_input = input['centre_queries_coords'][
+                                                  input['centre_queries_batch_offsets'][sample_indx - 1]:
+                                                  input['centre_queries_batch_offsets'][sample_indx], :].unsqueeze(dim=0)
+                    queries_feats.append(self.decoder(centre_queries_coords_input, decoder_input).squeeze(dim=0))
 
             grid_feats = torch.cat(grid_feats, dim=0).contiguous()
-            queries_feats = torch.cat(queries_feats, dim=0).contiguous()
+            if not input['test']:
+                queries_feats = torch.cat(queries_feats, dim=0).contiguous()
 
             ### upper branch --> point-wise predictions
             voxel_feats = pointgroup_ops.voxelization(
@@ -2365,9 +2367,10 @@ class PointGroup(nn.Module):
             centre_semantic_preds = self.centre_semantic(grid_feats)
             centre_offset_preds = self.centre_offset(grid_feats)
 
-            queries_preds = self.centre_pred(queries_feats)
-            queries_semantic_preds = self.centre_semantic(queries_feats)
-            queries_offset_preds = self.centre_offset(queries_feats)
+            if not input['test']:
+                queries_preds = self.centre_pred(queries_feats)
+                queries_semantic_preds = self.centre_semantic(queries_feats)
+                queries_offset_preds = self.centre_offset(queries_feats)
 
             ret['point_semantic_scores'] = semantic_scores
             ret['point_offset_preds'] = point_offset_preds
@@ -2376,9 +2379,10 @@ class PointGroup(nn.Module):
             ret['centre_semantic_preds'] = centre_semantic_preds
             ret['centre_offset_preds'] = centre_offset_preds
 
-            ret['queries_preds'] = queries_preds
-            ret['queries_semantic_preds'] = queries_semantic_preds
-            ret['queries_offset_preds'] = queries_offset_preds
+            if not input['test']:
+                ret['queries_preds'] = queries_preds
+                ret['queries_semantic_preds'] = queries_semantic_preds
+                ret['queries_offset_preds'] = queries_offset_preds
 
         elif self.model_mode == 'test_stuff_PointGroup':
             point_offset_preds = []
