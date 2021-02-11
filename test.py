@@ -115,9 +115,10 @@ def test(model, model_fn, data_name, epoch):
                     ).cpu().numpy()
                 )
 
+                # ======================================================================================================
                 # semantic_pred = semantic_scores  # (N) long, cuda
                 # valid_index = (semantic_pred != 20)
-                valid_index = (semantic_pred == 0)
+                valid_index = (semantic_pred > 1)
 
                 # semantic_pred = semantic_scores
                 # semantic_pred[semantic_pred == -100] = 20
@@ -147,11 +148,12 @@ def test(model, model_fn, data_name, epoch):
                 # pt_inst_cent_dist = torch.sum(torch.abs(
                 #     pt_cent_xyz.repeat(1, inst_cent_cand_xyz.shape[1], 1) - inst_cent_cand_xyz.repeat(pt_cent_xyz.shape[0], 1, 1)
                 # ), dim=2)
+
                 ### set the category restristion during instance generation
                 inst_identity_mat = torch.nn.functional.one_hot(
-                    grid_center_semantic_preds[topk_index_].to(torch.long), num_classes=cfg.classes+1
+                    grid_center_semantic_preds[topk_index_].to(torch.long), num_classes=cfg.classes
                 ).float()
-                pt_identity_mat = torch.nn.functional.one_hot(semantic_pred.to(torch.long), num_classes=cfg.classes+1).float()
+                pt_identity_mat = torch.nn.functional.one_hot(semantic_pred.to(torch.long), num_classes=cfg.classes).float()
                 pt_inst_cov_mat = torch.mm(pt_identity_mat, inst_identity_mat.t())
                 pt_inst_cov_mat[pt_inst_cov_mat == 0] = 1000
                 pt_inst_cent_dist = pt_inst_cent_dist * pt_inst_cov_mat

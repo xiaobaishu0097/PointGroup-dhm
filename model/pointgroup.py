@@ -1160,6 +1160,9 @@ class PointGroup(nn.Module):
             ret['centre_offset_preds'] = centre_offset_preds
 
         elif self.model_mode == 'Zheng_upper_wopointnet_PointGroup':
+            semantic_scores = []
+            point_offset_preds = []
+
             voxel_feats = pointgroup_ops.voxelization(input['pt_feats'], input['v2p_map'], input['mode'])  # (M, C), float, cuda
 
             input_ = spconv.SparseConvTensor(
@@ -1174,12 +1177,12 @@ class PointGroup(nn.Module):
 
             ### point prediction
             #### point semantic label prediction
-            semantic_scores = self.point_semantic(output_feats)  # (N, nClass), float
+            semantic_scores.append(self.point_semantic(output_feats))  # (N, nClass), float
             # point_semantic_preds = semantic_scores
-            point_semantic_preds = semantic_scores.max(1)[1]
+            point_semantic_preds = semantic_scores[-1].max(1)[1]
 
             #### point offset prediction
-            point_offset_preds = self.point_offset(output_feats)  # (N, 3), float32
+            point_offset_preds.append(self.point_offset(output_feats))  # (N, 3), float32
 
             if (epoch == self.test_epoch):
                 scores, proposals_idx, proposals_offset = self.pointgroup_cluster_algorithm(
