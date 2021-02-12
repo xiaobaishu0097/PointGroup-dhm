@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch_scatter import scatter_mean
 import sys
 
 sys.path.append('../')
@@ -300,6 +301,11 @@ def model_fn_decorator(test=False):
             loss_inp['queries_semantic_preds'] = (queries_semantic_preds, centre_queries_semantic_labels)
             loss_inp['queries_offset_preds'] = (queries_offset_preds, centre_queries_offsets)
 
+        if 'proposals_refined_points_features' in ret.keys():
+            proposals_refined_points_features = ret['proposals_refined_points_features']
+
+            loss_inp['proposals_refined_points_features'] = (proposals_refined_points_features, instance_labels)
+
         loss, loss_out, infos = loss_fn(loss_inp, epoch)
 
         ##### accuracy / visual_dict / meter_dict
@@ -546,6 +552,10 @@ def model_fn_decorator(test=False):
             queries_offset_preds, centre_queries_offsets = loss_inp['queries_offset_preds']
             centre_queries_offset_loss = centre_offset_criterion(queries_offset_preds, centre_queries_offsets)
             loss_out['centre_offset_loss'] = (centre_queries_offset_loss, centre_queries_offsets.shape[0])
+
+        if 'proposals_refined_points_features' in loss_inp.keys():
+            proposals_refined_points_features, instance_labels = loss_inp['proposals_refined_points_features']
+
 
 
         '''total loss'''

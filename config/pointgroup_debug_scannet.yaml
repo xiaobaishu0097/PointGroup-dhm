@@ -28,7 +28,7 @@ STRUCTURE:
   block_reps: 2
   scatter_type: max
   unet3d_num_levels: 3
-  model_mode: test_stuff_PointGroup
+  model_mode: Yu_Proposal_Refinement_Centre_loss_Transformer_PointGroup
   # Centre_clustering or Zheng_panoptic_wpointnet_PointGroup or Zheng_upper_wpointnet_PointGroup or Zheng_panoptic_wopointnet_PointGroup
   # or Zheng_upper_wopointnet_PointGroup or Jiang_original_PointGroup or Yu_refine_clustering_PointGroup
   # or Li_simple_backbone_PointGroup or Yu_refine_clustering_scorenet_PointGroup
@@ -36,7 +36,7 @@ STRUCTURE:
   # or Yu_rc_v2_PointGroup or PointNet_deeper_PointGroup or PointNet_sample_PointGroup
   # or Yu_stuff_first_PointGroup or Yu_RC_ScoreNet_Conf_Transformer_PointGroup or Yu_stuff_parallel_PointGroup
   # or Yu_stuff_sep_PointGroup or Yu_stuff_remove_PointGroup or Yu_local_proposal_PointGroup
-  # or Centre_sample_cluster
+  # or Centre_sample_cluster or Yu_Proposal_Refinement_Centre_loss_Transformer_PointGroup
 
   use_coords: True
   use_ori_coords: True
