@@ -65,6 +65,7 @@ class PointGroup(nn.Module):
 
         self.full_scale = cfg.full_scale
         self.batch_size = cfg.batch_size
+        self.stuff_norm_loss = cfg.stuff_norm_loss
 
         norm_fn = functools.partial(nn.BatchNorm1d, eps=1e-4, momentum=0.1)
 
@@ -1230,6 +1231,9 @@ class PointGroup(nn.Module):
 
             ret['point_semantic_scores'] = semantic_scores
             ret['point_offset_preds'] = point_offset_preds
+
+            if self.stuff_norm_loss:
+                ret['output_feats'] = output_feats
 
         elif self.model_mode == 'Yu_refine_clustering_PointGroup':
             point_offset_preds = []

@@ -69,6 +69,7 @@ TRAIN:
   pos_enc: XYZ
   num_decoder_layers: 1
   dim_feedforward: 64
+  stuff_norm_loss: False
 
   constrastive_loss: True
 
