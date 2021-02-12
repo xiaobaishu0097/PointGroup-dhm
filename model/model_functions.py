@@ -7,7 +7,7 @@ import sys
 sys.path.append('../')
 
 from lib.pointgroup_ops.functions import pointgroup_ops
-from model.components import WeightedFocalLoss
+from model.components import WeightedFocalLoss, CenterLoss
 
 
 def model_fn_decorator(test=False):
@@ -17,6 +17,8 @@ def model_fn_decorator(test=False):
     #### criterion
     semantic_criterion = nn.CrossEntropyLoss(ignore_index=cfg.ignore_label).cuda()
     stuff_criterion = nn.CrossEntropyLoss(ignore_index=cfg.ignore_label).cuda()
+    semantic_centre_criterion = CenterLoss(num_classes=cfg.classes, feat_dim=cfg.m)
+
     # if cfg.offset_norm_criterion == 'l1':
     #     offset_norm_criterion = nn.SmoothL1Loss().cuda()
     if cfg.offset_norm_criterion == 'l2':
@@ -24,10 +26,13 @@ def model_fn_decorator(test=False):
     elif cfg.offset_norm_criterion == 'triplet':
         offset_norm_criterion = nn.SmoothL1Loss().cuda()
         offset_norm_triplet_criterion = nn.TripletMarginLoss(margin=cfg.triplet_margin, p=cfg.triplet_p).cuda()
+
     centre_criterion = WeightedFocalLoss(alpha=cfg.focal_loss_alpha, gamma=cfg.focal_loss_gamma).cuda()
     centre_semantic_criterion = nn.CrossEntropyLoss(ignore_index=cfg.ignore_label).cuda()
     centre_offset_criterion = nn.L1Loss().cuda()
+
     centre_query_criterion = nn.BCEWithLogitsLoss().cuda()
+
     score_criterion = nn.BCELoss(reduction='none').cuda()
     confidence_criterion = nn.BCELoss(reduction='none').cuda()
 
@@ -178,8 +183,10 @@ def model_fn_decorator(test=False):
 
         rgb = feats
 
-        if cfg.use_coords:
+        if cfg.use_coords == True:
             feats = torch.cat((feats, coords_float[:, :3]), -1)
+        elif cfg.use_coords == 'Z':
+            feats = torch.cat((feats, coords_float[:, 2].unsqueeze(dim=-1)), -1)
 
         if not cfg.use_ori_coords:
             ori_coords = coords_float[:, 3:]
@@ -301,10 +308,10 @@ def model_fn_decorator(test=False):
             loss_inp['queries_semantic_preds'] = (queries_semantic_preds, centre_queries_semantic_labels)
             loss_inp['queries_offset_preds'] = (queries_offset_preds, centre_queries_offsets)
 
-        if 'proposals_refined_points_features' in ret.keys():
-            proposals_refined_points_features = ret['proposals_refined_points_features']
+        if 'points_semantic_center_loss_feature' in ret.keys():
+            points_semantic_center_loss_feature = ret['points_semantic_center_loss_feature']
 
-            loss_inp['proposals_refined_points_features'] = (proposals_refined_points_features, instance_labels)
+            loss_inp['points_semantic_center_loss_feature'] = (points_semantic_center_loss_feature, instance_labels, labels)
 
         loss, loss_out, infos = loss_fn(loss_inp, epoch)
 
@@ -553,8 +560,11 @@ def model_fn_decorator(test=False):
             centre_queries_offset_loss = centre_offset_criterion(queries_offset_preds, centre_queries_offsets)
             loss_out['centre_offset_loss'] = (centre_queries_offset_loss, centre_queries_offsets.shape[0])
 
-        if 'proposals_refined_points_features' in loss_inp.keys():
-            proposals_refined_points_features, instance_labels = loss_inp['proposals_refined_points_features']
+        if 'points_semantic_center_loss_feature' in loss_inp.keys():
+            points_semantic_center_loss_features, instance_labels, labels = loss_inp['points_semantic_center_loss_feature']
+
+            for points_semantic_center_loss_feature in points_semantic_center_loss_features:
+                semantic_centre_loss = semantic_centre_criterion(points_semantic_center_loss_feature, labels)
 
 
 

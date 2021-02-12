@@ -73,8 +73,10 @@ class PointGroup(nn.Module):
         else:
             block = VGGBlock
 
-        if cfg.use_coords:
+        if cfg.use_coords == True:
             input_c += 3
+        elif cfg.use_coords == 'Z':
+            input_c += 1
 
         self.unet3d = None
 
@@ -1424,7 +1426,6 @@ class PointGroup(nn.Module):
 
             ret['point_semantic_scores'] = semantic_scores
             ret['point_offset_preds'] = point_offset_preds
-            ret['output_feats'] = output_feats
 
         elif self.model_mode == 'Li_simple_backbone_PointGroup':
             point_offset_preds = []
@@ -2531,7 +2532,7 @@ class PointGroup(nn.Module):
             proposals_idx_shifts = []
             proposals_offset_shifts = []
 
-            proposals_refined_points_features = []
+            points_semantic_center_loss_feature = []
 
             voxel_feats = pointgroup_ops.voxelization(input['pt_feats'], input['v2p_map'], input['mode']) # (M, C), float, cuda
 
@@ -2627,7 +2628,7 @@ class PointGroup(nn.Module):
                         refined_point_features += point_positional_encoding
                     point_features = refined_point_features.clone()
 
-                    proposals_refined_points_features.append(refined_point_features)
+                    points_semantic_center_loss_feature.append(refined_point_features)
 
                     ### refined point prediction
                     #### refined point semantic label prediction
@@ -2647,7 +2648,7 @@ class PointGroup(nn.Module):
 
                     ret['proposal_scores'] = (scores, proposals_idx, proposals_offset)
 
-                ret['proposals_refined_points_features'] = proposals_refined_points_features
+                ret['points_semantic_center_loss_feature'] = points_semantic_center_loss_feature
 
             ret['point_semantic_scores'] = point_semantic_scores
             ret['point_offset_preds'] = point_offset_preds
