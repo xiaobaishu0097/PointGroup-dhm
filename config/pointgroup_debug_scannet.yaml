@@ -38,7 +38,7 @@ STRUCTURE:
   # or Yu_stuff_sep_PointGroup or Yu_stuff_remove_PointGroup or Yu_local_proposal_PointGroup
   # or Centre_sample_cluster or Yu_Proposal_Refinement_Centre_loss_Transformer_PointGroup
 
-  use_coords: Z
+  use_coords: True
   use_ori_coords: True
   pointnet_include_rgb: True
 
