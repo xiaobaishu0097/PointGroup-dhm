@@ -563,10 +563,9 @@ def model_fn_decorator(test=False):
         if 'points_semantic_center_loss_feature' in loss_inp.keys():
             points_semantic_center_loss_features, instance_labels, labels = loss_inp['points_semantic_center_loss_feature']
 
+            semantic_centre_loss = torch.zeros(1).cuda()
             for points_semantic_center_loss_feature in points_semantic_center_loss_features:
-                semantic_centre_loss = semantic_centre_criterion(points_semantic_center_loss_feature, labels)
-
-
+                semantic_centre_loss += semantic_centre_criterion(points_semantic_center_loss_feature, labels)
 
         '''total loss'''
         loss = cfg.loss_weight[3] * semantic_loss + cfg.loss_weight[4] * offset_norm_loss + \
