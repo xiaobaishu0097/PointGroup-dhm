@@ -315,6 +315,11 @@ def model_fn_decorator(test=False):
 
             loss_inp['points_semantic_center_loss_feature'] = (points_semantic_center_loss_feature, instance_labels, labels)
 
+        if cfg.instance_triplet_loss and 'point_offset_feats' in ret.keys():
+            point_offset_feats = ret['point_offset_feats']
+
+            loss_inp['point_offset_feats'] = (point_offset_feats, instance_labels)
+
         loss, loss_out, infos = loss_fn(loss_inp, epoch)
 
         ##### accuracy / visual_dict / meter_dict
@@ -568,6 +573,17 @@ def model_fn_decorator(test=False):
             semantic_centre_loss = torch.zeros(1).cuda()
             for points_semantic_center_loss_feature in points_semantic_center_loss_features:
                 semantic_centre_loss += semantic_centre_criterion(points_semantic_center_loss_feature, labels)
+
+        if cfg.instance_triplet_loss and 'point_offset_feats' in loss_inp.keys():
+            point_offset_feats, instance_labels = loss_inp['point_offset_feats']
+            valid_instance_index = (instance_labels != cfg.ignore_label)
+            point_offset_feats = point_offset_feats[valid_instance_index]
+
+            positive_offset_feats = point_offset_feats
+            negative_offset_feats = point_offset_feats
+            instance_triplet_loss = instance_triplet_criterion(
+                point_offset_feats, positive_offset_feats, negative_offset_feats)
+
 
         '''total loss'''
         loss = cfg.loss_weight[3] * semantic_loss + cfg.loss_weight[4] * offset_norm_loss + \
