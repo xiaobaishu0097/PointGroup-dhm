@@ -592,7 +592,8 @@ def model_fn_decorator(test=False):
                 for inst_id in instance_label.unique():
                     triplet_index.append(
                         torch.cat(random.sample(list((instance_label == inst_id).nonzero()),
-                                                min((instance_label == inst_id).sum().item(), 128))))
+                                                min((instance_label == inst_id).sum().item(),
+                                                    cfg.instance_triplet_loss_sample_point_num))))
 
                 triplet_index = torch.cat(triplet_index)
 

@@ -72,6 +72,7 @@ TRAIN:
   dim_feedforward: 64
   stuff_norm_loss: False
   instance_triplet_loss: True
+  instance_triplet_loss_sample_point_num: 128
 
   constrastive_loss: True
 
