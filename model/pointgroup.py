@@ -1369,6 +1369,7 @@ class PointGroup(nn.Module):
 
             ret['point_semantic_scores'] = semantic_scores
             ret['point_offset_preds'] = point_offset_preds
+            ret['point_offset_feats'] = output_feats
 
         elif self.model_mode == 'Fan_centre_loss_PointGroup':
             semantic_scores = []
