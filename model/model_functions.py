@@ -1,13 +1,14 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import random
 from torch_scatter import scatter_mean
 import sys
 
 sys.path.append('../')
 
 from lib.pointgroup_ops.functions import pointgroup_ops
-from model.components import WeightedFocalLoss, CenterLoss
+from model.components import WeightedFocalLoss, CenterLoss, TripletLoss
 
 
 def model_fn_decorator(test=False):
@@ -19,7 +20,7 @@ def model_fn_decorator(test=False):
     stuff_criterion = nn.CrossEntropyLoss(ignore_index=cfg.ignore_label).cuda()
 
     semantic_centre_criterion = CenterLoss(num_classes=cfg.classes, feat_dim=cfg.m, use_gpu=True)
-    instance_triplet_criterion = nn.TripletMarginLoss(margin=cfg.triplet_margin, p=cfg.triplet_p).cuda()
+    instance_triplet_criterion = TripletLoss(margin=cfg.triplet_margin)
 
     # if cfg.offset_norm_criterion == 'l1':
     #     offset_norm_criterion = nn.SmoothL1Loss().cuda()
@@ -318,7 +319,7 @@ def model_fn_decorator(test=False):
         if cfg.instance_triplet_loss and 'point_offset_feats' in ret.keys():
             point_offset_feats = ret['point_offset_feats']
 
-            loss_inp['point_offset_feats'] = (point_offset_feats, instance_labels)
+            loss_inp['point_offset_feats'] = (point_offset_feats, instance_labels, batch_offsets)
 
         loss, loss_out, infos = loss_fn(loss_inp, epoch)
 
@@ -574,15 +575,33 @@ def model_fn_decorator(test=False):
             for points_semantic_center_loss_feature in points_semantic_center_loss_features:
                 semantic_centre_loss += semantic_centre_criterion(points_semantic_center_loss_feature, labels)
 
-        if cfg.instance_triplet_loss and 'point_offset_feats' in loss_inp.keys():
-            point_offset_feats, instance_labels = loss_inp['point_offset_feats']
-            valid_instance_index = (instance_labels != cfg.ignore_label)
-            point_offset_feats = point_offset_feats[valid_instance_index]
+            loss_out['centre_offset_loss'] = (semantic_centre_loss, labels.shape[0])
 
-            positive_offset_feats = point_offset_feats
-            negative_offset_feats = point_offset_feats
-            instance_triplet_loss = instance_triplet_criterion(
-                point_offset_feats, positive_offset_feats, negative_offset_feats)
+        if cfg.instance_triplet_loss and 'point_offset_feats' in loss_inp.keys():
+            point_offset_feats, instance_labels, batch_offsets = loss_inp['point_offset_feats']
+
+            instance_triplet_loss = torch.zeros(1).cuda()
+            for batch_id in range(1, len(batch_offsets)):
+                point_offset_feat = point_offset_feats[batch_offsets[batch_id - 1]:batch_offsets[batch_id]]
+                instance_label = instance_labels[batch_offsets[batch_id - 1]:batch_offsets[batch_id]]
+                valid_instance_index = (instance_label != cfg.ignore_label)
+                point_offset_feat = point_offset_feat[valid_instance_index]
+                instance_label = instance_label[valid_instance_index]
+
+                triplet_index = []
+                for inst_id in instance_label.unique():
+                    triplet_index.append(
+                        torch.cat(random.sample(list((instance_label == inst_id).nonzero()),
+                                                min((instance_label == inst_id).sum().item(), 128))))
+
+                triplet_index = torch.cat(triplet_index)
+
+                instance_triplet_loss += instance_triplet_criterion(
+                    point_offset_feat[triplet_index], instance_label[triplet_index])[0]
+
+            instance_triplet_loss = instance_triplet_loss / (len(batch_offsets) - 1)
+
+            loss_out['centre_offset_loss'] = (instance_triplet_loss, instance_labels.shape[0])
 
 
         '''total loss'''
@@ -604,6 +623,9 @@ def model_fn_decorator(test=False):
 
         if 'queries_preds' in loss_inp.keys():
             loss = loss + centre_queries_loss + centre_queries_semantic_loss + centre_queries_offset_loss
+
+        if cfg.instance_triplet_loss and 'point_offset_feats' in loss_inp.keys():
+            loss += instance_triplet_loss
 
         return loss, loss_out, infos
 
