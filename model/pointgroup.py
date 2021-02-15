@@ -293,6 +293,13 @@ class PointGroup(nn.Module):
                 nn.ReLU()
             )
 
+            self.point_deeper_semantic = nn.Sequential(
+                nn.Linear(m, m, bias=True),
+                norm_fn(m),
+                nn.ReLU(),
+                nn.Linear(m, classes, bias=True),
+            )
+
             #### score branch
             self.score_unet = UBlock([m, 2 * m], norm_fn, 2, block, indice_key_id=1)
             self.score_outputlayer = spconv.SparseSequential(
@@ -304,9 +311,13 @@ class PointGroup(nn.Module):
             self.apply(self.set_bn_init)
 
             module_map = {
-                'module.input_conv': self.input_conv, 'module.unet': self.unet,
-                'module.output_layer': self.output_layer, 'module.score_unet': self.score_unet,
-                'module.score_outputlayer': self.score_outputlayer, 'module.score_linear': self.score_linear
+                'module.input_conv': self.input_conv,
+                'module.unet': self.unet,
+                'module.output_layer': self.output_layer,
+                'module.score_unet': self.score_unet,
+                'module.score_outputlayer': self.score_outputlayer,
+                'module.score_linear': self.score_linear,
+                'module.point_deeper_semantic': self.point_deeper_semantic
             }
 
         elif self.model_mode == 'Li_simple_backbone_PointGroup':
@@ -1392,19 +1403,7 @@ class PointGroup(nn.Module):
 
             ### point prediction
             #### point semantic label prediction
-            semantic_scores.append(self.point_semantic(output_feats))  # (N, nClass), float
-
-            ### only used to evaluate based on ground truth
-            # semantic_scores.append(input['point_semantic_scores'][0])  # (N, nClass), float
-            ### ground truth for each category
-            # CATE_NUM = 0
-            # semantic_output = self.point_semantic(output_feats)
-            # if (input['point_semantic_scores'][0].max(dim=1)[1] == CATE_NUM).sum() > 0:
-            #     semantic_output[input['point_semantic_scores'][0].max(dim=1)[1] == CATE_NUM] = \
-            #     input['point_semantic_scores'][0][input['point_semantic_scores'][0].max(dim=1)[1] == CATE_NUM].float()
-            # semantic_output[semantic_output.max(dim=1)[1] == CATE_NUM] = \
-            # input['point_semantic_scores'][0][semantic_output.max(dim=1)[1] == CATE_NUM].float()
-            # semantic_scores.append(semantic_output)
+            semantic_scores.append(self.point_deeper_semantic(output_feats))  # (N, nClass), float
 
             point_semantic_preds = semantic_scores[0].max(1)[1]
 
