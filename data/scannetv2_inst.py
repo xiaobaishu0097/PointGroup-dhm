@@ -335,7 +335,7 @@ class ScannetDatast:
                 ### sample centre queries around instance centres
                 centre_queries_coord = []
                 centre_queries_offset = []
-                n_queries = 100
+                n_queries = 1000
                 for inst_cent in inst_centres:
                     centre_queries_offset.append(torch.randn(n_queries, 3).double() * 0.05)
                     centre_query_coords = torch.from_numpy(inst_cent) - centre_queries_offset[-1]

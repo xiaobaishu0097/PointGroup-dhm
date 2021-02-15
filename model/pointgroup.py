@@ -987,7 +987,7 @@ class PointGroup(nn.Module):
             semantic_scores = []
             point_offset_preds = []
 
-            point_feats, grid_feats = self.pointnet_backbone_forward(coords, ori_coords, rgb, batch_offsets)
+            point_feats, grid_feats = self.pointnet_backbone_forward(coords, coords, rgb, batch_offsets)
 
             voxel_feats = pointgroup_ops.voxelization(point_feats, input['v2p_map'], input['mode'])  # (M, C), float, cuda
 
@@ -2282,10 +2282,17 @@ class PointGroup(nn.Module):
                 coords_input = coords[batch_offsets[sample_indx - 1]:batch_offsets[sample_indx], :].unsqueeze(dim=0)
                 rgb_input = rgb[batch_offsets[sample_indx - 1]:batch_offsets[sample_indx], :].unsqueeze(dim=0)
 
+                sampled_index = pointnet2_utils.furthest_point_sample(
+                    coords_input[:, :, :3].contiguous(), self.pointnet_max_npoint).squeeze(dim=0).long()
+
+                sampled_coords_input = coords_input[:, sampled_index, :]
+                sampled_rgb_input = rgb_input[:, sampled_index, :]
+
                 point_feat, _ = self.pointnet_encoder(
-                    coords_input, torch.cat((rgb_input, coords_input), dim=2).transpose(1, 2).contiguous()
+                    sampled_coords_input,
+                    torch.cat((sampled_rgb_input, sampled_coords_input), dim=2).transpose(1, 2).contiguous()
                 )
-                grid_feats.append(self.generate_grid_features(coords_input, point_feat))
+                grid_feats.append(self.generate_grid_features(sampled_coords_input, point_feat))
 
                 if not input['test']:
                     decoder_input = {'grid': grid_feats[-1]}
