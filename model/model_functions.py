@@ -285,7 +285,7 @@ def model_fn_decorator(test=False):
             loss_inp['centre_semantic_preds'] = (centre_semantic_preds, centre_semantic_labels)
             loss_inp['centre_offset_preds'] = (centre_offset_preds, centre_offset_labels[:, 1:])
 
-        if (epoch > cfg.prepare_epochs) and (cfg.model_mode == 'Jiang_original_PointGroup'):
+        if (epoch > cfg.prepare_epochs) and ('proposal_scores' in ret.keys()):
             loss_inp['proposal_scores'] = (scores, proposals_idx, proposals_offset, instance_pointnum)
 
         if 'proposal_confidences' in ret.keys():
@@ -332,7 +332,7 @@ def model_fn_decorator(test=False):
                 preds['centre_preds'] = centre_preds
                 preds['centre_semantic_preds'] = centre_semantic_preds
                 preds['centre_offset_preds'] = centre_offset_preds
-            if (epoch > cfg.prepare_epochs) and (cfg.model_mode == 'Jiang_original_PointGroup'):
+            if (epoch > cfg.prepare_epochs) and ('proposal_scores' in ret.keys()):
                 preds['score'] = scores
                 preds['proposals'] = (proposals_idx, proposals_offset)
 
@@ -496,7 +496,7 @@ def model_fn_decorator(test=False):
             centre_offset_loss = centre_offset_criterion(centre_offset_preds, grid_centre_offsets)
             loss_out['centre_offset_loss'] = (centre_offset_loss, grid_centre_offsets.shape[0])
 
-        if (epoch > cfg.prepare_epochs) and (cfg.model_mode == 'Jiang_original_PointGroup'):
+        if (epoch > cfg.prepare_epochs) and ('proposal_scores' in ret.keys()):
             '''score loss'''
             scores, proposals_idx, proposals_offset, instance_pointnum = loss_inp['proposal_scores']
             # scores: (nProposal, 1), float32
@@ -613,7 +613,7 @@ def model_fn_decorator(test=False):
         if 'centre_preds' in loss_inp.keys():
             loss += cfg.loss_weight[0] * centre_loss + cfg.loss_weight[1] * centre_semantic_loss + \
                     cfg.loss_weight[2] * centre_offset_loss
-        if (epoch > cfg.prepare_epochs) and (cfg.model_mode == 'Jiang_original_PointGroup'):
+        if (epoch > cfg.prepare_epochs) and ('proposal_scores' in ret.keys()):
             loss += (cfg.loss_weight[7] * score_loss)
         if 'proposal_confidences' in loss_inp.keys():
             loss += confidence_loss
