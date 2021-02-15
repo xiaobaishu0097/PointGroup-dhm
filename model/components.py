@@ -10,6 +10,7 @@ sys.path.append('../')
 
 from model.Pointnet2.pointnet2.pointnet2_modules import PointnetFPModule, PointnetSAModule
 from .transformer import Transformer, TransformerEncoderLayer, TransformerEncoder, TransformerDecoderLayer, TransformerDecoder
+from util.config import cfg
 
 
 class backbone_pointnet2(nn.Module):
@@ -159,6 +160,15 @@ class UBlock(nn.Module):
             blocks_tail = OrderedDict(blocks_tail)
             self.blocks_tail = spconv.SparseSequential(blocks_tail)
 
+        else:
+            self.transformer_encoder = UNetTransformer(
+                d_model=self.m,
+                nhead=cfg.multi_heads,
+                num_encoder_layers=cfg.num_encoder_layers,
+                dim_feedforward=cfg.dim_feedforward,
+                dropout=0.0
+            )
+
     def forward(self, input):
         output = self.blocks(input)
         identity = spconv.SparseConvTensor(output.features, output.indices, output.spatial_shape, output.batch_size)
@@ -216,6 +226,48 @@ class ProposalTransformer(Transformer):
 
         hs = self.decoder(query_embed, src)
         return hs.transpose(0, 1), src.permute(1, 2, 0).view(bs, c, n)
+
+
+class UNetTransformer(nn.Module):
+
+    def __init__(self, d_model=512, nhead=8, num_encoder_layers=6, dim_feedforward=2048, dropout=0.1,
+                 activation="relu", normalize_before=False):
+        super().__init__()
+
+        encoder_layer = TransformerEncoderLayer(d_model, nhead, dim_feedforward,
+                                                dropout, activation, normalize_before)
+        encoder_norm = nn.LayerNorm(d_model) if normalize_before else None
+        self.encoder = TransformerEncoder(encoder_layer, num_encoder_layers, encoder_norm)
+
+        self._reset_parameters()
+
+        self.d_model = d_model
+        self.nhead = nhead
+
+    def _reset_parameters(self):
+        for p in self.parameters():
+            if p.dim() > 1:
+                nn.init.xavier_uniform_(p)
+
+    def forward(self, src, mask, query_embed, pos_embed):
+        '''
+        Args:
+            src: the sequence to the encoder (required).
+            tgt: the sequence to the decoder (required).
+
+        Shape:
+            - src: :math:`(S, N, E)`.
+            - tgt: :math:`(T, N, E)`.
+        '''
+        # flatten NxCxHxW to HWxNxC
+        bs, c, h, w = src.shape
+        src = src.flatten(2).permute(2, 0, 1)
+        pos_embed = pos_embed.flatten(2).permute(2, 0, 1)
+        query_embed = query_embed.unsqueeze(1).repeat(1, bs, 1)
+        mask = mask.flatten(1)
+
+        memory = self.encoder(src, src_key_padding_mask=mask, pos=pos_embed)
+        return memory.permute(1, 2, 0).view(bs, c, h, w)
 
 
 class CenterLoss(nn.Module):
