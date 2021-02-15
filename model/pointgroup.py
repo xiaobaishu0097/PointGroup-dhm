@@ -68,8 +68,7 @@ class PointGroup(nn.Module):
         self.stuff_norm_loss = cfg.stuff_norm_loss
         self.instance_triplet_loss = cfg.instance_triplet_loss
 
-        self.local_proposal_topk = cfg.local_proposal['topk']
-        self.local_proposal_dist_th = cfg.local_proposal['dist_th']
+        self.local_proposal = cfg.local_proposal
 
         norm_fn = functools.partial(nn.BatchNorm1d, eps=1e-4, momentum=0.1)
 
@@ -1717,9 +1716,9 @@ class PointGroup(nn.Module):
 
                 proposal_dist_mat = euclidean_dist(proposal_center_coords, proposal_center_coords)
                 proposal_dist_mat[range(len(proposal_dist_mat)), range(len(proposal_dist_mat))] = 10
-                closest_proposals_dist, closest_proposals_index = proposal_dist_mat.topk(k=self.local_proposal_topk,
+                closest_proposals_dist, closest_proposals_index = proposal_dist_mat.topk(k=self.local_proposal['topk'],
                                                                                          dim=1, largest=False)
-                valid_closest_proposals_index = closest_proposals_dist < self.local_proposal_dist_threshold
+                valid_closest_proposals_index = closest_proposals_dist < self.local_proposal['dist_th']
 
                 # select proposals which are the closest and in the distance threshold
                 for proposal_index in range(1, len(proposals_offset_shift)):
