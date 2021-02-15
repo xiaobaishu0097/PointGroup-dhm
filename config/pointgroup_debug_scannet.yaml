@@ -81,6 +81,11 @@ TRAIN:
                       "activate": False
   }
 
+  local_proposal: {
+                    "topk": 3,
+                    "dist_th": 0.5,
+  }
+
   constrastive_loss: True
 
   fg_thresh: 0.75
