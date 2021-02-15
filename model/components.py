@@ -160,9 +160,9 @@ class UBlock(nn.Module):
             blocks_tail = OrderedDict(blocks_tail)
             self.blocks_tail = spconv.SparseSequential(blocks_tail)
 
-        else:
+        elif cfg.UNet_Transformer:
             self.transformer_encoder = UNetTransformer(
-                d_model=self.m,
+                d_model=cfg.m,
                 nhead=cfg.multi_heads,
                 num_encoder_layers=cfg.num_encoder_layers,
                 dim_feedforward=cfg.dim_feedforward,
@@ -181,6 +181,9 @@ class UBlock(nn.Module):
             output.features = torch.cat((identity.features, output_decoder.features), dim=1)
 
             output = self.blocks_tail(output)
+
+        elif cfg.UNet_Transformer:
+            output = self.transformer_encoder(src=output)
 
         return output
 
@@ -249,7 +252,7 @@ class UNetTransformer(nn.Module):
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
 
-    def forward(self, src, mask, query_embed, pos_embed):
+    def forward(self, src, mask, pos_embed):
         '''
         Args:
             src: the sequence to the encoder (required).
@@ -263,7 +266,6 @@ class UNetTransformer(nn.Module):
         bs, c, h, w = src.shape
         src = src.flatten(2).permute(2, 0, 1)
         pos_embed = pos_embed.flatten(2).permute(2, 0, 1)
-        query_embed = query_embed.unsqueeze(1).repeat(1, bs, 1)
         mask = mask.flatten(1)
 
         memory = self.encoder(src, src_key_padding_mask=mask, pos=pos_embed)
