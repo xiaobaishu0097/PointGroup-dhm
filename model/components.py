@@ -160,7 +160,7 @@ class UBlock(nn.Module):
             blocks_tail = OrderedDict(blocks_tail)
             self.blocks_tail = spconv.SparseSequential(blocks_tail)
 
-        elif cfg.UNet_Transformer:
+        elif cfg.UNet_Transformer['activate']:
             self.transformer_encoder = UNetTransformer(
                 d_model=cfg.m,
                 nhead=cfg.multi_heads,
