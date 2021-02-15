@@ -104,7 +104,7 @@ GROUP:
   cluster_npoint_thre: 50
   cluster_sets: P # P or Q
 
-  prepare_epochs: 0
+  prepare_epochs: 128
 
 TEST:
   split: val
