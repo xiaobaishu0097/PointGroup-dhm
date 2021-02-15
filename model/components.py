@@ -182,7 +182,7 @@ class UBlock(nn.Module):
 
             output = self.blocks_tail(output)
 
-        elif cfg.UNet_Transformer:
+        elif cfg.UNet_Transformer['activate']:
             output = self.transformer_encoder(src=output)
 
         return output

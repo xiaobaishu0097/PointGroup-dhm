@@ -22,7 +22,7 @@ from model.components import ResidualBlock, VGGBlock, UBlock
 from model.components import backbone_pointnet2, backbone_pointnet2_deeper
 
 from model.Pointnet2.pointnet2 import pointnet2_utils
-from model.components import ProposalTransformer
+from model.components import ProposalTransformer, euclidean_dist
 
 
 class PointGroup(nn.Module):
@@ -498,7 +498,20 @@ class PointGroup(nn.Module):
                 nn.ReLU()
             )
 
-            self.proposal_point_semantic = nn.Linear(m, classes)
+            self.proposal_point_refine = nn.Sequential(
+                nn.Linear(m, m, bias=True),
+                norm_fn(m),
+                nn.ReLU(),
+                nn.Linear(m, m, bias=True),
+                norm_fn(m),
+                nn.ReLU()
+            )
+            self.proposal_point_semantic = nn.Sequential(
+                nn.Linear(m, m, bias=True),
+                norm_fn(m),
+                nn.ReLU(),
+                nn.Linear(m, classes, bias=True),
+            )
             self.proposal_point_offset = nn.Sequential(
                 nn.Linear(m, m, bias=True),
                 norm_fn(m),
@@ -512,6 +525,7 @@ class PointGroup(nn.Module):
                 'module.output_layer': self.output_layer,
                 'module.proposal_unet': self.proposal_unet,
                 'module.proposal_outputlayer': self.proposal_outputlayer,
+                'module.proposal_point_refine': self.proposal_point_refine,
                 'module.proposal_point_semantic': self.proposal_point_semantic,
                 'module.proposal_point_offset': self.proposal_point_offset,
             }
@@ -1684,23 +1698,44 @@ class PointGroup(nn.Module):
                 # proposals_idx_shift: (sumNPoint, 2), int, dim 0 for cluster_id, dim 1 for corresponding point idxs in N
                 # proposals_offset_shift: (nProposal + 1), int
 
+                ### local proposal represents that include those proposals around each proposal
+                # init all proposal related variables
                 local_proposals_idx = []
                 local_proposals_offset = []
                 local_proposals_offset.append(torch.zeros(1).int())
+
+                proposal_center_coords = []
                 for proposal_offset_index in range(1, len(proposals_offset_shift)):
                     points_cluster_index = proposals_idx_shift[
                                      proposals_offset_shift[proposal_offset_index - 1]:
                                      proposals_offset_shift[proposal_offset_index], 1]
-                    proposal_centre_coord = coords[points_cluster_index.long(), :].mean(dim=0)
-                    local_proposal_size = torch.norm(
-                        coords[points_cluster_index.long(), :] - proposal_centre_coord, dim=1).max() * 1.10
-                    local_index = (torch.norm(coords - proposal_centre_coord, dim=1) < local_proposal_size).nonzero()
-                    local_index = torch.cat(
-                        (torch.LongTensor(local_index.shape[0], 1).fill_(proposal_offset_index - 1), local_index.cpu()),
-                        dim=1)
+                    proposal_center_coords.append(coords[points_cluster_index.long(), :].mean(dim=0, keepdim=True))
+                proposal_center_coords = torch.cat(proposal_center_coords, dim=0)
 
-                    local_proposals_idx.append(local_index)
-                    local_proposals_offset.append(local_proposals_offset[-1] + local_index.shape[0])
+                proposal_dist_mat = euclidean_dist(proposal_center_coords, proposal_center_coords)
+                proposal_dist_mat[range(len(proposal_dist_mat)), range(len(proposal_dist_mat))] = 10
+                closest_proposals_dist, closest_proposals_index = proposal_dist_mat.topk(k=3, dim=1, largest=False)
+                valid_closest_proposals_index = closest_proposals_dist < 0.5
+
+                # select proposals which are the closest and in the distance threshold
+                for proposal_index in range(1, len(proposals_offset_shift)):
+                    local_indexs = []
+                    local_indexs.append(
+                        proposals_idx_shift[proposals_offset_shift[proposal_index - 1]:
+                                            proposals_offset_shift[proposal_index]])
+                    closest_proposals_ind = closest_proposals_index[proposal_index - 1, :]
+                    for selected_proposal_index in closest_proposals_ind[
+                        valid_closest_proposals_index[proposal_index - 1, :]]:
+                        local_index = proposals_idx_shift[
+                                      proposals_offset_shift[selected_proposal_index]:proposals_offset_shift[
+                                          selected_proposal_index + 1]][:, 1].unsqueeze(dim=1)
+                        local_indexs.append(torch.cat(
+                            (torch.LongTensor(local_index.shape[0], 1).fill_(proposal_index - 1).int(),
+                             local_index.cpu()), dim=1
+                        ))
+
+                    local_proposals_idx.append(torch.cat(local_indexs, dim=0))
+                    local_proposals_offset.append(local_proposals_offset[-1] + local_proposals_idx[-1].shape[0])
 
                 local_proposals_idx = torch.cat(local_proposals_idx, dim=0)
                 local_proposals_offset = torch.cat(local_proposals_offset, dim=0)
@@ -1718,10 +1753,11 @@ class PointGroup(nn.Module):
 
                 refined_point_features = torch.zeros_like(output_feats).cuda()
                 refined_point_features[:np.minimum((local_proposals_idx[:, 1].max() + 1).item(), coords.shape[0]), :] = \
-                    scatter_mean(proposals_point_features, local_proposals_idx[:, 1].cuda(), dim=0)
+                    scatter_mean(proposals_point_features, local_proposals_idx[:, 1].cuda().long(), dim=0)
 
                 ### refined point prediction
                 #### refined point semantic label prediction
+                refined_point_features = self.proposal_point_refine(refined_point_features)
                 point_semantic_scores.append(self.proposal_point_semantic(output_feats + refined_point_features))  # (N, nClass), float
                 point_semantic_preds = point_semantic_scores[-1].max(1)[1]
 
