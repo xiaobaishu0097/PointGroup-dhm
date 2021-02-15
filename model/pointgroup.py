@@ -66,6 +66,7 @@ class PointGroup(nn.Module):
         self.full_scale = cfg.full_scale
         self.batch_size = cfg.batch_size
         self.stuff_norm_loss = cfg.stuff_norm_loss
+        self.instance_triplet_loss = cfg.instance_triplet_loss
 
         norm_fn = functools.partial(nn.BatchNorm1d, eps=1e-4, momentum=0.1)
 
@@ -1321,7 +1322,10 @@ class PointGroup(nn.Module):
             point_semantic_preds = semantic_scores[0].max(1)[1]
 
             #### point offset prediction
-            point_offset_preds.append(self.point_offset(output_feats))  # (N, 3), float32
+            point_offset_pred = self.point_offset(output_feats)
+            if self.instance_triplet_loss:
+                point_offset_pred = point_offset_pred - input['pt_feats'][:, 3:]
+            point_offset_preds.append(point_offset_pred)  # (N, 3), float32
             # only used to evaluate based on ground truth
             # point_offset_preds.append(input['point_offset_preds'])  # (N, 3), float32
 
@@ -1380,7 +1384,8 @@ class PointGroup(nn.Module):
 
             ret['point_semantic_scores'] = semantic_scores
             ret['point_offset_preds'] = point_offset_preds
-            ret['point_offset_feats'] = output_feats
+            if self.instance_triplet_loss:
+                ret['point_offset_feats'] = output_feats
 
         elif self.model_mode == 'Fan_centre_loss_PointGroup':
             semantic_scores = []
@@ -2465,7 +2470,10 @@ class PointGroup(nn.Module):
 
             #### point offset prediction
             point_offset_feats = output_feats + point_position_encoding
-            point_offset_preds.append(self.point_offset(point_offset_feats))  # (N, 3), float32
+            point_offset_pred = self.point_offset(point_offset_feats)  # (N, 3), float32
+            if self.instance_triplet_loss:
+                point_offset_pred = point_offset_pred - input['pt_feats'][:, 3:]
+            point_offset_preds.append(point_offset_pred)
             # only used to evaluate based on ground truth
             # point_offset_preds.append(input['point_offset_preds'])  # (N, 3), float32
 
@@ -2524,6 +2532,7 @@ class PointGroup(nn.Module):
 
             ret['point_semantic_scores'] = semantic_scores
             ret['point_offset_preds'] = point_offset_preds
-            ret['point_offset_feats'] = point_offset_feats
+            if self.instance_triplet_loss:
+                ret['point_offset_feats'] = point_offset_feats
 
         return ret

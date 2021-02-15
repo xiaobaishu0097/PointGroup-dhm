@@ -313,7 +313,7 @@ def model_fn_decorator(test=False):
         if 'points_semantic_center_loss_feature' in ret.keys():
             points_semantic_center_loss_feature = ret['points_semantic_center_loss_feature']
 
-            loss_inp['points_semantic_center_loss_feature'] = (points_semantic_center_loss_feature, instance_labels, labels)
+            loss_inp['points_semantic_center_loss_feature'] = (points_semantic_center_loss_feature, labels, batch_offsets)
 
         if cfg.instance_triplet_loss and 'point_offset_feats' in ret.keys():
             point_offset_feats = ret['point_offset_feats']
@@ -568,11 +568,17 @@ def model_fn_decorator(test=False):
             loss_out['centre_offset_loss'] = (centre_queries_offset_loss, centre_queries_offsets.shape[0])
 
         if 'points_semantic_center_loss_feature' in loss_inp.keys():
-            points_semantic_center_loss_features, instance_labels, labels = loss_inp['points_semantic_center_loss_feature']
+            points_semantic_center_loss_features, labels, batch_offsets = loss_inp['points_semantic_center_loss_feature']
 
             semantic_centre_loss = torch.zeros(1).cuda()
             for points_semantic_center_loss_feature in points_semantic_center_loss_features:
-                semantic_centre_loss += semantic_centre_criterion(points_semantic_center_loss_feature, labels)
+                semantic_cent_loss = torch.zeros(1).cuda()
+                for batch_id in range(1, len(batch_offsets)):
+                    points_semantic_feat = points_semantic_center_loss_feature[
+                                           batch_offsets[batch_id - 1]:batch_offsets[batch_id]]
+                    label = labels[batch_offsets[batch_id - 1]:batch_offsets[batch_id]]
+                    semantic_cent_loss += semantic_centre_criterion(points_semantic_feat, label)
+                semantic_centre_loss += semantic_cent_loss / (len(batch_offsets) - 1)
 
             loss_out['centre_offset_loss'] = (semantic_centre_loss, labels.shape[0])
 
@@ -623,6 +629,9 @@ def model_fn_decorator(test=False):
 
         if 'queries_preds' in loss_inp.keys():
             loss = loss + centre_queries_loss + centre_queries_semantic_loss + centre_queries_offset_loss
+
+        if 'points_semantic_center_loss_feature' in loss_inp.keys():
+            loss += semantic_centre_loss
 
         if cfg.instance_triplet_loss and 'point_offset_feats' in loss_inp.keys():
             loss += instance_triplet_loss
