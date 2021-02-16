@@ -1,22 +1,11 @@
-# PointGroup
-## PointGroup: Dual-Set Point Grouping for 3D Instance Segmentation (CVPR2020)
-![overview](https://github.com/llijiang/PointGroup/blob/master/doc/overview.png)
-
-Code for the paper **PointGroup:Dual-Set Point Grouping for 3D Instance Segmentation**, CVPR 2020 (Oral).
-
-**Authors**: Li Jiang, Hengshuang Zhao, Shaoshuai Shi, Shu Liu, Chi-Wing Fu, Jiaya Jia 
-
-[[arxiv]](https://arxiv.org/abs/2004.01658) [[video]](https://youtu.be/HMetye3gmAs)
-
-## Introduction
-Instance segmentation is an important task for scene understanding. Compared to the fully-developed 2D, 3D instance segmentation for point clouds have much room to improve. In this paper, we present PointGroup, a new end-to-end bottom-up architecture, specifically focused on better grouping the points by exploring the void space between objects. We design a two-branch network to extract point features and predict semantic labels and offsets, for shifting each point towards its respective instance centroid. A clustering component is followed to utilize both the original and offset-shifted point coordinate sets, taking advantage of their complementary strength. Further, we formulate the ScoreNet to evaluate the candidate instances, followed by the Non-Maximum Suppression (NMS) to remove duplicates.
+# Point Cloud Instance Segmentation
 
 ## Installation
 
 ### Requirements
 * Python 3.7.0
 * Pytorch 1.1.0
-* CUDA 9.0
+* CUDA 10.0
 
 ### Virtual Environment
 ```
@@ -46,6 +35,7 @@ conda install -c bioconda google-sparsehash
 ```
 conda install libboost
 conda install -c daleydeng gcc-5 # need gcc-5.4 for sparseconv
+or conda install -c brown-data-science gcc
 ```
 Add the `$INCLUDE_PATH$` that contains `boost` in `lib/spconv/CMakeLists.txt`. (Not necessary if it could be found.)
 ```
@@ -155,29 +145,3 @@ cd util
 python visualize.py --data_root $DATA_ROOT$ --result_root $RESULT_ROOT$ --room_name $ROOM_NAME$ --room_split $ROOM_SPLIT$ --task $TASK$
 ```
 The visualization task could be `input`, `instance_gt`, `instance_pred`, `semantic_pred` and `semantic_gt`.
-
-## Results on ScanNet Benchmark 
-Quantitative results on ScanNet test set at the submisison time.
-![scannet_result](https://github.com/llijiang/PointGroup/blob/master/doc/scannet_benchmark.png)
-
-## TODO List
-- [ ] Distributed multi-GPU training
-
-## Citation
-If you find this work useful in your research, please cite:
-```
-@article{jiang2020pointgroup,
-  title={PointGroup: Dual-Set Point Grouping for 3D Instance Segmentation},
-  author={Jiang, Li and Zhao, Hengshuang and Shi, Shaoshuai and Liu, Shu and Fu, Chi-Wing and Jia, Jiaya},
-  journal={Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR)},
-  year={2020}
-}
-```
-
-## Acknowledgement
-This repo is built upon several repos, e.g., [SparseConvNet](https://github.com/facebookresearch/SparseConvNet), [spconv](https://github.com/traveller59/spconv) and [ScanNet](https://github.com/ScanNet/ScanNet). 
-
-## Contact
-If you have any questions or suggestions about this repo, please feel free to contact me (lijiang@cse.cuhk.edu.hk).
-
-
