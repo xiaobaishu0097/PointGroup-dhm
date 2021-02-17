@@ -713,13 +713,12 @@ class PointGroup(nn.Module):
             )
 
             self.point_position_enhance = nn.Sequential(
-                nn.Linear(3, m//2, bias=True),
-                norm_fn(m//2),
-                nn.ReLU(),
-                nn.Linear(m//2, m, bias=True),
+                nn.Linear(m+3, m, bias=True),
                 norm_fn(m),
                 nn.ReLU(),
                 nn.Linear(m, m, bias=True),
+                norm_fn(m),
+                nn.ReLU(),
             )
 
             #### score branch
@@ -2512,7 +2511,8 @@ class PointGroup(nn.Module):
 
             point_semantic_preds = semantic_scores[0].max(1)[1]
 
-            point_position_encoding = self.point_position_enhance(input['pt_feats'][:, 3:])
+            point_position_encoding = self.point_position_enhance(
+                torch.cat((output_feats, input['pt_feats'][:, 3:]), dim=-1))
 
             #### point offset prediction
             point_offset_feats = output_feats + point_position_encoding
