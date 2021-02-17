@@ -69,7 +69,6 @@ TRAIN:
 
   add_pos_enc_ref: False
   pos_enc: XYZ
-  num_encoder_layers: 1
   num_decoder_layers: 1
   dim_feedforward: 64
 
@@ -78,7 +77,11 @@ TRAIN:
   instance_triplet_loss_sample_point_num: 128
 
   UNet_Transformer: {
-                      "activate": False
+                      "activate": True,
+                      "multi_heads": 2,
+                      "num_encoder_layers": 1,
+                      "dim_feedforward": 64,
+                      "dropout": 0.0,
   }
 
   local_proposal: {

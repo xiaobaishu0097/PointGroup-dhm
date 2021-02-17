@@ -162,11 +162,11 @@ class UBlock(nn.Module):
 
         elif cfg.UNet_Transformer['activate']:
             self.transformer_encoder = UNetTransformer(
-                d_model=cfg.m,
-                nhead=cfg.multi_heads,
-                num_encoder_layers=cfg.num_encoder_layers,
-                dim_feedforward=cfg.dim_feedforward,
-                dropout=0.0
+                d_model=cfg.m * 7,
+                nhead=cfg.UNet_Transformer['multi_heads'],
+                num_encoder_layers=cfg.UNet_Transformer['num_encoder_layers'],
+                dim_feedforward=cfg.UNet_Transformer['dim_feedforward'],
+                dropout=cfg.UNet_Transformer['dropout'],
             )
 
     def forward(self, input):
@@ -183,7 +183,7 @@ class UBlock(nn.Module):
             output = self.blocks_tail(output)
 
         elif cfg.UNet_Transformer['activate']:
-            output = self.transformer_encoder(src=output)
+            output.features = self.transformer_encoder(output.features)
 
         return output
 
@@ -252,7 +252,7 @@ class UNetTransformer(nn.Module):
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
 
-    def forward(self, src, mask, pos_embed):
+    def forward(self, src):
         '''
         Args:
             src: the sequence to the encoder (required).
@@ -263,13 +263,11 @@ class UNetTransformer(nn.Module):
             - tgt: :math:`(T, N, E)`.
         '''
         # flatten NxCxHxW to HWxNxC
-        bs, c, h, w = src.shape
-        src = src.flatten(2).permute(2, 0, 1)
-        pos_embed = pos_embed.flatten(2).permute(2, 0, 1)
-        mask = mask.flatten(1)
+        n, c = src.shape
+        src = src.unsqueeze(dim=1)
 
-        memory = self.encoder(src, src_key_padding_mask=mask, pos=pos_embed)
-        return memory.permute(1, 2, 0).view(bs, c, h, w)
+        memory = self.encoder(src)
+        return memory.squeeze(dim=1).view(n, c)
 
 
 class CenterLoss(nn.Module):
