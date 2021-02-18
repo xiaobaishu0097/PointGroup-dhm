@@ -61,10 +61,14 @@ TRAIN:
     'gamma': 2,
   }
 
-  triplet_loss: {
+  instance_triplet_loss: {
+    'activate': False,
     'margin': 0.3,
-    'p': 1.
+    'p': 1,
+    'num_sampled_points': 128,
   }
+
+  stuff_norm_loss: False
 
   loss_weights: {
     'point_semantic': 1.0,
@@ -97,15 +101,11 @@ TRAIN:
     'dim_feedforward': 64
   }
 
-  stuff_norm_loss: False
-  instance_triplet_loss: False
-  instance_triplet_loss_sample_point_num: 128
-
   UNet_Transformer: {
     'activate': False,
     'multi_heads': 4,
     'num_encoder_layers': 1,
-    'dim_feedforward': 64,
+    'dim_feedforward': 448,
     'dropout': 0.0,
   }
 
@@ -135,7 +135,7 @@ GROUP:
   cluster_npoint_thre: 50
   cluster_sets: P # P or Q
 
-  prepare_epochs: 0
+  prepare_epochs: 128
 
 TEST:
   split: val

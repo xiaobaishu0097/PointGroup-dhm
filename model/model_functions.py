@@ -17,7 +17,7 @@ def model_fn_decorator(cfg, test=False):
     stuff_criterion = nn.CrossEntropyLoss(ignore_index=cfg.ignore_label).cuda()
 
     semantic_centre_criterion = CenterLoss(num_classes=cfg.classes, feat_dim=cfg.m, use_gpu=True)
-    instance_triplet_criterion = TripletLoss(margin=cfg.triplet_loss['margin'])
+    instance_triplet_criterion = TripletLoss(margin=cfg.instance_triplet_loss['margin'])
 
     if cfg.offset_norm_criterion == 'l2':
         offset_norm_criterion = nn.MSELoss().cuda()
@@ -305,7 +305,7 @@ def model_fn_decorator(cfg, test=False):
 
             loss_inp['points_semantic_center_loss_feature'] = (points_semantic_center_loss_feature, labels, batch_offsets)
 
-        if cfg.instance_triplet_loss and 'point_offset_feats' in ret.keys():
+        if cfg.instance_triplet_loss['activate'] and 'point_offset_feats' in ret.keys():
             point_offset_feats = ret['point_offset_feats']
 
             loss_inp['point_offset_feats'] = (point_offset_feats, instance_labels, batch_offsets)
@@ -509,7 +509,7 @@ def model_fn_decorator(cfg, test=False):
 
             loss_out['centre_offset_loss'] = (semantic_centre_loss, labels.shape[0])
 
-        if cfg.instance_triplet_loss and 'point_offset_feats' in loss_inp.keys():
+        if cfg.instance_triplet_loss['activate'] and 'point_offset_feats' in loss_inp.keys():
             point_offset_feats, instance_labels, batch_offsets = loss_inp['point_offset_feats']
 
             instance_triplet_loss = torch.zeros(1).cuda()
@@ -525,7 +525,7 @@ def model_fn_decorator(cfg, test=False):
                     triplet_index.append(
                         torch.cat(random.sample(list((instance_label == inst_id).nonzero()),
                                                 min((instance_label == inst_id).sum().item(),
-                                                    cfg.instance_triplet_loss_sample_point_num))))
+                                                    cfg.instance_triplet_loss['num_sampled_points']))))
 
                 triplet_index = torch.cat(triplet_index)
 
@@ -565,7 +565,7 @@ def model_fn_decorator(cfg, test=False):
         if 'points_semantic_center_loss_feature' in loss_inp.keys():
             loss += cfg.loss_weights['point_semantic_center'] * semantic_centre_loss
 
-        if cfg.instance_triplet_loss and 'point_offset_feats' in loss_inp.keys():
+        if cfg.instance_triplet_loss['activate'] and 'point_offset_feats' in loss_inp.keys():
             loss += cfg.loss_weights['point_instance_triplet'] * instance_triplet_loss
 
         return loss, loss_out, infos

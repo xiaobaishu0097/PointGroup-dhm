@@ -1441,7 +1441,7 @@ class PointGroup(nn.Module):
 
             #### point offset prediction
             point_offset_pred = self.point_offset(output_feats)
-            if self.instance_triplet_loss:
+            if self.instance_triplet_loss['activate']:
                 point_offset_pred = point_offset_pred - input['pt_feats'][:, 3:]
             point_offset_preds.append(point_offset_pred)  # (N, 3), float32
             # only used to evaluate based on ground truth
@@ -1502,7 +1502,7 @@ class PointGroup(nn.Module):
 
             ret['point_semantic_scores'] = semantic_scores
             ret['point_offset_preds'] = point_offset_preds
-            if self.instance_triplet_loss:
+            if self.instance_triplet_loss['activate']:
                 ret['point_offset_feats'] = output_feats
 
         elif self.model_mode == 'Fan_centre_loss_PointGroup':
@@ -2379,7 +2379,7 @@ class PointGroup(nn.Module):
             #### point offset prediction
             point_offset_feats = output_feats + point_position_encoding
             point_offset_pred = self.point_offset(point_offset_feats)  # (N, 3), float32
-            if self.instance_triplet_loss:
+            if self.instance_triplet_loss['activate']:
                 point_offset_pred = point_offset_pred - input['pt_feats'][:, 3:]
             point_offset_preds.append(point_offset_pred)
             # only used to evaluate based on ground truth
@@ -2440,7 +2440,7 @@ class PointGroup(nn.Module):
 
             ret['point_semantic_scores'] = semantic_scores
             ret['point_offset_preds'] = point_offset_preds
-            if self.instance_triplet_loss:
+            if self.instance_triplet_loss['activate']:
                 ret['point_offset_feats'] = point_offset_feats
 
         return ret
