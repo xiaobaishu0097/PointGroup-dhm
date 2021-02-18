@@ -125,11 +125,12 @@ class VGGBlock(SparseModule):
 
 
 class UBlock(nn.Module):
-    def __init__(self, nPlanes, norm_fn, block_reps, block, indice_key_id=1):
+    def __init__(self, nPlanes, norm_fn, block_reps, block, indice_key_id=1, backbone=False):
 
         super().__init__()
 
         self.nPlanes = nPlanes
+        self.backbone = backbone
 
         blocks = {'block{}'.format(i): block(nPlanes[0], nPlanes[0], norm_fn, indice_key='subm{}'.format(indice_key_id))
                   for i in range(block_reps)}
@@ -144,7 +145,7 @@ class UBlock(nn.Module):
                                     indice_key='spconv{}'.format(indice_key_id))
             )
 
-            self.u = UBlock(nPlanes[1:], norm_fn, block_reps, block, indice_key_id=indice_key_id + 1)
+            self.u = UBlock(nPlanes[1:], norm_fn, block_reps, block, indice_key_id=indice_key_id + 1, backbone=backbone)
 
             self.deconv = spconv.SparseSequential(
                 norm_fn(nPlanes[1]),
@@ -160,7 +161,7 @@ class UBlock(nn.Module):
             blocks_tail = OrderedDict(blocks_tail)
             self.blocks_tail = spconv.SparseSequential(blocks_tail)
 
-        elif cfg.UNet_Transformer['activate'] and self.nPlanes[-1] == cfg.m * 7:
+        elif (cfg.UNet_Transformer['activate'] and self.backbone):
             self.transformer_encoder = UNetTransformer(
                 d_model=self.nPlanes[-1],
                 nhead=cfg.UNet_Transformer['multi_heads'],
@@ -182,8 +183,10 @@ class UBlock(nn.Module):
 
             output = self.blocks_tail(output)
 
-        elif cfg.UNet_Transformer['activate'] and self.nPlanes[-1] == cfg.m * 7:
-            output.features = self.transformer_encoder(output.features)
+        elif cfg.UNet_Transformer['activate'] and self.backbone:
+            for i in range(output.batch_size):
+                valid_index = output.indices[:, 0] == i
+                output.features[valid_index, :] = self.transformer_encoder(output.features[valid_index, :])
 
         return output
 

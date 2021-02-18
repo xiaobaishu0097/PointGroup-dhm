@@ -260,7 +260,7 @@ class PointGroup(nn.Module):
             )
 
             self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
-                               indice_key_id=1)
+                               indice_key_id=1, backbone=True)
 
             self.output_layer = spconv.SparseSequential(
                 norm_fn(m),
@@ -268,7 +268,7 @@ class PointGroup(nn.Module):
             )
 
             #### score branch
-            self.score_unet = UBlock([m, 2 * m], norm_fn, 2, block, indice_key_id=1)
+            self.score_unet = UBlock([m, 2 * m], norm_fn, 2, block, indice_key_id=1, backbone=False)
             self.score_outputlayer = spconv.SparseSequential(
                 norm_fn(m),
                 nn.ReLU()
@@ -289,7 +289,7 @@ class PointGroup(nn.Module):
             )
 
             self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
-                               indice_key_id=1)
+                               indice_key_id=1, backbone=True)
 
             self.output_layer = spconv.SparseSequential(
                 norm_fn(m),
@@ -346,7 +346,7 @@ class PointGroup(nn.Module):
             )
 
             self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
-                               indice_key_id=1)
+                               indice_key_id=1, backbone=True)
 
             self.output_layer = spconv.SparseSequential(
                 norm_fn(m),
@@ -379,7 +379,7 @@ class PointGroup(nn.Module):
             )
 
             self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
-                               indice_key_id=1)
+                               indice_key_id=1, backbone=True)
 
             self.output_layer = spconv.SparseSequential(
                 norm_fn(m),
@@ -414,7 +414,7 @@ class PointGroup(nn.Module):
             )
 
             self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
-                               indice_key_id=1)
+                               indice_key_id=1, backbone=True)
 
             self.output_layer = spconv.SparseSequential(
                 norm_fn(m),
@@ -452,7 +452,7 @@ class PointGroup(nn.Module):
             )
 
             self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
-                               indice_key_id=1)
+                               indice_key_id=1, backbone=True)
 
             self.output_layer = spconv.SparseSequential(
                 norm_fn(m),
@@ -487,7 +487,7 @@ class PointGroup(nn.Module):
             )
 
             self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
-                               indice_key_id=1)
+                               indice_key_id=1, backbone=True)
 
             self.output_layer = spconv.SparseSequential(
                 norm_fn(m),
@@ -538,7 +538,7 @@ class PointGroup(nn.Module):
             )
 
             self.stuff_unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
-                               indice_key_id=1)
+                               indice_key_id=1, backbone=True)
 
             self.stuff_output_layer = spconv.SparseSequential(
                 norm_fn(m),
@@ -577,7 +577,7 @@ class PointGroup(nn.Module):
             )
 
             self.stuff_unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
-                               indice_key_id=1)
+                               indice_key_id=1, backbone=True)
 
             self.stuff_output_layer = spconv.SparseSequential(
                 norm_fn(m),
@@ -643,7 +643,7 @@ class PointGroup(nn.Module):
             )
 
             self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
-                               indice_key_id=1)
+                               indice_key_id=1, backbone=True)
 
             self.output_layer = spconv.SparseSequential(
                 norm_fn(m),
@@ -680,7 +680,7 @@ class PointGroup(nn.Module):
             )
 
             self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
-                               indice_key_id=1)
+                               indice_key_id=1, backbone=True)
 
             self.output_layer = spconv.SparseSequential(
                 norm_fn(m),
@@ -705,7 +705,7 @@ class PointGroup(nn.Module):
             )
 
             self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
-                               indice_key_id=1)
+                               indice_key_id=1, backbone=True)
 
             self.output_layer = spconv.SparseSequential(
                 norm_fn(m),
