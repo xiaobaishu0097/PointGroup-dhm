@@ -95,7 +95,10 @@ def checkpoint_save(model, exp_path, exp_name, epoch, save_freq=16, use_cuda=Tru
     f = os.path.join(exp_path, exp_name + '-%09d'%epoch + '.pth')
     if not is_multiple(epoch, save_freq) and not is_power2(epoch):
         if os.path.isfile(f):
-            os.remove(f)
+            try:
+                os.remove(f)
+            except:
+                print('can\'t remove old file')
 
 
 def load_model_param(model, pretrained_dict, prefix=""):
