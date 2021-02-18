@@ -17,17 +17,14 @@ def model_fn_decorator(cfg, test=False):
     stuff_criterion = nn.CrossEntropyLoss(ignore_index=cfg.ignore_label).cuda()
 
     semantic_centre_criterion = CenterLoss(num_classes=cfg.classes, feat_dim=cfg.m, use_gpu=True)
-    instance_triplet_criterion = TripletLoss(margin=cfg.triplet_margin)
+    instance_triplet_criterion = TripletLoss(margin=cfg.triplet_loss['margin'])
 
     # if cfg.offset_norm_criterion == 'l1':
     #     offset_norm_criterion = nn.SmoothL1Loss().cuda()
     if cfg.offset_norm_criterion == 'l2':
         offset_norm_criterion = nn.MSELoss().cuda()
-    elif cfg.offset_norm_criterion == 'triplet':
-        offset_norm_criterion = nn.SmoothL1Loss().cuda()
-        offset_norm_triplet_criterion = nn.TripletMarginLoss(margin=cfg.triplet_margin, p=cfg.triplet_p).cuda()
 
-    centre_criterion = WeightedFocalLoss(alpha=cfg.focal_loss_alpha, gamma=cfg.focal_loss_gamma).cuda()
+    centre_criterion = WeightedFocalLoss(alpha=cfg.focal_loss['alpha'], gamma=cfg.focal_loss['gamma']).cuda()
     centre_semantic_criterion = nn.CrossEntropyLoss(ignore_index=cfg.ignore_label).cuda()
     centre_offset_criterion = nn.L1Loss().cuda()
 
@@ -447,7 +444,6 @@ def model_fn_decorator(cfg, test=False):
 
         if 'proposal_confidences' in loss_inp.keys():
             proposals_confidence_preds, proposals_idx_shifts, proposals_offset_shifts, instance_pointnum = loss_inp['proposal_confidences']
-
             # scores: (nProposal, 1), float32
             # proposals_idx: (sumNPoint, 2), int, cpu, dim 0 for cluster_id, dim 1 for corresponding point idxs in N
             # proposals_offset: (nProposal + 1), int, cpu
@@ -474,7 +470,7 @@ def model_fn_decorator(cfg, test=False):
             stuff_labels = torch.zeros(stuff_prediction.shape[0]).long().cuda()
             stuff_labels[semantic_labels > 1] = 1
             stuff_loss = stuff_criterion(stuff_prediction, stuff_labels)
-            stuff_loss = (cfg.focal_loss_alpha * (1 - torch.exp(-stuff_loss)) ** cfg.focal_loss_gamma * stuff_loss).mean()  # mean over the batch
+            stuff_loss = (cfg.focal_loss['alpha'] * (1 - torch.exp(-stuff_loss)) ** cfg.focal_loss['gamma'] * stuff_loss).mean()  # mean over the batch
             loss_out['stuff_loss'] = (stuff_loss, stuff_prediction.shape[0])
 
         if 'output_feats' in loss_inp.keys():
@@ -544,30 +540,35 @@ def model_fn_decorator(cfg, test=False):
 
 
         '''total loss'''
-        loss = cfg.loss_weight[3] * semantic_loss + cfg.loss_weight[4] * offset_norm_loss + \
-               cfg.loss_weight[5] * offset_dir_loss
-        if cfg.offset_norm_criterion == 'triplet':
-            loss += cfg.loss_weight[6] * offset_norm_triplet_loss
+        loss = cfg.loss_weights['point_semantic'] * semantic_loss + \
+               cfg.loss_weights['point_offset_norm'] * offset_norm_loss + \
+               cfg.loss_weights['point_offset_dir'] * offset_dir_loss
+
         if 'centre_preds' in loss_inp.keys():
-            loss += cfg.loss_weight[0] * centre_loss + cfg.loss_weight[1] * centre_semantic_loss + \
-                    cfg.loss_weight[2] * centre_offset_loss
+            loss += cfg.loss_weights['center_prob'] * centre_loss + \
+                    cfg.loss_weights['center_semantic'] * centre_semantic_loss + \
+                    cfg.loss_weights['center_offset'] * centre_offset_loss
+
         if (epoch > cfg.prepare_epochs) and ('proposal_scores' in loss_inp.keys()):
-            loss += (cfg.loss_weight[7] * score_loss)
+            loss += cfg.loss_weights['score'] * score_loss
+
         if 'proposal_confidences' in loss_inp.keys():
             loss += confidence_loss
+
         if 'stuff_preds' in loss_inp.keys():
             loss += stuff_loss
+
         if 'output_feats' in loss_inp.keys():
-            loss += cfg.loss_weight[8] * stuff_feats_norm_loss
+            loss += cfg.loss_weights['stuff_feats_norm'] * stuff_feats_norm_loss
 
         if 'queries_preds' in loss_inp.keys():
             loss = loss + centre_queries_loss + centre_queries_semantic_loss + centre_queries_offset_loss
 
         if 'points_semantic_center_loss_feature' in loss_inp.keys():
-            loss += semantic_centre_loss
+            loss += cfg.loss_weights['point_semantic_center'] * semantic_centre_loss
 
         if cfg.instance_triplet_loss and 'point_offset_feats' in loss_inp.keys():
-            loss += instance_triplet_loss
+            loss += cfg.loss_weights['point_instance_triplet'] * instance_triplet_loss
 
         return loss, loss_out, infos
 

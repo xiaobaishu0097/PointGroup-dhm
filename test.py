@@ -293,23 +293,23 @@ def test(model, model_fn, dataset, epoch):
             ##### save files
             start3 = time.time()
 
-            if cfg.save_semantic:
+            if cfg.eval_save['semantic']:
                 os.makedirs(os.path.join(result_dir, 'semantic_pred'), exist_ok=True)
                 semantic_np = semantic_pred.cpu().numpy()
                 np.save(os.path.join(result_dir, 'semantic_pred', test_scene_name + '.npy'), semantic_np)
 
-            if cfg.save_pt_offsets:
+            if cfg.eval_save['pt_offsets']:
                 os.makedirs(os.path.join(result_dir, 'pt_offsets'), exist_ok=True)
                 pt_offsets = pt_offsets[-1].cpu().numpy()
                 np.save(os.path.join(result_dir, 'pt_offsets', test_scene_name + '.npy'), pt_offsets)
 
-            if cfg.save_pt_shifted_coords:
+            if cfg.eval_save['pt_shifted_coords']:
                 os.makedirs(os.path.join(result_dir, 'pt_shifted_coords'), exist_ok=True)
                 pt_shifted_coords = preds['pt_shifted_coords']
                 pt_shifted_coords = pt_shifted_coords.cpu().numpy()
                 np.save(os.path.join(result_dir, 'pt_shifted_coords', test_scene_name + '.npy'), pt_shifted_coords)
 
-            if cfg.save_grid_points:
+            if cfg.eval_save['grid_points']:
                 os.makedirs(os.path.join(result_dir, 'grid_center_preds'), exist_ok=True)
                 os.makedirs(os.path.join(result_dir, 'pt_offsets'), exist_ok=True)
                 os.makedirs(os.path.join(result_dir, 'semantic_pred'), exist_ok=True)
@@ -320,7 +320,7 @@ def test(model, model_fn, dataset, epoch):
                 np.save(os.path.join(result_dir, 'pt_offsets', test_scene_name + '.npy'), pt_offsets)
                 np.save(os.path.join(result_dir, 'semantic_pred', test_scene_name + '.npy'), semantic_pred[-1])
 
-            if(epoch > cfg.prepare_epochs and cfg.save_instance):
+            if(epoch > cfg.prepare_epochs and cfg.eval_save['instance']):
                 f = open(os.path.join(result_dir, test_scene_name + '.txt'), 'w')
                 for proposal_id in range(nclusters):
                     clusters_i = clusters[proposal_id].cpu().numpy()  # (N)

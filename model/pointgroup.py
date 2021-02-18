@@ -58,8 +58,7 @@ class PointGroup(nn.Module):
         self.m = cfg.m
 
         self.pointnet_include_rgb = cfg.pointnet_include_rgb
-        self.refine_times = cfg.refine_times
-        self.add_pos_enc_ref = cfg.add_pos_enc_ref
+        self.proposal_refinement = cfg.proposal_refinement
 
         self.pointnet_max_npoint = 8196
 
@@ -423,9 +422,9 @@ class PointGroup(nn.Module):
 
             self.proposal_transformer = ProposalTransformer(
                 d_model=self.m,
-                nhead=cfg.multi_heads,
-                num_decoder_layers=cfg.num_decoder_layers,
-                dim_feedforward=cfg.dim_feedforward,
+                nhead=cfg.Proposal_Transformer['multi_heads'],
+                num_decoder_layers=cfg.Proposal_Transformer['num_decoder_layers'],
+                dim_feedforward=cfg.Proposal_Transformer['dim_feedforward'],
                 dropout=0.0,
             )
 
@@ -1204,7 +1203,7 @@ class PointGroup(nn.Module):
 
             if (epoch > self.prepare_epochs):
 
-                for _ in range(self.refine_times):
+                for _ in range(self.proposal_refinement['refine_times']):
                     #### get prooposal clusters
                     object_idxs = torch.nonzero(point_semantic_preds > 1).view(-1)
 
@@ -1264,7 +1263,7 @@ class PointGroup(nn.Module):
                     #### point offset prediction
                     point_offset_preds.append(self.point_offset(refined_point_features))  # (N, 3), float32
 
-                if (epoch == self.test_epoch):
+                if (epoch == self.test_epoch) and input['test']:
                     self.cluster_sets = 'Q'
                     scores, proposals_idx, proposals_offset = self.pointgroup_cluster_algorithm(
                         coords, point_offset_preds[-1], point_semantic_preds,
@@ -1493,7 +1492,7 @@ class PointGroup(nn.Module):
             centre_semantic_preds = self.centre_semantic(grid_feats)
             centre_offset_preds = self.centre_offset(grid_feats)
 
-            if (epoch == self.test_epoch):
+            if (epoch == self.test_epoch) and input['test']:
                 self.cluster_sets = 'Q'
                 scores, proposals_idx, proposals_offset = self.pointgroup_cluster_algorithm(
                     coords, point_offset_preds[-1], point_semantic_preds,
@@ -1538,7 +1537,7 @@ class PointGroup(nn.Module):
 
             if (epoch > self.prepare_epochs):
 
-                for _ in range(self.refine_times):
+                for _ in range(self.proposal_refinement['refine_times']):
                     #### get prooposal clusters
                     object_idxs = torch.nonzero(point_semantic_preds > 1).view(-1)
 
@@ -1610,7 +1609,7 @@ class PointGroup(nn.Module):
                     #### point offset prediction
                     point_offset_preds.append(self.point_offset(refined_point_features))  # (N, 3), float32
 
-                if (epoch == self.test_epoch):
+                if (epoch == self.test_epoch) and input['test']:
                     self.cluster_sets = 'Q'
                     scores, proposals_idx, proposals_offset = self.pointgroup_cluster_algorithm(
                         coords, point_offset_preds[-1], point_semantic_preds,
@@ -1738,7 +1737,7 @@ class PointGroup(nn.Module):
                 #### point offset prediction
                 point_offset_preds.append(self.point_offset(output_feats + refined_point_features))  # (N, 3), float32
 
-            if (epoch == self.test_epoch):
+            if (epoch == self.test_epoch) and input['test']:
                 self.cluster_sets = 'Q'
                 scores, proposals_idx, proposals_offset = self.pointgroup_cluster_algorithm(
                     coords, point_offset_preds[-1], point_semantic_preds,
@@ -1784,7 +1783,7 @@ class PointGroup(nn.Module):
 
             if (epoch > self.prepare_epochs):
 
-                for _ in range(self.refine_times):
+                for _ in range(self.proposal_refinement['refine_times']):
                     #### get prooposal clusters
                     object_idxs = torch.nonzero(point_semantic_preds > 1).view(-1)
 
@@ -1853,7 +1852,7 @@ class PointGroup(nn.Module):
                     #### point offset prediction
                     point_offset_preds.append(self.point_offset(refined_point_features))  # (N, 3), float32
 
-                if (epoch == self.test_epoch):
+                if (epoch == self.test_epoch) and input['test']:
                     self.cluster_sets = 'Q'
                     scores, proposals_idx, proposals_offset = self.pointgroup_cluster_algorithm(
                         coords, point_offset_preds[-1], point_semantic_preds,
@@ -1897,7 +1896,7 @@ class PointGroup(nn.Module):
 
             if (epoch > self.prepare_epochs):
 
-                for _ in range(self.refine_times):
+                for _ in range(self.proposal_refinement['refine_times']):
                     #### get prooposal clusters
                     object_idxs = torch.nonzero(point_semantic_preds > 1).view(-1)
 
@@ -1976,7 +1975,7 @@ class PointGroup(nn.Module):
                     #### point offset prediction
                     point_offset_preds.append(self.point_offset(refined_point_features))  # (N, 3), float32
 
-                if (epoch == self.test_epoch):
+                if (epoch == self.test_epoch) and input['test']:
                     self.cluster_sets = 'Q'
                     scores, proposals_idx, proposals_offset = self.pointgroup_cluster_algorithm(
                         coords, point_offset_preds[-1], point_semantic_preds,
@@ -2032,7 +2031,7 @@ class PointGroup(nn.Module):
             #### point offset prediction
             point_offset_preds.append(self.point_offset(output_feats))  # (N, 3), float32
 
-            if (epoch == self.test_epoch):
+            if (epoch == self.test_epoch) and input['test']:
                 self.cluster_sets = 'Q'
 
                 nonstuff_point_semantic_preds = point_semantic_scores[-1].max(1)[1] + 2
@@ -2122,7 +2121,7 @@ class PointGroup(nn.Module):
             nonstuff_point_offset_pred = self.point_offset(output_feats)
             point_offset_preds.append(nonstuff_point_offset_pred)  # (N, 3), float32
 
-            if (epoch == self.test_epoch):
+            if (epoch == self.test_epoch) and input['test']:
                 self.cluster_sets = 'Q'
 
                 nonstuff_point_semantic_preds = point_semantic_scores[-1].max(1)[1] + 2
@@ -2181,7 +2180,7 @@ class PointGroup(nn.Module):
 
             if (epoch > self.prepare_epochs):
 
-                for _ in range(self.refine_times):
+                for _ in range(self.proposal_refinement['refine_times']):
                     #### get prooposal clusters
                     object_idxs = torch.nonzero(point_semantic_preds > 1).view(-1)
 
@@ -2259,7 +2258,7 @@ class PointGroup(nn.Module):
                     #### point offset prediction
                     point_offset_preds.append(self.point_offset(refined_point_features))  # (N, 3), float32
 
-                if (epoch == self.test_epoch):
+                if (epoch == self.test_epoch) and input['test']:
                     self.cluster_sets = 'Q'
                     scores, proposals_idx, proposals_offset = self.pointgroup_cluster_algorithm(
                         coords, point_offset_preds[-1], point_semantic_preds,

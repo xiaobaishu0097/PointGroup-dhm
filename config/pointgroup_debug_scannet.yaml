@@ -30,7 +30,7 @@ STRUCTURE:
   block_reps: 2
   scatter_type: max
   unet3d_num_levels: 3
-  model_mode: Yu_local_proposal_PointGroup
+  model_mode: Yu_RC_ScoreNet_Conf_Transformer_PointGroup
   # Centre_clustering or Zheng_panoptic_wpointnet_PointGroup or Zheng_upper_wpointnet_PointGroup or Zheng_panoptic_wopointnet_PointGroup
   # or Zheng_upper_wopointnet_PointGroup or Jiang_original_PointGroup or Yu_refine_clustering_PointGroup
   # or Li_simple_backbone_PointGroup or Yu_refine_clustering_scorenet_PointGroup
@@ -38,7 +38,7 @@ STRUCTURE:
   # or Yu_rc_v2_PointGroup or PointNet_deeper_PointGroup or PointNet_sample_PointGroup
   # or Yu_stuff_first_PointGroup or Yu_RC_ScoreNet_Conf_Transformer_PointGroup or Yu_stuff_parallel_PointGroup
   # or Yu_stuff_sep_PointGroup or Yu_stuff_remove_PointGroup or Yu_local_proposal_PointGroup
-  # or Centre_sample_cluster or Yu_Proposal_Refinement_Centre_loss_Transformer_PointGroup or Fan_centre_loss_PointGroup
+  # or Centre_sample_cluster or Fan_centre_loss_PointGroup
   # or Position_enhanced_PointGroup
 
   use_coords: True
@@ -55,41 +55,64 @@ TRAIN:
   momentum: 0.9
   weight_decay: 0.0001
   save_freq: 16  # also eval_freq
-  loss_weight: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
-  # center, center_semantic, center_offset, semantic, pt_offset_norm, pt_offset_dir
-  focal_loss_alpha: 0.25
-  focal_loss_gamma: 2
+
+  focal_loss: {
+    'alpha': 0.25,
+    'gamma': 2,
+  }
+
+  triplet_loss: {
+    'margin': 0.3,
+    'p': 1.
+  }
+
+  loss_weights: {
+    'point_semantic': 1.0,
+    'point_offset_norm': 1.0,
+    'point_offset_dir': 1.0,
+    # center related loss
+    'center_prob': 1.0,
+    'center_semantic': 1.0,
+    'center_offset': 1.0,
+    # other loss
+    'score': 1.0,
+    'stuff_feats_norm': 1.0,
+    'point_semantic_center': 1.0,
+    'point_instance_triplet': 1.0,
+  }
+
   heatmap_sigma: 0
   min_IoU: 0.5
   offset_norm_criterion: l1 # l1 or l2 or triplet
-  triplet_margin: 0.3
-  triplet_p: 1
-  overfitting: False
-  multi_heads: 2
-  refine_times: 2
+
   clip: False
 
-  num_decoder_layers: 1
-  dim_feedforward: 64
+  proposal_refinement: {
+    'refine_times': 2,
+  }
+
+  Proposal_Transformer: {
+    'multi_heads': 2,
+    'num_decoder_layers': 1,
+    'dim_feedforward': 64
+  }
 
   stuff_norm_loss: False
   instance_triplet_loss: False
   instance_triplet_loss_sample_point_num: 128
 
   UNet_Transformer: {
-                      "activate": False,
-                      "multi_heads": 4,
-                      "num_encoder_layers": 1,
-                      "dim_feedforward": 64,
-                      "dropout": 0.0,
+    'activate': False,
+    'multi_heads': 4,
+    'num_encoder_layers': 1,
+    'dim_feedforward': 64,
+    'dropout': 0.0,
   }
 
   local_proposal: {
-                    "topk": 3,
-                    "dist_th": 0.5,
+    'topk': 3,
+    'dist_th': 0.5,
   }
-
-  constrastive_loss: True
 
   fg_thresh: 0.75
   bg_thresh: 0.25
@@ -112,7 +135,7 @@ GROUP:
   cluster_npoint_thre: 50
   cluster_sets: P # P or Q
 
-  prepare_epochs: 128
+  prepare_epochs: 0
 
 TEST:
   split: val
@@ -126,11 +149,13 @@ TEST:
   TEST_DIST_THRESH: 2
 
   eval: True
-  save_grid_points: False
-  save_semantic: False
-  save_pt_offsets: False
-  save_instance: False
-  save_pt_shifted_coords: False
+  eval_save: {
+    'grid_points': False,
+    'semantic': False,
+    'instance': False,
+    'pt_offsets': False,
+    'pt_shifted_coords': False,
+  }
 
 DISTRIBUTE:
   nodes: 1

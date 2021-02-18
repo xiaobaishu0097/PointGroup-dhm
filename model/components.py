@@ -209,10 +209,8 @@ class WeightedFocalLoss(nn.Module):
 
 
 class ProposalTransformer(Transformer):
-    def __init__(self, d_model=256, nhead=8, num_encoder_layers=1,
-                 num_decoder_layers=6, dim_feedforward=512, dropout=0.1,
-                 activation="relu", normalize_before=False,
-                 return_intermediate_dec=False):
+    def __init__(self, d_model=256, nhead=8, num_decoder_layers=6, dim_feedforward=512, dropout=0.1,
+                 activation="relu", normalize_before=False, return_intermediate_dec=False):
         super(ProposalTransformer, self).__init__()
 
         decoder_layer = TransformerDecoderLayer(d_model, nhead, dim_feedforward,
