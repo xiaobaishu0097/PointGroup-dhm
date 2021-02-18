@@ -8,14 +8,13 @@ import scipy.ndimage
 import scipy.interpolate
 import torch
 from torch.utils.data import Dataset, DataLoader
+import SharedArray as SA
 import torch_scatter
 
 from model.common import generate_heatmap, normalize_3d_coordinate, coordinate2index, generate_adaptive_heatmap
 
 sys.path.append('../')
 
-from util.config import cfg
-from util.log import logger
 from lib.pointgroup_ops.functions import pointgroup_ops
 
 SEMANTIC_NAME2INDEX = {
@@ -25,7 +24,7 @@ SEMANTIC_NAME2INDEX = {
 }
 
 class ScannetDatast:
-    def __init__(self, test=False):
+    def __init__(self, cfg, test=False):
         self.data_root = cfg.data_root
         self.dataset = cfg.dataset
         self.filename_suffix = cfg.filename_suffix
@@ -39,6 +38,10 @@ class ScannetDatast:
         self.max_npoint = cfg.max_npoint
         self.mode = cfg.mode
 
+        self.dist = cfg.dist
+        self.cache = cfg.cache
+
+        self.model_mode = cfg.model_mode
         self.heatmap_sigma = cfg.heatmap_sigma
         self.min_IoU = cfg.min_IoU
 
@@ -52,42 +55,40 @@ class ScannetDatast:
             cfg.batch_size = 1
 
     def trainLoader(self):
-        if not cfg.overfitting:
-            file_names = sorted(
-                glob.glob(os.path.join(self.data_root, self.dataset, 'train', '*' + self.filename_suffix))
-            )
-            self.train_data_files = [torch.load(i) for i in file_names]
-        else:
-            file_names = sorted(
-                glob.glob(os.path.join(self.data_root, self.dataset, 'val', '*' + self.filename_suffix))
-            )
-            self.train_data_files = [torch.load(file_names[0])]
+        self.train_file_names = sorted(glob.glob(os.path.join(self.data_root, self.dataset, 'train', '*' + self.filename_suffix)))
+        if not self.cache:
+            self.train_files = [torch.load(i) for i in self.train_file_names]
 
-        logger.info('Training samples: {}'.format(len(self.train_data_files)))
-        self.train_set = list(range(len(self.train_data_files)))
+        train_set = list(range(len(self.train_file_names)))
+        self.train_sampler = torch.utils.data.distributed.DistributedSampler(train_set) if self.dist else None
+        self.train_data_loader = DataLoader(train_set, batch_size=self.batch_size, collate_fn=self.trainMerge, num_workers=self.train_workers,
+                                            shuffle=(self.train_sampler is None), sampler=self.train_sampler, drop_last=True, pin_memory=True,
+                                            worker_init_fn=self._worker_init_fn_)
 
     def valLoader(self):
-        file_names = sorted(
-            glob.glob(os.path.join(self.data_root, self.dataset, 'val', '*' + self.filename_suffix))
-        )
-        self.val_data_files = [torch.load(i) for i in file_names]
+        self.val_file_names = sorted(glob.glob(os.path.join(self.data_root, self.dataset, 'val', '*' + self.filename_suffix)))
+        if not self.cache:
+            self.val_files = [torch.load(i) for i in self.val_file_names]
 
-        logger.info('Validation samples: {}'.format(len(self.val_data_files)))
-        self.val_set = list(range(len(self.val_data_files)))
+        val_set = list(range(len(self.val_file_names)))
+        self.val_sampler = torch.utils.data.distributed.DistributedSampler(val_set) if self.dist else None
+        self.val_data_loader = DataLoader(val_set, batch_size=self.batch_size, collate_fn=self.valMerge, num_workers=self.val_workers,
+                                          shuffle=False, sampler=self.val_sampler, drop_last=False, pin_memory=True, worker_init_fn=self._worker_init_fn_)
 
 
     def testLoader(self):
-        if not cfg.overfitting:
-            self.test_file_names = sorted(
-                glob.glob(os.path.join(self.data_root, self.dataset, self.test_split, '*' + self.filename_suffix))
-            )
-            self.test_data_files = [torch.load(i) for i in self.test_file_names]
-        else:
-            self.test_file_names = sorted(glob.glob(os.path.join(self.data_root, self.dataset, 'val', '*' + self.filename_suffix)))
-            self.test_data_files = [torch.load(self.test_file_names[0])]
+        self.test_file_names = sorted(glob.glob(os.path.join(self.data_root, self.dataset, self.test_split, '*' + self.filename_suffix)))
+        if not self.cache:
+            self.test_files = [torch.load(i) for i in self.test_file_names]
 
-        logger.info('Testing samples ({}): {}'.format(self.test_split, len(self.test_data_files)))
-        self.test_set = list(range(len(self.test_data_files)))
+        test_set = list(np.arange(len(self.test_file_names)))
+        self.test_data_loader = DataLoader(test_set, batch_size=1, collate_fn=self.testMerge, num_workers=self.test_workers,
+                                           shuffle=False, drop_last=False, pin_memory=True)
+
+    def _worker_init_fn_(self, worker_id):
+        torch_seed = torch.initial_seed()
+        np_seed = torch_seed // 2 ** 32 - 1
+        np.random.seed(np_seed)
 
     #Elastic distortion
     def elastic(self, x, gran, mag):
@@ -260,7 +261,14 @@ class ScannetDatast:
         total_inst_num = 0
 
         for i, idx in enumerate(id):
-            xyz_origin, rgb, label, instance_label = self.train_data_files[idx]
+            if self.cache:
+                fn = self.train_file_names[idx].split('/')[-1][:12]
+                xyz_origin = SA.attach("shm://{}_xyz".format(fn)).copy()
+                rgb = SA.attach("shm://{}_rgb".format(fn)).copy()
+                label = SA.attach("shm://{}_label".format(fn)).copy()
+                instance_label = SA.attach("shm://{}_instance_label".format(fn)).copy()
+            else:
+                xyz_origin, rgb, label, instance_label = self.train_files[idx]
 
             for class_idx in self.remove_class:
                 valid_class_indx = (label != class_idx)
@@ -306,7 +314,7 @@ class ScannetDatast:
             instance_label[np.where(instance_label != -100)] += total_inst_num
             total_inst_num += inst_num
 
-            if 'Centre' in cfg.model_mode.split('_'):
+            if 'Centre' in self.model_mode.split('_'):
                 ### get instance centre heatmap
                 grid_xyz = np.zeros((32 ** 3, 3), dtype=np.float32)
                 grid_xyz += xyz_middle.min(axis=0, keepdims=True)
@@ -399,7 +407,7 @@ class ScannetDatast:
                 )
             )  # (nInst, 4) (sample_index, instance_centre_xyz)
 
-            if 'Centre' in cfg.model_mode.split('_'):
+            if 'Centre' in self.model_mode.split('_'):
                 # variables for grid-wise predictions
                 grid_centre_heatmaps.append(grid_centre_heatmap.unsqueeze(dim=0))  # (B, nGrid)
                 grid_centre_indicators.append(grid_centre_indicator)  # (NGrid, 2) (sample_index, grid_index)
@@ -420,20 +428,6 @@ class ScannetDatast:
         point_locs = torch.cat(point_locs, 0)  # (N) (sample_index)
         point_coords = torch.cat(point_coords, 0).to(torch.float32)  # (N, 6) (shifted_xyz, original_xyz)
         point_feats = torch.cat(point_feats, 0)  # (N, 3) (rgb)
-        if cfg.pos_enc == 'XYZ':
-            point_positional_encoding = torch.cat(
-                (
-                    torch.zeros(point_coords.shape[0], 1), self.positional_encoding_func(point_coords[:, :3], 5),
-                    torch.zeros(point_coords.shape[0], 1)
-                ), dim=1
-            )
-        elif cfg.pos_enc == 'XYZRGB':
-            point_positional_encoding = torch.cat(
-                (
-                    torch.zeros(point_coords.shape[0], 1), self.positional_encoding_func(point_coords[:, :3], 3),
-                    torch.zeros(point_coords.shape[0], 1), self.positional_encoding_func(point_feats, 2)
-                ), dim=1
-            )
         # variables for point-wise predictions
         point_semantic_labels = torch.cat(point_semantic_labels, 0).long()  # (N)
         point_instance_labels = torch.cat(point_instance_labels, 0).long()  # (N)
@@ -444,13 +438,12 @@ class ScannetDatast:
         ret_dict['point_locs'] = point_locs # (N, 4) (sample_index, xyz)
         ret_dict['point_coords'] = point_coords # (N, 6) (shifted_xyz, original_xyz)
         ret_dict['point_feats'] = point_feats # (N, 3) (rgb)
-        ret_dict['point_positional_encoding'] = point_positional_encoding # (N, 32) (0, xyz-18dim, 0, rgb-12dim)
         ret_dict['point_semantic_labels'] = point_semantic_labels  # (N)
         ret_dict['point_instance_labels'] = point_instance_labels  # (N)
         ret_dict['point_instance_infos'] = point_instance_infos  # (N, 9)
         ret_dict['instance_centres'] = instance_centres  # (nInst, 3) (instance_xyz)
 
-        if 'Centre' in cfg.model_mode.split('_'):
+        if 'Centre' in self.model_mode.split('_'):
             # variables for grid-wise predictions
             grid_centre_heatmaps = torch.cat(grid_centre_heatmaps, 0).to(torch.float32)  # (B, nGrid)
             grid_centre_indicators = torch.cat(grid_centre_indicators, 0)  # (NInst, 2) (sample_index, grid_index)
@@ -493,7 +486,7 @@ class ScannetDatast:
         ret_dict['batch_offsets'] = batch_offsets  # int (B+1)
         ret_dict['spatial_shape'] = spatial_shape  # long (3)
 
-        if 'stuff' in cfg.model_mode.split('_'):
+        if 'stuff' in self.model_mode.split('_'):
             nonstuff_spatial_shape = np.clip(
                 (point_locs[point_semantic_labels > 1].max(0)[0][1:] + 1).numpy(), self.full_scale[0], None)  # long (3)
             nonstuff_voxel_locs, nonstuff_p2v_map, nonstuff_v2p_map = pointgroup_ops.voxelization_idx(
@@ -542,7 +535,14 @@ class ScannetDatast:
         total_inst_num = 0
 
         for i, idx in enumerate(id):
-            xyz_origin, rgb, label, instance_label = self.val_data_files[idx]
+            if self.cache:
+                fn = self.val_file_names[idx].split('/')[-1][:12]
+                xyz_origin = SA.attach("shm://{}_xyz".format(fn)).copy()
+                rgb = SA.attach("shm://{}_rgb".format(fn)).copy()
+                label = SA.attach("shm://{}_label".format(fn)).copy()
+                instance_label = SA.attach("shm://{}_instance_label".format(fn)).copy()
+            else:
+                xyz_origin, rgb, label, instance_label = self.val_files[idx]
 
             ### jitter / flip x / rotation
             xyz_middle = self.dataAugment(xyz_origin, True, True, True)
@@ -575,7 +575,7 @@ class ScannetDatast:
             instance_label[np.where(instance_label != -100)] += total_inst_num
             total_inst_num += inst_num
 
-            if 'Centre' in cfg.model_mode.split('_'):
+            if 'Centre' in self.model_mode.split('_'):
                 ### get instance centre heatmap
                 grid_xyz = np.zeros((32 ** 3, 3), dtype=np.float32)
                 grid_xyz += xyz_middle.min(axis=0, keepdims=True)
@@ -659,7 +659,7 @@ class ScannetDatast:
                 )
             )  # (nInst, 4) (sample_index, instance_centre_xyz)
 
-            if 'Centre' in cfg.model_mode.split('_'):
+            if 'Centre' in self.model_mode.split('_'):
                 # variables for grid-wise predictions
                 grid_centre_heatmaps.append(grid_centre_heatmap.unsqueeze(dim=0))  # (B, nGrid)
                 grid_centre_indicators.append(grid_centre_indicator)  # (NGrid, 2) (sample_index, grid_index)
@@ -680,20 +680,6 @@ class ScannetDatast:
         point_locs = torch.cat(point_locs, 0)  # (N) (sample_index)
         point_coords = torch.cat(point_coords, 0).to(torch.float32)  # (N, 6) (shifted_xyz, original_xyz)
         point_feats = torch.cat(point_feats, 0)  # (N, 3) (rgb)
-        if cfg.pos_enc == 'XYZ':
-            point_positional_encoding = torch.cat(
-                (
-                    torch.zeros(point_coords.shape[0], 1), self.positional_encoding_func(point_coords[:, :3], 5),
-                    torch.zeros(point_coords.shape[0], 1)
-                ), dim=1
-            )
-        elif cfg.pos_enc == 'XYZRGB':
-            point_positional_encoding = torch.cat(
-                (
-                    torch.zeros(point_coords.shape[0], 1), self.positional_encoding_func(point_coords[:, :3], 3),
-                    torch.zeros(point_coords.shape[0], 1), self.positional_encoding_func(point_feats, 2)
-                ), dim=1
-            )
         # variables for point-wise predictions
         point_semantic_labels = torch.cat(point_semantic_labels, 0).long()  # (N)
         point_instance_labels = torch.cat(point_instance_labels, 0).long()  # (N)
@@ -704,13 +690,12 @@ class ScannetDatast:
         ret_dict['point_locs'] = point_locs  # (N, 4) (sample_index, xyz)
         ret_dict['point_coords'] = point_coords  # (N, 6) (shifted_xyz, original_xyz)
         ret_dict['point_feats'] = point_feats  # (N, 3) (rgb)
-        ret_dict['point_positional_encoding'] = point_positional_encoding  # (N, 32) (0, xyz-18dim, 0, rgb-12dim)
         ret_dict['point_semantic_labels'] = point_semantic_labels  # (N)
         ret_dict['point_instance_labels'] = point_instance_labels  # (N)
         ret_dict['point_instance_infos'] = point_instance_infos  # (N, 9)
         ret_dict['instance_centres'] = instance_centres  # (nInst, 3) (instance_xyz)
 
-        if 'Centre' in cfg.model_mode.split('_'):
+        if 'Centre' in self.model_mode.split('_'):
             # variables for grid-wise predictions
             grid_centre_heatmaps = torch.cat(grid_centre_heatmaps, 0).to(torch.float32)  # (B, nGrid)
             grid_centre_indicators = torch.cat(grid_centre_indicators, 0)  # (NInst, 2) (sample_index, grid_index)
@@ -754,7 +739,7 @@ class ScannetDatast:
         ret_dict['spatial_shape'] = spatial_shape  # long (3)
 
 
-        if 'stuff' in cfg.model_mode.split('_'):
+        if 'stuff' in self.model_mode.split('_'):
             nonstuff_spatial_shape = np.clip(
                 (point_locs[point_semantic_labels > 1].max(0)[0][1:] + 1).numpy(), self.full_scale[0], None)  # long (3)
             nonstuff_voxel_locs, nonstuff_p2v_map, nonstuff_v2p_map = pointgroup_ops.voxelization_idx(
@@ -784,13 +769,16 @@ class ScannetDatast:
         total_inst_num = 0
 
         for i, idx in enumerate(id):
-            if self.test_split == 'val':
-                xyz_origin, rgb, label, instance_label = self.test_data_files[idx]
-            elif self.test_split == 'test':
-                xyz_origin, rgb = self.test_data_files[idx]
+            assert self.test_split in ['val', 'test']
+            if not self.cache:
+                if self.test_split == 'val':
+                    xyz_origin, rgb, label, instance_label = self.test_files[idx]
+                elif self.test_split == 'test':
+                    xyz_origin, rgb = self.test_files[idx]
             else:
-                print("Wrong test split: {}!".format(self.test_split))
-                exit(0)
+                fn = self.test_file_names[idx].split('/')[-1][:12]
+                xyz_origin = SA.attach("shm://{}_xyz".format(fn)).copy()
+                rgb = SA.attach("shm://{}_rgb".format(fn)).copy()
 
             ### jitter / flip x / rotation
             xyz_middle = self.dataAugment(xyz_origin, False, True, True)
@@ -801,7 +789,7 @@ class ScannetDatast:
             ### offset
             xyz -= xyz.min(0)
 
-            if 'Centre' in cfg.model_mode.split('_'):
+            if 'Centre' in self.model_mode.split('_'):
                 ### get instance center heatmap
                 grid_xyz = np.zeros((32 ** 3, 3), dtype=np.float32)
                 grid_xyz += xyz_middle.min(axis=0, keepdims=True)
@@ -821,7 +809,7 @@ class ScannetDatast:
             point_coords.append(torch.from_numpy(np.concatenate((xyz_middle, xyz_origin), axis=1)))  # (N, 6) (shifted_xyz, original_xyz)
             point_feats.append(torch.from_numpy(rgb) + torch.randn(3) * 0.1)  # (N, 3) (rgb)
 
-            if 'Centre' in cfg.model_mode.split('_'):
+            if 'Centre' in self.model_mode.split('_'):
                 grid_xyzs.append(torch.from_numpy(grid_xyz))
 
             if self.test_split == 'val':
@@ -862,7 +850,7 @@ class ScannetDatast:
         ret_dict['point_feats'] = point_feats  # (N, 3) (rgb)
         ret_dict['point_positional_encoding'] = point_positional_encoding
 
-        if 'Centre' in cfg.model_mode.split('_'):
+        if 'Centre' in self.model_mode.split('_'):
             grid_xyzs = torch.cat(grid_xyzs, 0)
 
             ret_dict['grid_xyz'] = grid_xyzs

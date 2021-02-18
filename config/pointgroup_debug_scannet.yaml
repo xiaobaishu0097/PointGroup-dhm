@@ -10,12 +10,14 @@ DATA:
   dataset: scannetv2
   filename_suffix: _inst_nostuff.pth
 
+  cache: True
+
   classes: 20
   ignore_label: -100
 
   input_channel: 3
   scale: 50   # voxel_size = 1 / scale, scale 50(2cm)
-  batch_size: 3
+  batch_size: 4
   full_scale: [128, 512]
   max_npoint: 250000
   mode: 4 # 4=mean
@@ -131,3 +133,10 @@ TEST:
   save_pt_offsets: False
   save_instance: False
   save_pt_shifted_coords: False
+
+DISTRIBUTE:
+  nodes: 1
+  ngpu_per_node: 2
+  tcp_port: 18888
+
+  sync_bn: False

@@ -6,7 +6,7 @@ from torch_scatter import scatter_mean
 import numpy as np
 import spconv
 import functools
-import sys
+import sys, os
 
 sys.path.append('../')
 
@@ -111,7 +111,7 @@ class PointGroup(nn.Module):
             )
 
             self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
-                               indice_key_id=1)
+                               indice_key_id=1, backbone=True, UNet_Transformer=cfg.UNet_Transformer)
 
             self.output_layer = spconv.SparseSequential(
                 norm_fn(m),
@@ -151,7 +151,7 @@ class PointGroup(nn.Module):
             )
 
             self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
-                               indice_key_id=1)
+                               indice_key_id=1, backbone=True, UNet_Transformer=cfg.UNet_Transformer)
 
             self.output_layer = spconv.SparseSequential(
                 norm_fn(m),
@@ -170,7 +170,7 @@ class PointGroup(nn.Module):
             )
 
             self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
-                               indice_key_id=1)
+                               indice_key_id=1, backbone=True, UNet_Transformer=cfg.UNet_Transformer)
 
             self.output_layer = spconv.SparseSequential(
                 norm_fn(m),
@@ -215,7 +215,7 @@ class PointGroup(nn.Module):
             )
 
             self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
-                               indice_key_id=1)
+                               indice_key_id=1, backbone=True, UNet_Transformer=cfg.UNet_Transformer)
 
             self.output_layer = spconv.SparseSequential(
                 norm_fn(m),
@@ -233,7 +233,7 @@ class PointGroup(nn.Module):
             )
 
             self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
-                               indice_key_id=1)
+                               indice_key_id=1, backbone=True, UNet_Transformer=cfg.UNet_Transformer)
 
             self.output_layer = spconv.SparseSequential(
                 norm_fn(m),
@@ -260,7 +260,7 @@ class PointGroup(nn.Module):
             )
 
             self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
-                               indice_key_id=1, backbone=True)
+                               indice_key_id=1, backbone=True, UNet_Transformer=cfg.UNet_Transformer)
 
             self.output_layer = spconv.SparseSequential(
                 norm_fn(m),
@@ -289,7 +289,7 @@ class PointGroup(nn.Module):
             )
 
             self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
-                               indice_key_id=1, backbone=True)
+                               indice_key_id=1, backbone=True, UNet_Transformer=cfg.UNet_Transformer)
 
             self.output_layer = spconv.SparseSequential(
                 norm_fn(m),
@@ -346,7 +346,7 @@ class PointGroup(nn.Module):
             )
 
             self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
-                               indice_key_id=1, backbone=True)
+                               indice_key_id=1, backbone=True, UNet_Transformer=cfg.UNet_Transformer)
 
             self.output_layer = spconv.SparseSequential(
                 norm_fn(m),
@@ -379,7 +379,7 @@ class PointGroup(nn.Module):
             )
 
             self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
-                               indice_key_id=1, backbone=True)
+                               indice_key_id=1, backbone=True, UNet_Transformer=cfg.UNet_Transformer)
 
             self.output_layer = spconv.SparseSequential(
                 norm_fn(m),
@@ -414,7 +414,7 @@ class PointGroup(nn.Module):
             )
 
             self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
-                               indice_key_id=1, backbone=True)
+                               indice_key_id=1, backbone=True, UNet_Transformer=cfg.UNet_Transformer)
 
             self.output_layer = spconv.SparseSequential(
                 norm_fn(m),
@@ -452,7 +452,7 @@ class PointGroup(nn.Module):
             )
 
             self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
-                               indice_key_id=1, backbone=True)
+                               indice_key_id=1, backbone=True, UNet_Transformer=cfg.UNet_Transformer)
 
             self.output_layer = spconv.SparseSequential(
                 norm_fn(m),
@@ -487,7 +487,7 @@ class PointGroup(nn.Module):
             )
 
             self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
-                               indice_key_id=1, backbone=True)
+                               indice_key_id=1, backbone=True, UNet_Transformer=cfg.UNet_Transformer)
 
             self.output_layer = spconv.SparseSequential(
                 norm_fn(m),
@@ -529,7 +529,7 @@ class PointGroup(nn.Module):
             )
 
             self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
-                               indice_key_id=1)
+                               indice_key_id=1, UNet_Transformer=cfg.UNet_Transformer)
 
             self.output_layer = spconv.SparseSequential(
                 norm_fn(m),
@@ -568,7 +568,7 @@ class PointGroup(nn.Module):
             )
 
             self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
-                               indice_key_id=1)
+                               indice_key_id=1, UNet_Transformer=cfg.UNet_Transformer)
 
             self.output_layer = spconv.SparseSequential(
                 norm_fn(m),
@@ -620,7 +620,7 @@ class PointGroup(nn.Module):
             )
 
             self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
-                               indice_key_id=1, backbone=True)
+                               indice_key_id=1, backbone=True, UNet_Transformer=cfg.UNet_Transformer)
 
             self.output_layer = spconv.SparseSequential(
                 norm_fn(m),
@@ -643,7 +643,7 @@ class PointGroup(nn.Module):
             )
 
             self.stuff_unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
-                               indice_key_id=1)
+                               indice_key_id=1, UNet_Transformer=cfg.UNet_Transformer)
 
             self.stuff_output_layer = spconv.SparseSequential(
                 norm_fn(m),
@@ -682,7 +682,7 @@ class PointGroup(nn.Module):
             )
 
             self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
-                               indice_key_id=1, backbone=True)
+                               indice_key_id=1, backbone=True, UNet_Transformer=cfg.UNet_Transformer)
 
             self.output_layer = spconv.SparseSequential(
                 norm_fn(m),
@@ -765,25 +765,15 @@ class PointGroup(nn.Module):
         )
         module_map['module.centre_offset'] = self.centre_offset
 
-        # self.pretrain_path = './exp/scannetv2/pointgroup/pointgroup_stuff_remove_nostuffnorm_scannet/pointgroup_stuff_remove_nostuffnorm_scannet-000000368.pth'
-        # self.pretrain_module = ['module.stuff_conv', 'module.stuff_unet', 'module.stuff_output_layer', 'module.stuff_linear']
-
         if self.pretrain_path is not None:
-            pretrain_dict = torch.load(self.pretrain_path)
+            map_location = {'cuda:0': 'cuda:{}'.format(cfg.local_rank)} if cfg.local_rank > 0 else None
+            pretrain_dict = torch.load(self.pretrain_path, map_location=map_location)
+            if 'module.' in list(pretrain_dict.keys())[0]:
+                pretrain_dict = {k[len('module.'):]: v for k, v in pretrain_dict.items()}
             for m in self.pretrain_module:
-                print(
-                    "Load pretrained " + m + ": %d/%d" % utils.load_model_param(module_map[m], pretrain_dict, prefix=m)
-                )
-
-        # self.pretrain_path = './exp/scannetv2/pointgroup/pointgroup_Jiang_pg_scannet/pointgroup_Jiang_pg_scannet-000000384.pth'
-        # self.pretrain_module = ['module.input_conv', 'module.unet', 'module.output_layer', 'module.point_semantic', 'module.point_offset']
-        #
-        # if self.pretrain_path is not None:
-        #     pretrain_dict = torch.load(self.pretrain_path)
-        #     for m in self.pretrain_module:
-        #         print(
-        #             "Load pretrained " + m + ": %d/%d" % utils.load_model_param(module_map[m], pretrain_dict, prefix=m)
-        #         )
+                n1, n2 = utils.load_model_param(module_map[m], pretrain_dict, prefix=m)
+                if cfg.local_rank == 0:
+                    print("[PID {}] Load pretrained ".format(os.getpid()) + m + ": {}/{}".format(n1, n2))
 
         #### fix parameter
         for m in self.fix_module:
@@ -971,7 +961,7 @@ class PointGroup(nn.Module):
 
         return scores, proposals_idx, proposals_offset
 
-    def forward(self, input, input_map, coords, rgb, ori_coords, point_positional_encoding, batch_idxs, batch_offsets, epoch):
+    def forward(self, input, input_map, coords, rgb, ori_coords, batch_idxs, batch_offsets, epoch):
         '''
         :param input_map: (N), int, cuda
         :param coords: (N, 3), float, cuda
@@ -1264,8 +1254,6 @@ class PointGroup(nn.Module):
                     assert refined_point_features.shape[0] == point_features.shape[0], 'point wise features have wrong point numbers'
 
                     refined_point_features = refined_point_features + point_features
-                    if self.add_pos_enc_ref:
-                        refined_point_features += point_positional_encoding
                     point_features = refined_point_features.clone()
 
                     ### refined point prediction
@@ -1612,8 +1600,6 @@ class PointGroup(nn.Module):
                         0], 'point wise features have wrong point numbers'
 
                     refined_point_features = refined_point_features + point_features
-                    if self.add_pos_enc_ref:
-                        refined_point_features += point_positional_encoding
                     point_features = refined_point_features.clone()
 
                     ### refined point prediction
@@ -1857,8 +1843,6 @@ class PointGroup(nn.Module):
                     refined_point_features = self.point_feed_forward(refined_point_features) + refined_point_features
                     refined_point_features = self.point_feed_forward_norm(refined_point_features)
 
-                    if self.add_pos_enc_ref:
-                        refined_point_features += point_positional_encoding
                     point_features = refined_point_features.clone()
 
                     ### refined point prediction
@@ -1982,8 +1966,6 @@ class PointGroup(nn.Module):
                     assert refined_point_features.shape[0] == point_features.shape[
                         0], 'point wise features have wrong point numbers'
 
-                    if self.add_pos_enc_ref:
-                        refined_point_features += point_positional_encoding
                     point_features = refined_point_features.clone()
 
                     ### refined point prediction
@@ -2267,8 +2249,6 @@ class PointGroup(nn.Module):
                     assert refined_point_features.shape[0] == point_features.shape[
                         0], 'point wise features have wrong point numbers'
 
-                    if self.add_pos_enc_ref:
-                        refined_point_features += point_positional_encoding
                     point_features = refined_point_features.clone()
 
                     ### refined point prediction

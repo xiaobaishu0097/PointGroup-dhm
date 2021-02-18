@@ -11,10 +11,7 @@ from lib.pointgroup_ops.functions import pointgroup_ops
 from model.components import WeightedFocalLoss, CenterLoss, TripletLoss
 
 
-def model_fn_decorator(test=False):
-    #### config
-    from util.config import cfg
-
+def model_fn_decorator(cfg, test=False):
     #### criterion
     semantic_criterion = nn.CrossEntropyLoss(ignore_index=cfg.ignore_label).cuda()
     stuff_criterion = nn.CrossEntropyLoss(ignore_index=cfg.ignore_label).cuda()
@@ -47,7 +44,6 @@ def model_fn_decorator(test=False):
 
         coords_float = batch['point_coords'].cuda()  # (N, 3), float32, cuda
         feats = batch['point_feats'].cuda()  # (N, C), float32, cuda
-        point_positional_encoding = batch['point_positional_encoding'].cuda()
 
         batch_offsets = batch['batch_offsets'].cuda()  # (B + 1), int, cuda
 
@@ -95,7 +91,7 @@ def model_fn_decorator(test=False):
         model.eval()
 
         ret = model(
-            input_, p2v_map, coords_float, rgb, ori_coords, point_positional_encoding,
+            input_, p2v_map, coords_float, rgb, ori_coords,
             coords[:, 0].int(), batch_offsets, epoch
         )
 
@@ -174,7 +170,6 @@ def model_fn_decorator(test=False):
         feats = batch['point_feats'].cuda()  # (N, C), float32, cuda
         labels = batch['point_semantic_labels'].cuda()  # (N), long, cuda
         instance_labels = batch['point_instance_labels'].cuda()  # (N), long, cuda, 0~total_nInst, -100
-        point_positional_encoding = batch['point_positional_encoding'].cuda()
 
         instance_info = batch['point_instance_infos'].cuda()  # (N, 9), float32, cuda, (meanxyz, minxyz, maxxyz)
         instance_pointnum = batch['instance_pointnum'].cuda()  # (total_nInst), int, cuda
@@ -238,7 +233,7 @@ def model_fn_decorator(test=False):
             input_['nonstuff_v2p_map'] = nonstuff_v2p_map
 
         ret = model(
-            input_, p2v_map, coords_float, rgb, ori_coords, point_positional_encoding,
+            input_, p2v_map, coords_float, rgb, ori_coords,
             coords[:, 0].int(), batch_offsets, epoch
         )
 
@@ -357,14 +352,14 @@ def model_fn_decorator(test=False):
         # semantic_scores: (N, nClass), float32, cuda
         # semantic_labels: (N), long, cuda
 
-        semantic_loss = torch.zeros(1).cuda()
+        semantic_loss = torch.zeros(1).cuda(semantic_scores[0].device)
         for semantic_score in semantic_scores:
             if (cfg.model_mode == 'Yu_stuff_sep_PointGroup') or (cfg.model_mode == 'Yu_stuff_remove_PointGroup'):
                 nonstuff_indx = (semantic_labels > 1)
                 nonstuff_semantic_labels = semantic_labels[nonstuff_indx] - 2
                 semantic_loss += semantic_criterion(semantic_score[nonstuff_indx], nonstuff_semantic_labels)
             else:
-                semantic_loss += semantic_criterion(semantic_score, semantic_labels)
+                semantic_loss += semantic_criterion(semantic_score, semantic_labels.to(semantic_score.device))
 
         loss_out['semantic_loss'] = (semantic_loss, semantic_scores[0].shape[0])
 
@@ -387,70 +382,8 @@ def model_fn_decorator(test=False):
                 offset_norm_loss += torch.sum(pt_dist * valid) / (torch.sum(valid) + 1e-6)
             if cfg.offset_norm_criterion == 'l2':
                 offset_norm_loss += offset_norm_criterion(pt_offset[pt_valid_index], gt_offsets[pt_valid_index])
-            elif cfg.offset_norm_criterion == 'triplet':
-                ### offset l1 distance loss: learn to move towards the true instance centre
-                offset_norm_loss += offset_norm_criterion(pt_offset[pt_valid_index], gt_offsets[pt_valid_index])
 
-                # positive_offset = instance_info[:, 0:3].unsqueeze(dim=1).repeat(1, instance_centre.shape[0], 1)
-                # negative_offset = instance_centre.unsqueeze(dim=0).repeat(coords.shape[0], 1, 1)
-                # positive_offset_index = (negative_offset == positive_offset).to(torch.bool) == torch.ones(3, dtype=torch.bool).cuda()
-                # negative_offset[positive_offset_index] = 100
-                # negative_offset = negative_offset - positive_offset
-                # negative_offset_index = torch.norm(
-                #     gt_offsets.unsqueeze(dim=1).repeat(1, instance_centre.shape[0], 1) - negative_offset, dim=2
-                # ).min(dim=1)[1][:, 0]
-
-                ### offset triplet loss: learn to leave the second closest point
-                ## semi-hard negative sampling
-                shifted_coords = coords + pt_offset
-                positive_offsets = shifted_coords - instance_info[:, 0:3]
-                positive_distance = torch.norm(positive_offsets, dim=1)
-                negative_offsets = shifted_coords.unsqueeze(dim=1).repeat(1, instance_centre.shape[0], 1) - \
-                                   instance_centre.unsqueeze(dim=0).repeat(shifted_coords.shape[0], 1, 1)
-                negative_distance = torch.norm(negative_offsets, dim=2)
-                negative_offset_index = (
-                        negative_distance - positive_distance.unsqueeze(dim=1).repeat(1, instance_centre.shape[0])
-                ).min(dim=1)[1]
-                semi_negative_sample_index = torch.ones(shifted_coords.shape[0], dtype=torch.bool).cuda()
-                # ignore points whose distance from the second closest point is larger than the triplet margin
-                semi_negative_sample_index[
-                    (negative_distance.topk(2, dim=1, largest=False)[0][:, -1] - positive_distance) > cfg.triplet_margin] = 0
-                semi_negative_sample_index[
-                    (negative_distance.topk(2, dim=1, largest=False)[0][:, -1] - positive_distance) < 0] = 0
-                # 1 st false
-                semi_negative_sample_index[
-                    (negative_distance.topk(1, dim=1, largest=False)[0][:, -1] - positive_distance) != 0] = 1
-                # ignore points with -100 instance label
-                semi_negative_sample_index[instance_labels == cfg.ignore_label] = 0
-
-                ### calculate triplet loss based predicted offset vector and gt offset vector
-                # negative_offset = instance_centre[negative_offset_index] - coords
-                # offset_norm_triplet_loss = offset_norm_triplet_criterion(
-                #     pt_offsets[semi_negative_sample_index], gt_offsets[semi_negative_sample_index],
-                #     negative_offset[semi_negative_sample_index]
-                # )
-
-                ### calculate triplet loss based shifted coordinates and centre coordinates
-                negative_coords = instance_centre[negative_offset_index]
-                gt_coords = instance_info[:, 0:3]
-                offset_norm_triplet_loss = offset_norm_triplet_criterion(
-                    shifted_coords[semi_negative_sample_index], gt_coords[semi_negative_sample_index],
-                    negative_coords[semi_negative_sample_index]
-                )
-
-                if torch.isnan(offset_norm_triplet_loss):
-                    offset_norm_triplet_loss = torch.tensor(0, dtype=torch.float).cuda()
-                loss_out['offset_norm_triplet_loss'] = (offset_norm_triplet_loss, semi_negative_sample_index.to(torch.float32).sum())
-
-            # if cfg.constrastive_loss:
-            #     shifted_coords = coords + pt_offsets
-
-
-            # pt_diff = pt_offsets - gt_offsets  # (N, 3)
-            # pt_dist = torch.sum(torch.abs(pt_diff), dim=-1)  # (N)
             valid = (instance_labels != cfg.ignore_label).float()
-            # offset_norm_loss = torch.sum(pt_dist * valid) / (torch.sum(valid) + 1e-6)
-
             gt_offsets_norm = torch.norm(gt_offsets, p=2, dim=1)  # (N), float
             gt_offsets_ = gt_offsets / (gt_offsets_norm.unsqueeze(-1) + 1e-8)
             pt_offsets_norm = torch.norm(pt_offset, p=2, dim=1)

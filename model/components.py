@@ -10,7 +10,6 @@ sys.path.append('../')
 
 from model.Pointnet2.pointnet2.pointnet2_modules import PointnetFPModule, PointnetSAModule
 from .transformer import Transformer, TransformerEncoderLayer, TransformerEncoder, TransformerDecoderLayer, TransformerDecoder
-from util.config import cfg
 
 
 class backbone_pointnet2(nn.Module):
@@ -125,12 +124,13 @@ class VGGBlock(SparseModule):
 
 
 class UBlock(nn.Module):
-    def __init__(self, nPlanes, norm_fn, block_reps, block, indice_key_id=1, backbone=False):
+    def __init__(self, nPlanes, norm_fn, block_reps, block, indice_key_id=1, backbone=False, UNet_Transformer=None):
 
         super().__init__()
 
         self.nPlanes = nPlanes
         self.backbone = backbone
+        self.UNet_Transformer = UNet_Transformer
 
         blocks = {'block{}'.format(i): block(nPlanes[0], nPlanes[0], norm_fn, indice_key='subm{}'.format(indice_key_id))
                   for i in range(block_reps)}
@@ -145,7 +145,8 @@ class UBlock(nn.Module):
                                     indice_key='spconv{}'.format(indice_key_id))
             )
 
-            self.u = UBlock(nPlanes[1:], norm_fn, block_reps, block, indice_key_id=indice_key_id + 1, backbone=backbone)
+            self.u = UBlock(nPlanes[1:], norm_fn, block_reps, block, indice_key_id=indice_key_id + 1,
+                            backbone=backbone, UNet_Transformer=self.UNet_Transformer)
 
             self.deconv = spconv.SparseSequential(
                 norm_fn(nPlanes[1]),
@@ -161,13 +162,13 @@ class UBlock(nn.Module):
             blocks_tail = OrderedDict(blocks_tail)
             self.blocks_tail = spconv.SparseSequential(blocks_tail)
 
-        elif (cfg.UNet_Transformer['activate'] and self.backbone):
+        elif self.backbone and self.UNet_Transformer['activate']:
             self.transformer_encoder = UNetTransformer(
                 d_model=self.nPlanes[-1],
-                nhead=cfg.UNet_Transformer['multi_heads'],
-                num_encoder_layers=cfg.UNet_Transformer['num_encoder_layers'],
-                dim_feedforward=cfg.UNet_Transformer['dim_feedforward'],
-                dropout=cfg.UNet_Transformer['dropout'],
+                nhead=self.UNet_Transformer['multi_heads'],
+                num_encoder_layers=self.UNet_Transformer['num_encoder_layers'],
+                dim_feedforward=self.UNet_Transformer['dim_feedforward'],
+                dropout=self.UNet_Transformer['dropout'],
             )
 
     def forward(self, input):
@@ -183,8 +184,8 @@ class UBlock(nn.Module):
 
             output = self.blocks_tail(output)
 
-        elif cfg.UNet_Transformer['activate'] and self.backbone:
-            for i in range(output.batch_size):
+        elif self.backbone and self.UNet_Transformer['activate']:
+            for i in output.indices[:, 0].unique():
                 valid_index = output.indices[:, 0] == i
                 output.features[valid_index, :] = self.transformer_encoder(output.features[valid_index, :])
 

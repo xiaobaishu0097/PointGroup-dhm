@@ -6,15 +6,19 @@ Written by Li Jiang
 import torch
 import torch.optim as optim
 from torch.utils.data import DataLoader, DistributedSampler
-import time, sys, os, random
+import time, sys, os, random, glob
 from tensorboardX import SummaryWriter
 import numpy as np
 
-from util.config import cfg
-from util.log import logger
 import util.utils as utils
 
 def init():
+    # config
+    global cfg
+    from util.config import get_parser
+    cfg = get_parser()
+    cfg.dist = False
+
     # copy important files to backup
     backup_dir = os.path.join(cfg.exp_path, 'backup_files')
     os.makedirs(backup_dir, exist_ok=True)
@@ -22,6 +26,11 @@ def init():
     os.system('cp {} {}'.format(cfg.model_dir, backup_dir))
     os.system('cp {} {}'.format(cfg.dataset_dir, backup_dir))
     os.system('cp {} {}'.format(cfg.config, backup_dir))
+
+    # logger
+    global logger
+    from util.log import get_logger
+    logger = get_logger(cfg)
 
     # log the config
     logger.info(cfg)
@@ -89,7 +98,8 @@ def train_epoch(train_loader, model, model_fn, optimizer, epoch):
 
     logger.info("epoch: {}/{}, train loss: {:.4f}, time: {}s".format(epoch, cfg.epochs, am_dict['loss'].avg, time.time() - start_epoch))
 
-    utils.checkpoint_save(model, cfg.exp_path, cfg.config.split('/')[-1][:-5], epoch, cfg.save_freq, use_cuda)
+    f = utils.checkpoint_save(model, cfg.exp_path, cfg.config.split('/')[-1][:-5], epoch, cfg.save_freq)
+    logger.info('Saving {}'.format(f))
 
     for k in am_dict.keys():
         if k in visual_dict.keys():
@@ -129,6 +139,16 @@ if __name__ == '__main__':
     ##### init
     init()
 
+    ##### SA
+    if cfg.cache:
+        if cfg.dataset == 'scannetv2':
+            train_file_names = sorted(
+                glob.glob(os.path.join(cfg.data_root, cfg.dataset, 'train', '*' + cfg.filename_suffix)))
+            val_file_names = sorted(
+                glob.glob(os.path.join(cfg.data_root, cfg.dataset, 'val', '*' + cfg.filename_suffix)))
+            utils.create_shared_memory(train_file_names, wlabel=True)
+            utils.create_shared_memory(val_file_names, wlabel=True)
+
     ##### get model version and data version
     exp_name = cfg.config.split('/')[-1][:-5]
     model_name = exp_name.split('_')[0]
@@ -151,64 +171,46 @@ if __name__ == '__main__':
     assert use_cuda
     model = model.cuda()
 
-    model_without_ddp = model
-    if cfg.distributed:
-        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[cfg.gpu], find_unused_parameters=True)
-        model_without_ddp = model.module
-
     # logger.info(model)
     logger.info('#classifier parameters: {}'.format(sum([x.nelement() for x in model.parameters()])))
 
     ##### optimizer
     if cfg.optim == 'Adam':
-        optimizer = optim.Adam(filter(lambda p: p.requires_grad, model_without_ddp.parameters()), lr=cfg.lr)
+        optimizer = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=cfg.lr)
     elif cfg.optim == 'SGD':
-        optimizer = optim.SGD(
-            filter(lambda p: p.requires_grad, model_without_ddp.parameters()),
-            lr=cfg.lr, momentum=cfg.momentum, weight_decay=cfg.weight_decay
-        )
+        optimizer = optim.SGD(filter(lambda p: p.requires_grad, model.parameters()), lr=cfg.lr, momentum=cfg.momentum,
+                              weight_decay=cfg.weight_decay)
 
     ##### model_fn (criterion)
-    model_fn = model_fn_decorator()
+    model_fn = model_fn_decorator(cfg)
 
     ##### dataset
     if cfg.dataset == 'scannetv2':
         if data_name == 'scannet':
             from data.scannetv2_inst import ScannetDatast
-            dataset = ScannetDatast()
-            dataset.trainLoader()
-            dataset.valLoader()
+            dataset = ScannetDatast(cfg)
         else:
             print("Error: no data loader - " + data_name)
             exit(0)
 
-    if cfg.distributed:
-        # TODO: update pytorch version and add shuffle parameter into DistributedSampler
-        sampler_train = DistributedSampler(dataset.train_set)
-        sampler_val = DistributedSampler(dataset.val_set)
-    else:
-        sampler_train = torch.utils.data.RandomSampler(dataset.train_set)
-        sampler_val = torch.utils.data.SequentialSampler(dataset.val_set)
-
-    batch_sampler_train = torch.utils.data.BatchSampler(sampler_train, cfg.batch_size, drop_last=True)
-
-    data_loader_train = DataLoader(
-        dataset.train_set, batch_sampler=batch_sampler_train, collate_fn=dataset.trainMerge,
-        num_workers=cfg.train_workers, pin_memory=False
-    )
-    data_loader_val = DataLoader(
-        dataset.val_set, batch_size=1, sampler=sampler_val, collate_fn=dataset.valMerge,
-        drop_last=False, num_workers=cfg.train_workers
-    )
+        dataset.trainLoader()
+        logger.info('Training samples: {}'.format(len(dataset.train_file_names)))
+        dataset.valLoader()
+        logger.info('Validation samples: {}'.format(len(dataset.val_file_names)))
 
     ##### resume
-    start_epoch = utils.checkpoint_restore(model_without_ddp, cfg.exp_path, cfg.config.split('/')[-1][:-5], use_cuda)      # resume from the latest epoch, or specify the epoch to restore
+    start_epoch, f = utils.checkpoint_restore(model, cfg.exp_path, cfg.config.split('/')[-1][:-5])      # resume from the latest epoch, or specify the epoch to restore
+    logger.info('Restore from {}'.format(f) if len(f) > 0 else 'Start from epoch {}'.format(start_epoch))
 
     ##### train and val
     for epoch in range(start_epoch, cfg.epochs + 1):
-        if cfg.distributed:
-            sampler_train.set_epoch(epoch)
-        train_epoch(data_loader_train, model, model_fn, optimizer, epoch)
+        train_epoch(dataset.train_data_loader, model, model_fn, optimizer, epoch)
 
         if utils.is_multiple(epoch, cfg.save_freq) or utils.is_power2(epoch):
-            eval_epoch(data_loader_val, model, model_fn, epoch)
+            eval_epoch(dataset.val_data_loade, model, model_fn, epoch)
+
+    ##### delete SA
+    # if cfg.cache:
+    #     if cfg.dataset == 'scannetv2':
+    #         utils.delete_shared_memory(train_file_names, wlabel=True)
+    #         utils.delete_shared_memory(val_file_names, wlabel=True)
