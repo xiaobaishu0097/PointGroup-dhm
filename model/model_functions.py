@@ -19,8 +19,6 @@ def model_fn_decorator(cfg, test=False):
     semantic_centre_criterion = CenterLoss(num_classes=cfg.classes, feat_dim=cfg.m, use_gpu=True)
     instance_triplet_criterion = TripletLoss(margin=cfg.triplet_loss['margin'])
 
-    # if cfg.offset_norm_criterion == 'l1':
-    #     offset_norm_criterion = nn.SmoothL1Loss().cuda()
     if cfg.offset_norm_criterion == 'l2':
         offset_norm_criterion = nn.MSELoss().cuda()
 
