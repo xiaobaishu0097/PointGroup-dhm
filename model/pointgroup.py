@@ -494,31 +494,11 @@ class PointGroup(nn.Module):
                 nn.ReLU()
             )
 
-            self.proposal_unet = UBlock([m, 2 * m], norm_fn, 2, block, indice_key_id=1)
+            self.proposal_unet = UBlock([m, 2 * m, 3 * m, 4 * m], norm_fn, 2, block, indice_key_id=1,
+                                        backbone=False)
             self.proposal_outputlayer = spconv.SparseSequential(
                 norm_fn(m),
                 nn.ReLU()
-            )
-
-            self.proposal_point_refine = nn.Sequential(
-                nn.Linear(m, m, bias=True),
-                norm_fn(m),
-                nn.ReLU(),
-                nn.Linear(m, m, bias=True),
-                norm_fn(m),
-                nn.ReLU()
-            )
-            self.proposal_point_semantic = nn.Sequential(
-                nn.Linear(m, m, bias=True),
-                norm_fn(m),
-                nn.ReLU(),
-                nn.Linear(m, classes, bias=True),
-            )
-            self.proposal_point_offset = nn.Sequential(
-                nn.Linear(m, m, bias=True),
-                norm_fn(m),
-                nn.ReLU(),
-                nn.Linear(m, 3, bias=True),
             )
 
             module_map = {
@@ -527,9 +507,6 @@ class PointGroup(nn.Module):
                 'module.output_layer': self.output_layer,
                 'module.proposal_unet': self.proposal_unet,
                 'module.proposal_outputlayer': self.proposal_outputlayer,
-                'module.proposal_point_refine': self.proposal_point_refine,
-                'module.proposal_point_semantic': self.proposal_point_semantic,
-                'module.proposal_point_offset': self.proposal_point_offset,
             }
 
         elif self.model_mode == 'Yu_stuff_sep_PointGroup':
@@ -752,6 +729,13 @@ class PointGroup(nn.Module):
 
         if (self.model_mode == 'Yu_stuff_sep_PointGroup') or (self.model_mode == 'Yu_stuff_remove_PointGroup'):
             self.point_semantic = nn.Linear(m, classes - 2)
+        elif (self.model_mode == 'Yu_local_proposal_PointGroup'):
+            self.point_semantic = nn.Sequential(
+                nn.Linear(m, m, bias=True),
+                norm_fn(m),
+                nn.ReLU(),
+                nn.Linear(m, classes, bias=True),
+            )
         else:
             self.point_semantic = nn.Linear(m, classes)
         module_map['module.point_semantic'] = self.point_semantic
@@ -1754,17 +1738,19 @@ class PointGroup(nn.Module):
                 proposals_point_features = proposals.features[inp_map.long()]  # (sumNPoint, C)
 
                 refined_point_features = torch.zeros_like(output_feats).cuda()
-                refined_point_features[:np.minimum((local_proposals_idx[:, 1].max() + 1).item(), coords.shape[0]), :] = \
+                refined_point_features[:min((local_proposals_idx[:, 1].max() + 1).item(), coords.shape[0]), :] = \
                     scatter_mean(proposals_point_features, local_proposals_idx[:, 1].cuda().long(), dim=0)
+                #### filling 0 rows with output_feats
+                filled_index = (refined_point_features == torch.zeros_like(refined_point_features[0, :])).all(dim=1)
+                refined_point_features[filled_index, :] = output_feats[filled_index, :]
 
                 ### refined point prediction
                 #### refined point semantic label prediction
-                refined_point_features = self.proposal_point_refine(refined_point_features)
-                point_semantic_scores.append(self.proposal_point_semantic(output_feats + refined_point_features))  # (N, nClass), float
+                point_semantic_scores.append(self.point_semantic(refined_point_features))  # (N, nClass), float
                 point_semantic_preds = point_semantic_scores[-1].max(1)[1]
 
                 #### point offset prediction
-                point_offset_preds.append(self.proposal_point_offset(output_feats + refined_point_features))  # (N, 3), float32
+                point_offset_preds.append(self.point_offset(output_feats + refined_point_features))  # (N, 3), float32
 
             if (epoch == self.test_epoch):
                 self.cluster_sets = 'Q'
