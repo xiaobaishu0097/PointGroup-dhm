@@ -127,6 +127,8 @@ TRAIN:
 
   remove_class: []
 
+  validation: True
+
 GROUP:
   ### point grouping
   cluster_radius: 0.03

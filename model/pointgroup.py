@@ -593,7 +593,7 @@ class PointGroup(nn.Module):
                 dropout=0.0,
             )
 
-            self.proposal_unet = UBlock([m, 2 * m], norm_fn, 2, block, indice_key_id=1)
+            self.proposal_unet = UBlock([m, 2 * m, 3 * m, 4 * m], norm_fn, 2, block, indice_key_id=1, backbone=False)
             self.proposal_outputlayer = spconv.SparseSequential(
                 norm_fn(m),
                 nn.ReLU()
