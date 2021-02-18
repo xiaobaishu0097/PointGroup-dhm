@@ -28,7 +28,7 @@ STRUCTURE:
   block_reps: 2
   scatter_type: max
   unet3d_num_levels: 3
-  model_mode: Yu_local_proposal_PointGroup
+  model_mode: Jiang_original_PointGroup
   # Centre_clustering or Zheng_panoptic_wpointnet_PointGroup or Zheng_upper_wpointnet_PointGroup or Zheng_panoptic_wopointnet_PointGroup
   # or Zheng_upper_wopointnet_PointGroup or Jiang_original_PointGroup or Yu_refine_clustering_PointGroup
   # or Li_simple_backbone_PointGroup or Yu_refine_clustering_scorenet_PointGroup
@@ -77,8 +77,8 @@ TRAIN:
   instance_triplet_loss_sample_point_num: 128
 
   UNet_Transformer: {
-                      "activate": False,
-                      "multi_heads": 2,
+                      "activate": True,
+                      "multi_heads": 4,
                       "num_encoder_layers": 1,
                       "dim_feedforward": 64,
                       "dropout": 0.0,
@@ -112,7 +112,7 @@ GROUP:
   cluster_npoint_thre: 50
   cluster_sets: P # P or Q
 
-  prepare_epochs: 128
+  prepare_epochs: 0
 
 TEST:
   split: val

@@ -160,9 +160,9 @@ class UBlock(nn.Module):
             blocks_tail = OrderedDict(blocks_tail)
             self.blocks_tail = spconv.SparseSequential(blocks_tail)
 
-        elif cfg.UNet_Transformer['activate']:
+        elif cfg.UNet_Transformer['activate'] and self.nPlanes[-1] == cfg.m * 7:
             self.transformer_encoder = UNetTransformer(
-                d_model=cfg.m * 7,
+                d_model=self.nPlanes[-1],
                 nhead=cfg.UNet_Transformer['multi_heads'],
                 num_encoder_layers=cfg.UNet_Transformer['num_encoder_layers'],
                 dim_feedforward=cfg.UNet_Transformer['dim_feedforward'],
@@ -182,7 +182,7 @@ class UBlock(nn.Module):
 
             output = self.blocks_tail(output)
 
-        elif cfg.UNet_Transformer['activate']:
+        elif cfg.UNet_Transformer['activate'] and self.nPlanes[-1] == cfg.m * 7:
             output.features = self.transformer_encoder(output.features)
 
         return output
