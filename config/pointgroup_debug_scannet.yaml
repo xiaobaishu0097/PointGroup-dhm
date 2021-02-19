@@ -10,14 +10,14 @@ DATA:
   dataset: scannetv2
   filename_suffix: _inst_nostuff.pth
 
-  cache: True
+  cache: False
 
   classes: 20
   ignore_label: -100
 
   input_channel: 3
   scale: 50   # voxel_size = 1 / scale, scale 50(2cm)
-  batch_size: 4
+  batch_size: 2
   full_scale: [128, 512]
   max_npoint: 250000
   mode: 4 # 4=mean
@@ -30,16 +30,14 @@ STRUCTURE:
   block_reps: 2
   scatter_type: max
   unet3d_num_levels: 3
-  model_mode: Yu_RC_ScoreNet_Conf_Transformer_PointGroup
+  model_mode: Yu_stuff_recurrent_PointGroup
   # Centre_clustering or Zheng_panoptic_wpointnet_PointGroup or Zheng_upper_wpointnet_PointGroup or Zheng_panoptic_wopointnet_PointGroup
   # or Zheng_upper_wopointnet_PointGroup or Jiang_original_PointGroup or Yu_refine_clustering_PointGroup
   # or Li_simple_backbone_PointGroup or Yu_refine_clustering_scorenet_PointGroup
   # or PointNet_point_prediction_test_PointGroup or Yu_rc_scorenet_confidence_PointGroup
-  # or Yu_rc_v2_PointGroup or PointNet_deeper_PointGroup or PointNet_sample_PointGroup
-  # or Yu_stuff_first_PointGroup or Yu_RC_ScoreNet_Conf_Transformer_PointGroup or Yu_stuff_parallel_PointGroup
-  # or Yu_stuff_sep_PointGroup or Yu_stuff_remove_PointGroup or Yu_local_proposal_PointGroup
-  # or Centre_sample_cluster or Fan_centre_loss_PointGroup
-  # or Position_enhanced_PointGroup
+  # or PointNet_deeper_PointGroup or PointNet_sample_PointGroup or Yu_RC_ScoreNet_Conf_Transformer_PointGroup
+  # or Yu_stuff_recurrent_PointGroup or Yu_stuff_remove_PointGroup or Yu_local_proposal_PointGroup
+  # or Centre_sample_cluster or Fan_centre_loss_PointGroup or Position_enhanced_PointGroup
 
   use_coords: True
   use_ori_coords: True
@@ -112,6 +110,10 @@ TRAIN:
   local_proposal: {
     'topk': 3,
     'dist_th': 0.5,
+  }
+
+  stuff_recurrent: {
+    'recurrent_times': 2,
   }
 
   fg_thresh: 0.75
