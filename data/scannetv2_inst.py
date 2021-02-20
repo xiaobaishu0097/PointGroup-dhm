@@ -828,27 +828,10 @@ class ScannetDatast:
         point_locs = torch.cat(point_locs, 0)  # (N) (sample_index)
         point_coords = torch.cat(point_coords, 0).to(torch.float32)  # (N, 6) (shifted_xyz, original_xyz)
         point_feats = torch.cat(point_feats, 0)  # (N, 3) (rgb)
-
-        if cfg.pos_enc == 'XYZ':
-            point_positional_encoding = torch.cat(
-                (
-                    torch.zeros(point_coords.shape[0], 1), self.positional_encoding_func(point_coords[:, :3], 5),
-                    torch.zeros(point_coords.shape[0], 1)
-                ), dim=1
-            )
-        elif cfg.pos_enc == 'XYZRGB':
-            point_positional_encoding = torch.cat(
-                (
-                    torch.zeros(point_coords.shape[0], 1), self.positional_encoding_func(point_coords[:, :3], 3),
-                    torch.zeros(point_coords.shape[0], 1), self.positional_encoding_func(point_feats, 2)
-                ), dim=1
-            )
-
         # variables for backbone
         ret_dict['point_locs'] = point_locs  # (N, 4) (sample_index, xyz)
         ret_dict['point_coords'] = point_coords  # (N, 6) (shifted_xyz, original_xyz)
         ret_dict['point_feats'] = point_feats  # (N, 3) (rgb)
-        ret_dict['point_positional_encoding'] = point_positional_encoding
 
         if 'Centre' in self.model_mode.split('_'):
             grid_xyzs = torch.cat(grid_xyzs, 0)
