@@ -70,6 +70,18 @@ TRAIN:
     'activate': False,
   }
 
+  feature_variance_loss: {
+    'activate': False,
+  }
+
+  feature_distance_loss: {
+    'activate': False,
+  }
+
+  feature_instance_regression_loss: {
+    'activate': False,
+  }
+
   loss_weights: {
     'point_semantic': 1.0,
     'point_offset_norm': 1.0,

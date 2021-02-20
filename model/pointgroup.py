@@ -1488,6 +1488,7 @@ class PointGroup(nn.Module):
             ret['point_offset_preds'] = point_offset_preds
             if self.instance_triplet_loss['activate']:
                 ret['point_offset_feats'] = output_feats
+            ret['point_features'] = output_feats
 
         elif self.model_mode == 'Fan_centre_loss_PointGroup':
             semantic_scores = []

@@ -310,6 +310,19 @@ def model_fn_decorator(cfg, test=False):
 
             loss_inp['point_offset_feats'] = (point_offset_feats, instance_labels, batch_offsets)
 
+        ### try three different feature term losses mentioned in OccuSeg
+        if cfg.feature_variance_loss['activate'] and ('point_features' in ret.keys()):
+            point_features = ret['point_features']
+            loss_inp['feature_variance_loss'] = (point_features, instance_labels)
+
+        if cfg.feature_distance_loss['activate'] and ('point_features' in ret.keys()):
+            point_features = ret['point_features']
+            loss_inp['feature_distance_loss'] = (point_features, instance_labels)
+
+        if cfg.feature_instance_regression_loss['activate'] and ('point_features' in ret.keys()):
+            point_features = ret['point_features']
+            loss_inp['feature_instance_regression_loss'] = (point_features, instance_labels)
+
         loss, loss_out, infos = loss_fn(loss_inp, epoch)
 
         ##### accuracy / visual_dict / meter_dict
@@ -536,13 +549,23 @@ def model_fn_decorator(cfg, test=False):
 
             loss_out['centre_offset_loss'] = (instance_triplet_loss, instance_labels.shape[0])
 
+        ### three different feature term losses mentioned in OccuSeg
+        if cfg.feature_variance_loss['activate'] and ('point_features' in loss_inp.keys()):
+            point_features, instance_labels = loss_inp['feature_variance_loss']
+
+        if cfg.feature_distance_loss['activate'] and ('point_features' in loss_inp.keys()):
+            point_features, instance_labels = loss_inp['feature_distance_loss']
+
+        if cfg.feature_instance_regression_loss['activate'] and ('point_features' in loss_inp.keys()):
+            point_features, instance_labels = loss_inp['feature_instance_regression_loss']
+
 
         '''total loss'''
         loss = cfg.loss_weights['point_semantic'] * semantic_loss + \
                cfg.loss_weights['point_offset_norm'] * offset_norm_loss + \
                cfg.loss_weights['point_offset_dir'] * offset_dir_loss
 
-        if 'centre_preds' in loss_inp.keys():
+        if ('centre_preds' in loss_inp.keys()):
             loss += cfg.loss_weights['center_prob'] * centre_loss + \
                     cfg.loss_weights['center_semantic'] * centre_semantic_loss + \
                     cfg.loss_weights['center_offset'] * centre_offset_loss
@@ -550,22 +573,22 @@ def model_fn_decorator(cfg, test=False):
         if (epoch > cfg.prepare_epochs) and ('proposal_scores' in loss_inp.keys()):
             loss += cfg.loss_weights['score'] * score_loss
 
-        if 'proposal_confidences' in loss_inp.keys():
+        if ('proposal_confidences' in loss_inp.keys()):
             loss += confidence_loss
 
-        if 'stuff_preds' in loss_inp.keys():
+        if ('stuff_preds' in loss_inp.keys()):
             loss += stuff_loss
 
-        if cfg.stuff_norm_loss['activate'] and 'output_feats' in loss_inp.keys():
+        if cfg.stuff_norm_loss['activate'] and ('output_feats' in loss_inp.keys()):
             loss += cfg.loss_weights['stuff_feats_norm'] * stuff_feats_norm_loss
 
-        if 'queries_preds' in loss_inp.keys():
+        if ('queries_preds' in loss_inp.keys()):
             loss = loss + centre_queries_loss + centre_queries_semantic_loss + centre_queries_offset_loss
 
-        if 'points_semantic_center_loss_feature' in loss_inp.keys():
+        if ('points_semantic_center_loss_feature' in loss_inp.keys()):
             loss += cfg.loss_weights['point_semantic_center'] * semantic_centre_loss
 
-        if cfg.instance_triplet_loss['activate'] and 'point_offset_feats' in loss_inp.keys():
+        if cfg.instance_triplet_loss['activate'] and ('point_offset_feats' in loss_inp.keys()):
             loss += cfg.loss_weights['point_instance_triplet'] * instance_triplet_loss
 
         return loss, loss_out, infos
