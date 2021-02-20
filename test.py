@@ -20,6 +20,7 @@ def init():
     cfg = get_parser()
     cfg.task = 'test'
     cfg.dist = False
+    cfg.cache = False
 
     global result_dir
     result_dir = os.path.join(cfg.exp_path, 'result', 'epoch{}_nmst{}_scoret{}_npointt{}'.format(cfg.test_epoch, cfg.TEST_NMS_THRESH, cfg.TEST_SCORE_THRESH, cfg.TEST_NPOINT_THRESH), cfg.split)
