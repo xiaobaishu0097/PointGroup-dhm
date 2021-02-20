@@ -476,6 +476,20 @@ class ScannetDatast:
         ### voxelize
         voxel_locs, p2v_map, v2p_map = pointgroup_ops.voxelization_idx(point_locs, self.batch_size, self.mode)
 
+        if 'occupancy' in self.model_mode.split('_'):
+            voxel_instance_labels = point_instance_labels[v2p_map[:, 1].long()]
+            ignore_voxel_index = (voxel_instance_labels == -100)
+            voxel_instance_labels[ignore_voxel_index] = voxel_instance_labels.max() + 1
+            num_instance_occupancy = torch_scatter.scatter_add(
+                torch.ones_like(voxel_instance_labels), voxel_instance_labels
+            )
+            voxel_occupancy_labels = num_instance_occupancy[voxel_instance_labels]
+            voxel_occupancy_labels[ignore_voxel_index] = 0
+            voxel_instance_labels[ignore_voxel_index] = -100
+
+            ret_dict['voxel_instance_labels'] = voxel_instance_labels
+            ret_dict['voxel_occupancy_labels'] = voxel_occupancy_labels
+
         # variables for point-wise predictions
         ret_dict['voxel_locs'] = voxel_locs  # (nVoxel, 4)
         ret_dict['p2v_map'] = p2v_map  # (N)
@@ -727,6 +741,20 @@ class ScannetDatast:
 
         ### voxelize
         voxel_locs, p2v_map, v2p_map = pointgroup_ops.voxelization_idx(point_locs, self.batch_size, self.mode)
+
+        if 'occupancy' in self.model_mode.split('_'):
+            voxel_instance_labels = point_instance_labels[v2p_map[:, 1].long()]
+            ignore_voxel_index = (voxel_instance_labels == -100)
+            voxel_instance_labels[ignore_voxel_index] = voxel_instance_labels.max() + 1
+            num_instance_occupancy = torch_scatter.scatter_add(
+                torch.ones_like(voxel_instance_labels), voxel_instance_labels
+            )
+            voxel_occupancy_labels = num_instance_occupancy[voxel_instance_labels]
+            voxel_occupancy_labels[ignore_voxel_index] = 0
+            voxel_instance_labels[ignore_voxel_index] = -100
+
+            ret_dict['voxel_instance_labels'] = voxel_instance_labels
+            ret_dict['voxel_occupancy_labels'] = voxel_occupancy_labels
 
         # variables for point-wise predictions
         ret_dict['voxel_locs'] = voxel_locs  # (nVoxel, 4)

@@ -227,6 +227,10 @@ def model_fn_decorator(cfg, test=False):
             input_['nonstuff_p2v_map'] = nonstuff_p2v_map
             input_['nonstuff_v2p_map'] = nonstuff_v2p_map
 
+        if ('occupancy' in cfg.model_mode.split('_')):
+            voxel_instance_labels = batch['voxel_instance_labels'].cuda()
+            voxel_occupancy_labels = batch['voxel_occupancy_labels'].cuda()
+
         ret = model(
             input_, p2v_map, coords_float, rgb, ori_coords,
             coords[:, 0].int(), batch_offsets, epoch
@@ -322,6 +326,12 @@ def model_fn_decorator(cfg, test=False):
         if cfg.feature_instance_regression_loss['activate'] and ('point_features' in ret.keys()):
             point_features = ret['point_features']
             loss_inp['feature_instance_regression_loss'] = (point_features, instance_labels)
+
+        ### occupancy loss to predict the voxel number for each voxel
+        if ('occupancy' in cfg.model_mode.split('_')) and ('voxel_occupancy_preds' in ret.keys()):
+            voxel_occupancy_preds = ret['voxel_occupancy_preds']
+
+            loss_inp['voxel_occupancy_loss'] = (voxel_occupancy_preds, voxel_instance_labels, voxel_occupancy_labels)
 
         loss, loss_out, infos = loss_fn(loss_inp, epoch)
 
@@ -596,6 +606,25 @@ def model_fn_decorator(cfg, test=False):
 
             loss_out['feature_instance_regression_loss'] = (feature_instance_regression_loss, instance_labels.shape[0])
 
+        ### occupancy loss to predict the voxel number for each voxel
+        if ('occupancy' in cfg.model_mode.split('_')) and ('voxel_occupancy_loss' in loss_inp.keys()):
+            point_occupancy_preds, voxel_instance_labels, voxel_occupancy_labels = loss_inp['voxel_occupancy_loss']
+
+            voxel_occupancy_loss = torch.zeros(1).cuda()
+            for point_occupancy_pred in point_occupancy_preds:
+                valid_voxel_index = voxel_instance_labels != -100
+                point_occupancy_prediction = point_occupancy_pred[valid_voxel_index].squeeze(dim=1)
+                voxel_instance_labels = voxel_instance_labels[valid_voxel_index]
+                voxel_occupancy_labels = voxel_occupancy_labels[valid_voxel_index]
+                voxel_occupancy_loss += scatter_mean(
+                    torch.abs(point_occupancy_prediction - torch.log(voxel_occupancy_labels.float())),
+                    voxel_instance_labels
+                ).mean()
+
+            voxel_occupancy_loss = voxel_occupancy_loss / len(point_occupancy_preds)
+            loss_out['voxel_occupancy_loss'] = (voxel_occupancy_loss, point_occupancy_preds[0].shape[0])
+
+
         '''total loss'''
         loss = cfg.loss_weights['point_semantic'] * semantic_loss + \
                cfg.loss_weights['point_offset_norm'] * offset_norm_loss + \
@@ -635,6 +664,9 @@ def model_fn_decorator(cfg, test=False):
 
         if cfg.feature_instance_regression_loss['activate'] and ('feature_instance_regression_loss' in loss_inp.keys()):
             loss += cfg.loss_weights['feature_instance_regression_loss'] * feature_instance_regression_loss
+
+        if ('occupancy' in cfg.model_mode.split('_')) and ('voxel_occupancy_loss' in loss_inp.keys()):
+            loss += cfg.loss_weights['voxel_occupancy_loss'] * voxel_occupancy_loss
 
         return loss, loss_out, infos
 
