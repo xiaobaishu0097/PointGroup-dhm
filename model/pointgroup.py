@@ -67,8 +67,6 @@ class PointGroup(nn.Module):
         self.stuff_norm_loss = cfg.stuff_norm_loss
         self.instance_triplet_loss = cfg.instance_triplet_loss
 
-        self.local_proposal = cfg.local_proposal
-
         norm_fn = functools.partial(nn.BatchNorm1d, eps=1e-4, momentum=0.1)
 
         if block_residual:
@@ -611,6 +609,8 @@ class PointGroup(nn.Module):
             }
 
         elif self.model_mode == 'Yu_local_proposal_PointGroup':
+            self.local_proposal = cfg.local_proposal
+
             self.input_conv = spconv.SparseSequential(
                 spconv.SubMConv3d(input_c, m, kernel_size=3, padding=1, bias=False, indice_key='subm1')
             )
@@ -1838,20 +1838,37 @@ class PointGroup(nn.Module):
                 proposals = self.proposal_outputlayer(proposals)
                 proposals_point_features = proposals.features[inp_map.long()]  # (sumNPoint, C)
 
-                refined_point_features = torch.zeros_like(output_feats).cuda()
-                refined_point_features[:min((local_proposals_idx[:, 1].max() + 1).item(), coords.shape[0]), :] = \
-                    scatter_mean(proposals_point_features, local_proposals_idx[:, 1].cuda().long(), dim=0)
-                #### filling 0 rows with output_feats
-                filled_index = (refined_point_features == torch.zeros_like(refined_point_features[0, :])).all(dim=1)
-                refined_point_features[filled_index, :] = output_feats[filled_index, :]
+                ### scatter mean point predictions
+                if self.local_proposal['scatter_mean_target'] == 'prediction':
+                    refined_point_semantic_score = point_semantic_scores[-1]
+                    local_point_semantic_score = self.point_semantic(proposals_point_features)
+                    refined_point_semantic_score[:min((local_proposals_idx[:, 1].max() + 1).item(), coords.shape[0]), :] = \
+                        scatter_mean(local_point_semantic_score, local_proposals_idx[:, 1].cuda().long(), dim=0)
+                    point_semantic_scores.append(refined_point_semantic_score)
+                    point_semantic_preds = refined_point_semantic_score.max(1)[1]
 
-                ### refined point prediction
-                #### refined point semantic label prediction
-                point_semantic_scores.append(self.point_semantic(refined_point_features))  # (N, nClass), float
-                point_semantic_preds = point_semantic_scores[-1].max(1)[1]
+                    refined_point_offset_pred = point_offset_preds[-1]
+                    local_point_offset_pred = self.point_offset(proposals_point_features)
+                    refined_point_offset_pred[:min((local_proposals_idx[:, 1].max() + 1).item(), coords.shape[0]), :] = \
+                        scatter_mean(local_point_offset_pred, local_proposals_idx[:, 1].cuda().long(), dim=0)
+                    point_offset_preds.append(refined_point_offset_pred)
 
-                #### point offset prediction
-                point_offset_preds.append(self.point_offset(output_feats + refined_point_features))  # (N, 3), float32
+                ### scatter mean point features
+                elif self.local_proposal['scatter_mean_target'] == 'feature':
+                    refined_point_features = torch.zeros_like(output_feats).cuda()
+                    refined_point_features[:min((local_proposals_idx[:, 1].max() + 1).item(), coords.shape[0]), :] = \
+                        scatter_mean(proposals_point_features, local_proposals_idx[:, 1].cuda().long(), dim=0)
+                    #### filling 0 rows with output_feats
+                    filled_index = (refined_point_features == torch.zeros_like(refined_point_features[0, :])).all(dim=1)
+                    refined_point_features[filled_index, :] = output_feats[filled_index, :]
+
+                    ### refined point prediction
+                    #### refined point semantic label prediction
+                    point_semantic_scores.append(self.point_semantic(refined_point_features))  # (N, nClass), float
+                    point_semantic_preds = point_semantic_scores[-1].max(1)[1]
+
+                    #### point offset prediction
+                    point_offset_preds.append(self.point_offset(output_feats + refined_point_features))  # (N, 3), float32
 
             if (epoch == self.test_epoch) and input['test']:
                 self.cluster_sets = 'Q'
@@ -1863,11 +1880,6 @@ class PointGroup(nn.Module):
 
             ret['point_semantic_scores'] = point_semantic_scores
             ret['point_offset_preds'] = point_offset_preds
-
-            if (epoch > self.prepare_epochs):
-                ret['output_feats'] = output_feats + refined_point_features
-            else:
-                ret['output_feats'] = output_feats
 
         elif self.model_mode == 'Yu_stuff_recurrent_PointGroup':
             point_offset_preds = []

@@ -30,7 +30,7 @@ STRUCTURE:
   block_reps: 2
   scatter_type: max
   unet3d_num_levels: 3
-  model_mode: Yu_stuff_recurrent_PointGroup
+  model_mode: Yu_local_proposal_PointGroup
   # Centre_clustering or Zheng_panoptic_wpointnet_PointGroup or Zheng_upper_wpointnet_PointGroup or Zheng_panoptic_wopointnet_PointGroup
   # or Zheng_upper_wopointnet_PointGroup or Jiang_original_PointGroup or Yu_refine_clustering_PointGroup
   # or Li_simple_backbone_PointGroup or Yu_refine_clustering_scorenet_PointGroup
@@ -66,7 +66,9 @@ TRAIN:
     'num_sampled_points': 128,
   }
 
-  stuff_norm_loss: False
+  stuff_norm_loss: {
+    'activate': False,
+  }
 
   loss_weights: {
     'point_semantic': 1.0,
@@ -110,6 +112,7 @@ TRAIN:
   local_proposal: {
     'topk': 3,
     'dist_th': 0.5,
+    'scatter_mean_target': feature, # feature or prediction
   }
 
   stuff_recurrent: {

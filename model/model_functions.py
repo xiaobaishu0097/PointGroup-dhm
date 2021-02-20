@@ -287,7 +287,7 @@ def model_fn_decorator(cfg, test=False):
             stuff_preds = ret['stuff_preds']
             loss_inp['stuff_preds'] = (stuff_preds, labels)
 
-        if 'output_feats' in ret.keys():
+        if cfg.stuff_norm_loss['activate'] and 'output_feats' in ret.keys():
             stuff_output_feats = ret['output_feats']
             loss_inp['output_feats'] = (stuff_output_feats, labels)
 
@@ -471,7 +471,7 @@ def model_fn_decorator(cfg, test=False):
             stuff_loss = (cfg.focal_loss['alpha'] * (1 - torch.exp(-stuff_loss)) ** cfg.focal_loss['gamma'] * stuff_loss).mean()  # mean over the batch
             loss_out['stuff_loss'] = (stuff_loss, stuff_prediction.shape[0])
 
-        if 'output_feats' in loss_inp.keys():
+        if cfg.stuff_norm_loss['activate'] and 'output_feats' in loss_inp.keys():
             output_feats, semantic_labels = loss_inp['output_feats']
             stuff_indx = (semantic_labels < 2)
             stuff_output_feats = output_feats[stuff_indx]
@@ -556,7 +556,7 @@ def model_fn_decorator(cfg, test=False):
         if 'stuff_preds' in loss_inp.keys():
             loss += stuff_loss
 
-        if 'output_feats' in loss_inp.keys():
+        if cfg.stuff_norm_loss['activate'] and 'output_feats' in loss_inp.keys():
             loss += cfg.loss_weights['stuff_feats_norm'] * stuff_feats_norm_loss
 
         if 'queries_preds' in loss_inp.keys():
