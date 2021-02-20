@@ -71,17 +71,17 @@ TRAIN:
   }
 
   feature_variance_loss: {
-    'activate': True,
+    'activate': False,
     'variance_threshold': 0.1,
   }
 
   feature_distance_loss: {
-    'activate': True,
+    'activate': False,
     'distance_threshold': 1.5,
   }
 
   feature_instance_regression_loss: {
-    'activate': True,
+    'activate': False,
   }
 
   loss_weights: {
