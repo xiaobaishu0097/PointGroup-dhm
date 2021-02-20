@@ -553,7 +553,18 @@ def model_fn_decorator(cfg, test=False):
         if cfg.feature_variance_loss['activate'] and ('feature_variance_loss' in loss_inp.keys()):
             point_features, instance_labels = loss_inp['feature_variance_loss']
 
-            feature_variance_loss = None
+            valid_instance_index = (instance_labels != cfg.ignore_label)
+            instance_features = scatter_mean(
+                point_features[valid_instance_index], instance_labels[valid_instance_index], dim=0
+            )
+            feature_variance_loss = scatter_mean(
+                torch.relu(
+                    torch.norm(
+                        instance_features[instance_labels[valid_instance_index]] - \
+                        point_features[valid_instance_index], p=2, dim=1
+                    ) - cfg.feature_variance_loss['variance_threshold']) ** 2,
+                instance_labels[valid_instance_index], dim=0
+            ).mean()
 
             loss_out['feature_variance_loss'] = (feature_variance_loss, instance_labels.shape[0])
 
@@ -567,9 +578,10 @@ def model_fn_decorator(cfg, test=False):
         if cfg.feature_instance_regression_loss['activate'] and ('feature_instance_regression_loss' in loss_inp.keys()):
             point_features, instance_labels = loss_inp['feature_instance_regression_loss']
 
-            instance_labels[instance_labels == -100] = instance_labels.max() + 1
-            instance_features = scatter_mean(point_features, instance_labels, dim=0)
-            instance_features = instance_features[:-1, :]
+            valid_instance_index = (instance_labels != cfg.ignore_label)
+            instance_features = scatter_mean(
+                point_features[valid_instance_index], instance_labels[valid_instance_index], dim=0
+            )
             feature_instance_regression_loss = torch.mean(torch.norm(instance_features, p=2, dim=1), dim=0)
 
             loss_out['feature_instance_regression_loss'] = (feature_instance_regression_loss, instance_labels.shape[0])
