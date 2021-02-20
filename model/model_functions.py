@@ -550,15 +550,29 @@ def model_fn_decorator(cfg, test=False):
             loss_out['centre_offset_loss'] = (instance_triplet_loss, instance_labels.shape[0])
 
         ### three different feature term losses mentioned in OccuSeg
-        if cfg.feature_variance_loss['activate'] and ('point_features' in loss_inp.keys()):
+        if cfg.feature_variance_loss['activate'] and ('feature_variance_loss' in loss_inp.keys()):
             point_features, instance_labels = loss_inp['feature_variance_loss']
 
-        if cfg.feature_distance_loss['activate'] and ('point_features' in loss_inp.keys()):
+            feature_variance_loss = None
+
+            loss_out['feature_variance_loss'] = (feature_variance_loss, instance_labels.shape[0])
+
+        if cfg.feature_distance_loss['activate'] and ('feature_distance_loss' in loss_inp.keys()):
             point_features, instance_labels = loss_inp['feature_distance_loss']
 
-        if cfg.feature_instance_regression_loss['activate'] and ('point_features' in loss_inp.keys()):
+            feature_distance_loss = None
+
+            loss_out['feature_distance_loss'] = (feature_distance_loss, instance_labels.shape[0])
+
+        if cfg.feature_instance_regression_loss['activate'] and ('feature_instance_regression_loss' in loss_inp.keys()):
             point_features, instance_labels = loss_inp['feature_instance_regression_loss']
 
+            instance_labels[instance_labels == -100] = instance_labels.max() + 1
+            instance_features = scatter_mean(point_features, instance_labels, dim=0)
+            instance_features = instance_features[:-1, :]
+            feature_instance_regression_loss = torch.mean(torch.norm(instance_features, p=2, dim=1), dim=0)
+
+            loss_out['feature_instance_regression_loss'] = (feature_instance_regression_loss, instance_labels.shape[0])
 
         '''total loss'''
         loss = cfg.loss_weights['point_semantic'] * semantic_loss + \
@@ -590,6 +604,15 @@ def model_fn_decorator(cfg, test=False):
 
         if cfg.instance_triplet_loss['activate'] and ('point_offset_feats' in loss_inp.keys()):
             loss += cfg.loss_weights['point_instance_triplet'] * instance_triplet_loss
+
+        if cfg.feature_instance_regression_loss['activate'] and ('feature_variance_loss' in loss_inp.keys()):
+            loss += cfg.loss_weights['feature_variance_loss'] * feature_variance_loss
+
+        if cfg.feature_instance_regression_loss['activate'] and ('feature_distance_loss' in loss_inp.keys()):
+            loss += cfg.loss_weights['feature_distance_loss'] * feature_distance_loss
+
+        if cfg.feature_instance_regression_loss['activate'] and ('feature_instance_regression_loss' in loss_inp.keys()):
+            loss += cfg.loss_weights['feature_instance_regression_loss'] * feature_instance_regression_loss
 
         return loss, loss_out, infos
 

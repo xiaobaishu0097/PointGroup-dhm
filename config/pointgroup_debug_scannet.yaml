@@ -30,7 +30,7 @@ STRUCTURE:
   block_reps: 2
   scatter_type: max
   unet3d_num_levels: 3
-  model_mode: Yu_local_proposal_PointGroup
+  model_mode: Jiang_original_PointGroup
   # Centre_clustering or Zheng_panoptic_wpointnet_PointGroup or Zheng_upper_wpointnet_PointGroup or Zheng_panoptic_wopointnet_PointGroup
   # or Zheng_upper_wopointnet_PointGroup or Jiang_original_PointGroup or Yu_refine_clustering_PointGroup
   # or Li_simple_backbone_PointGroup or Yu_refine_clustering_scorenet_PointGroup
@@ -79,7 +79,7 @@ TRAIN:
   }
 
   feature_instance_regression_loss: {
-    'activate': False,
+    'activate': True,
   }
 
   loss_weights: {
@@ -95,6 +95,10 @@ TRAIN:
     'stuff_feats_norm': 1.0,
     'point_semantic_center': 1.0,
     'point_instance_triplet': 1.0,
+    # three losses from OccuSeg
+    'feature_variance_loss': 1.0,
+    'feature_distance_loss': 1.0,
+    'feature_instance_regression_loss': 1.0,
   }
 
   heatmap_sigma: 0
