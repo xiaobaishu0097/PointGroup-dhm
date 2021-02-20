@@ -571,7 +571,17 @@ def model_fn_decorator(cfg, test=False):
         if cfg.feature_distance_loss['activate'] and ('feature_distance_loss' in loss_inp.keys()):
             point_features, instance_labels = loss_inp['feature_distance_loss']
 
-            feature_distance_loss = None
+            valid_instance_index = (instance_labels != cfg.ignore_label)
+            instance_features = scatter_mean(
+                point_features[valid_instance_index], instance_labels[valid_instance_index], dim=0
+            )
+            instance_dist_mat = torch.norm(
+                instance_features.unsqueeze(dim=0) - instance_features.unsqueeze(dim=1), dim=2)
+            instance_dist_mat = torch.relu(
+                (2 * cfg.feature_distance_loss['distance_threshold'] - instance_dist_mat) ** 2)
+            instance_dist_mat[range(len(instance_dist_mat)), range(len(instance_dist_mat))] = 0
+            feature_distance_loss = instance_dist_mat.sum() / (
+                        instance_dist_mat.shape[0] * (instance_dist_mat.shape[0] - 1))
 
             loss_out['feature_distance_loss'] = (feature_distance_loss, instance_labels.shape[0])
 

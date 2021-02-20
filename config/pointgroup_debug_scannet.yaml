@@ -76,7 +76,7 @@ TRAIN:
   }
 
   feature_distance_loss: {
-    'activate': False,
+    'activate': True,
     'distance_threshold': 1.5,
   }
 
