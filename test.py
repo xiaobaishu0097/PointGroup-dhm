@@ -422,11 +422,11 @@ if __name__ == '__main__':
     ##### data
     if cfg.dataset == 'scannetv2':
         if data_name == 'scannet':
-            from data.scannetv2_inst import Dataset
+            from data.scannetv2_inst import ScannetDatast
         else:
             print("Error: no data loader - " + data_name)
             exit(0)
-        dataset = Dataset(cfg, test=True)
+        dataset = ScannetDatast(cfg, test=True)
         dataset.testLoader()
         logger.info('Testing samples ({}): {}'.format(cfg.split, len(dataset.test_file_names)))
 
