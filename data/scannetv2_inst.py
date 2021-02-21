@@ -791,6 +791,7 @@ class ScannetDatast:
         point_feats = []  # (N, 3) (rgb)
         point_semantic_labels = []
         point_instance_infos = []
+        point_instance_labels = []  # (N)
         grid_xyzs = []
 
         batch_offsets = [0]
@@ -836,6 +837,8 @@ class ScannetDatast:
             point_locs.append(torch.cat((torch.LongTensor(xyz.shape[0], 1).fill_(i), torch.from_numpy(xyz).long()), dim=1))  # (N, 4) (sample_index, xyz)
             point_coords.append(torch.from_numpy(np.concatenate((xyz_middle, xyz_origin), axis=1)))  # (N, 6) (shifted_xyz, original_xyz)
             point_feats.append(torch.from_numpy(rgb) + torch.randn(3) * 0.1)  # (N, 3) (rgb)
+            if self.test_split == 'val':
+                point_instance_labels.append(torch.from_numpy(instance_label))  # (N)
 
             if 'Centre' in self.model_mode.split('_'):
                 grid_xyzs.append(torch.from_numpy(grid_xyz))
@@ -856,6 +859,8 @@ class ScannetDatast:
         point_locs = torch.cat(point_locs, 0)  # (N) (sample_index)
         point_coords = torch.cat(point_coords, 0).to(torch.float32)  # (N, 6) (shifted_xyz, original_xyz)
         point_feats = torch.cat(point_feats, 0)  # (N, 3) (rgb)
+        if self.test_split == 'val':
+            point_instance_labels = torch.cat(point_instance_labels, 0).long()  # (N)
         # variables for backbone
         ret_dict['point_locs'] = point_locs  # (N, 4) (sample_index, xyz)
         ret_dict['point_coords'] = point_coords  # (N, 6) (shifted_xyz, original_xyz)
@@ -877,6 +882,20 @@ class ScannetDatast:
 
         ### voxelize
         voxel_locs, p2v_map, v2p_map = pointgroup_ops.voxelization_idx(point_locs, self.batch_size, self.mode)
+
+        if ('occupancy' in self.model_mode.split('_')) and (self.test_split == 'val'):
+            voxel_instance_labels = point_instance_labels[v2p_map[:, 1].long()]
+            ignore_voxel_index = (voxel_instance_labels == -100)
+            voxel_instance_labels[ignore_voxel_index] = voxel_instance_labels.max() + 1
+            num_instance_occupancy = torch_scatter.scatter_add(
+                torch.ones_like(voxel_instance_labels), voxel_instance_labels
+            )
+            voxel_occupancy_labels = num_instance_occupancy[voxel_instance_labels]
+            voxel_occupancy_labels[ignore_voxel_index] = 0
+            voxel_instance_labels[ignore_voxel_index] = -100
+
+            ret_dict['voxel_instance_labels'] = voxel_instance_labels
+            ret_dict['voxel_occupancy_labels'] = voxel_occupancy_labels
 
         # variables for point-wise predictions
         ret_dict['voxel_locs'] = voxel_locs  # (nVoxel, 4)

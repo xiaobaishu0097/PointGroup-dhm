@@ -1499,7 +1499,7 @@ class PointGroup(nn.Module):
                 semantic_preds_cpu = point_semantic_preds[object_idxs].int().cpu()
 
                 idx_shift, start_len_shift = pointgroup_ops.ballquery_batch_p(
-                    coords_ + pt_offsets_ + (torch.rand(coords_.shape) * 1e-2).cuda(), batch_idxs_,
+                    coords_ + pt_offsets_, batch_idxs_,
                     batch_offsets_, self.cluster_radius, self.cluster_shift_meanActive
                 )
                 # idx_shift, start_len_shift = pointgroup_ops.ballquery_batch_p(
@@ -1600,7 +1600,7 @@ class PointGroup(nn.Module):
                 semantic_preds_cpu = point_semantic_preds[object_idxs].int().cpu()
 
                 idx_shift, start_len_shift = pointgroup_ops.ballquery_batch_p(
-                    coords_ + pt_offsets_ + (torch.rand(coords_.shape) * 1e-2).cuda(), batch_idxs_,
+                    coords_ + pt_offsets_, batch_idxs_,
                     batch_offsets_, self.cluster_radius, self.cluster_shift_meanActive
                 )
                 # idx_shift, start_len_shift = pointgroup_ops.ballquery_batch_p(
