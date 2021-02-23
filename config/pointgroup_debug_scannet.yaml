@@ -138,6 +138,11 @@ TRAIN:
     'recurrent_times': 2,
   }
 
+  occupancy_cluster: {
+    'occupancy_threshold': 1.0,
+    'occupancy_threshold_shift': 1.0,
+  }
+
   fg_thresh: 0.75
   bg_thresh: 0.25
 

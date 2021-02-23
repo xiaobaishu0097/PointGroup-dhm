@@ -407,6 +407,8 @@ class PointGroup(nn.Module):
             }
 
         elif self.model_mode == 'Fan_occupancy_PointGroup':
+            self.occupancy_cluster = cfg.occupancy_cluster
+
             self.input_conv = spconv.SparseSequential(
                 spconv.SubMConv3d(input_c, m, kernel_size=3, padding=1, bias=False, indice_key='subm1')
             )
@@ -1587,6 +1589,7 @@ class PointGroup(nn.Module):
             # point_offset_preds.append(input['point_offset_preds'])  # (N, 3), float32
 
             voxel_occupancy_preds.append(self.point_occupancy(output.features))
+            point_occupancy_pred = voxel_occupancy_preds[0][input_map.long()].squeeze(dim=1)
 
             if (epoch > self.prepare_epochs):
                 #### get prooposal clusters
@@ -1596,6 +1599,7 @@ class PointGroup(nn.Module):
                 batch_offsets_ = utils.get_batch_offsets(batch_idxs_, input['batch_size'])
                 coords_ = coords[object_idxs]
                 pt_offsets_ = point_offset_preds[0][object_idxs]
+                point_occupancy_pred_ = point_occupancy_pred[object_idxs]
 
                 semantic_preds_cpu = point_semantic_preds[object_idxs].int().cpu()
 
@@ -1607,8 +1611,9 @@ class PointGroup(nn.Module):
                 #     coords_ + pt_offsets_ + (torch.rand(coords_.shape) * 1e-2).cuda(), batch_idxs_,
                 #     batch_offsets_, 0.001, self.cluster_shift_meanActive
                 # )
-                proposals_idx_shift, proposals_offset_shift = pointgroup_ops.bfs_cluster(
-                    semantic_preds_cpu, idx_shift.cpu(), start_len_shift.cpu(), self.cluster_npoint_thre
+                proposals_idx_shift, proposals_offset_shift = pointgroup_ops.bfs_occupancy_cluster(
+                    semantic_preds_cpu, point_occupancy_pred_.cpu(), idx_shift.cpu(),
+                    start_len_shift.cpu(), self.cluster_npoint_thre, self.occupancy_cluster['occupancy_threshold_shift']
                 )
 
                 proposals_idx_shift[:, 1] = object_idxs[proposals_idx_shift[:, 1].long()].int()
@@ -1617,8 +1622,10 @@ class PointGroup(nn.Module):
 
                 idx, start_len = pointgroup_ops.ballquery_batch_p(coords_, batch_idxs_, batch_offsets_, self.cluster_radius,
                                                                   self.cluster_meanActive)
-                proposals_idx, proposals_offset = pointgroup_ops.bfs_cluster(semantic_preds_cpu, idx.cpu(), start_len.cpu(),
-                                                                             self.cluster_npoint_thre)
+                proposals_idx, proposals_offset = pointgroup_ops.bfs_occupancy_cluster(
+                    semantic_preds_cpu, point_occupancy_pred_.cpu(), idx.cpu(),
+                    start_len.cpu(), self.cluster_npoint_thre, self.occupancy_cluster['occupancy_threshold']
+                )
                 proposals_idx[:, 1] = object_idxs[proposals_idx[:, 1].long()].int()
                 # proposals_idx: (sumNPoint, 2), int, dim 0 for cluster_id, dim 1 for corresponding point idxs in N
                 # proposals_offset: (nProposal + 1), int
