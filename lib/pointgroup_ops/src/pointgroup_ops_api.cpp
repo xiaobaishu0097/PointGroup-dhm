@@ -12,6 +12,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m){
 
     m.def("ballquery_batch_p", &ballquery_batch_p, "ballquery_batch_p");
     m.def("bfs_cluster", &bfs_cluster, "bfs_cluster");
+    m.def("bfs_occupancy_cluster", &bfs_occupancy_cluster, "bfs_occupancy_cluster");
 
     m.def("roipool_fp", &roipool_fp, "roipool_fp");
     m.def("roipool_bp", &roipool_bp, "roipool_bp");

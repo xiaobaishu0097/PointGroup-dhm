@@ -268,23 +268,29 @@ def get_coords_color(opt):
         grid_center_preds_file = os.path.join(opt.result_root, opt.room_split, 'grid_center_preds', opt.room_name + '.npy')
         assert os.path.isfile(grid_center_preds_file), 'No grid points result - {}.'.format(grid_center_preds_file)
         grid_center_preds = np.load(grid_center_preds_file)
-        grid_center_preds[grid_center_preds < 0] = 0
-        grid_rgb = np.ones((32**3, 3))
-        grid_rgb[:, 0] = grid_rgb[:, 0]  * 220
-        grid_rgb = grid_rgb * grid_center_preds.reshape(-1, 1)
-        grid_xyz = np.zeros((32**3, 3), dtype=np.float32)
-        grid_xyz += xyz.min(axis=0, keepdims=True)
-        grid_size = (xyz.max(axis=0, keepdims=True) - xyz.min(axis=0, keepdims=True)) / 32
-        grid_xyz = grid_xyz.reshape(32, 32, 32, 3)
-        for i in range(32):
-            grid_xyz[i, :, :, 0] = grid_xyz[i, :, :, 0] + i * grid_size[0, 0]
-            grid_xyz[:, i, :, 1] = grid_xyz[:, i, :, 1] + i * grid_size[0, 1]
-            grid_xyz[:, :, i, 2] = grid_xyz[:, :, i, 2] + i * grid_size[0, 2]
-        grid_xyz = grid_xyz.reshape(-1, 3)
+        # grid_center_preds[grid_center_preds < 0] = 0
+        # grid_rgb = np.ones((32**3, 3))
+        # grid_rgb[:, 0] = grid_rgb[:, 0]  * 220
+        # grid_rgb = grid_rgb * grid_center_preds.reshape(-1, 1)
+        # grid_xyz = np.zeros((32**3, 3), dtype=np.float32)
+        # grid_xyz += xyz.min(axis=0, keepdims=True)
+        # grid_size = (xyz.max(axis=0, keepdims=True) - xyz.min(axis=0, keepdims=True)) / 32
+        # grid_xyz = grid_xyz.reshape(32, 32, 32, 3)
+        # for i in range(32):
+        #     grid_xyz[i, :, :, 0] = grid_xyz[i, :, :, 0] + i * grid_size[0, 0]
+        #     grid_xyz[:, i, :, 1] = grid_xyz[:, i, :, 1] + i * grid_size[0, 1]
+        #     grid_xyz[:, :, i, 2] = grid_xyz[:, :, i, 2] + i * grid_size[0, 2]
+        # grid_xyz = grid_xyz.reshape(-1, 3)
+        #
+        # grid_xyz = grid_xyz[grid_center_preds.reshape(32 ** 3, ) != 0, :]
+        # grid_rgb = grid_rgb[grid_center_preds.reshape(32 ** 3, ) != 0, :]
+        #
+        # xyz = np.concatenate((xyz, grid_xyz), axis=0)
+        # rgb = np.concatenate((rgb, grid_rgb), axis=0)
 
-        grid_xyz = grid_xyz[grid_center_preds.reshape(32 ** 3, ) != 0, :]
-        grid_rgb = grid_rgb[grid_center_preds.reshape(32 ** 3, ) != 0, :]
-
+        grid_xyz = grid_center_preds
+        grid_rgb = np.ones_like(grid_center_preds)
+        grid_rgb[:, 0] = grid_rgb[:, 0] * 220
         xyz = np.concatenate((xyz, grid_xyz), axis=0)
         rgb = np.concatenate((rgb, grid_rgb), axis=0)
 

@@ -17,4 +17,6 @@ int ballquery_batch_p_cuda(int n, int meanActive, float radius, const float *xyz
 
 void bfs_cluster(at::Tensor semantic_label_tensor, at::Tensor ball_query_idxs_tensor, at::Tensor start_len_tensor, at::Tensor cluster_idxs_tensor, at::Tensor cluster_offsets_tensor, const int N, int threshold);
 
+void bfs_occupancy_cluster(at::Tensor semantic_label_tensor, at::Tensor occupancy_preds_tensor, at::Tensor ball_query_idxs_tensor, at::Tensor start_len_tensor, at::Tensor cluster_idxs_tensor, at::Tensor cluster_offsets_tensor, const int N, int threshold, float occupancy_threshold);
+
 #endif //BFS_CLUSTER_H

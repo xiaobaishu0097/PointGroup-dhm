@@ -4,6 +4,7 @@ Written by Li Jiang
 All Rights Reserved 2020.
 */
 
+#include <math.h>
 #include "bfs_cluster.h"
 
 /* ================================== ballquery_batch_p ================================== */
@@ -53,6 +54,38 @@ ConnectedComponent find_cc(Int idx, int *semantic_label, Int *ball_query_idxs, i
     return cc;
 }
 
+ConnectedComponent find_occupancy_cc(Int idx, int *semantic_label, float *occupancy_preds, Int *ball_query_idxs, int *start_len, int *visited, float &occupacy, float occupancy_threshold){
+    ConnectedComponent cc;
+    cc.addPoint(idx);
+    visited[idx] = 1;
+    occupacy = occupacy + occupancy_preds[idx];
+
+    std::queue<Int> Q;
+    assert(Q.empty());
+    Q.push(idx);
+
+    while(!Q.empty()){
+        Int cur = Q.front(); Q.pop();
+        int start = start_len[cur * 2];
+        int len = start_len[cur * 2 + 1];
+        int label_cur = semantic_label[cur];
+        for(Int i = start; i < start + len; i++){
+            Int idx_i = ball_query_idxs[i];
+            if(semantic_label[idx_i] != label_cur) continue;
+            if(visited[idx_i] == 1) continue;
+            if(occupancy_preds[idx_i] < occupacy * (1 - occupancy_threshold) || occupancy_preds[idx_i] > occupacy * (1 + occupancy_threshold)) continue;
+
+            occupacy = (occupacy * (int)cc.pt_idxs.size() + occupancy_preds[idx_i]) / ((int)cc.pt_idxs.size() + 1);
+
+            cc.addPoint(idx_i);
+            visited[idx_i] = 1;
+
+            Q.push(idx_i);
+        }
+    }
+    return cc;
+}
+
 //input: semantic_label, int, N
 //input: ball_query_idxs, Int, (nActive)
 //input: start_len, int, (N, 2)
@@ -65,6 +98,30 @@ int get_clusters(int *semantic_label, Int *ball_query_idxs, int *start_len, cons
         if(visited[i] == 0){
             ConnectedComponent CC = find_cc(i, semantic_label, ball_query_idxs, start_len, visited);
             if((int)CC.pt_idxs.size() >= threshold){
+                clusters.push_back(CC);
+                sumNPoint += (int)CC.pt_idxs.size();
+            }
+        }
+    }
+
+    return sumNPoint;
+}
+
+//input: semantic_label, int, N
+//input: ball_query_idxs, Int, (nActive)
+//input: start_len, int, (N, 2)
+//output: clusters, CCs
+int get_occupancy_clusters(int *semantic_label, float *occupancy_preds, Int *ball_query_idxs, int *start_len, const Int nPoint, int threshold, ConnectedComponents &clusters, float occupancy_threshold){
+    int visited[nPoint] = {0};
+
+    int sumNPoint = 0;
+    float occupancy = 0;
+    // float occupancy_threshold = 0.3;
+    for(Int i = 0; i < nPoint; i++){
+        if(visited[i] == 0){
+            ConnectedComponent CC = find_occupancy_cc(i, semantic_label, occupancy_preds, ball_query_idxs, start_len, visited, occupancy, occupancy_threshold);
+            if((int)CC.pt_idxs.size() >= threshold){
+                occupancy = 0;
                 clusters.push_back(CC);
                 sumNPoint += (int)CC.pt_idxs.size();
             }
@@ -98,6 +155,34 @@ at::Tensor cluster_idxs_tensor, at::Tensor cluster_offsets_tensor, const int N, 
 
     ConnectedComponents CCs;
     int sumNPoint = get_clusters(semantic_label, ball_query_idxs, start_len, N, threshold, CCs);
+
+    int nCluster = (int)CCs.size();
+    cluster_idxs_tensor.resize_({sumNPoint, 2});
+    cluster_offsets_tensor.resize_({nCluster + 1});
+    cluster_idxs_tensor.zero_();
+    cluster_offsets_tensor.zero_();
+
+    int *cluster_idxs = cluster_idxs_tensor.data<int>();
+    int *cluster_offsets = cluster_offsets_tensor.data<int>();
+
+    fill_cluster_idxs_(CCs, cluster_idxs, cluster_offsets);
+}
+
+//input: semantic_label, int, N
+//input: occupancy_preds, float, N
+//input: ball_query_idxs, int, (nActive)
+//input: start_len, int, (N, 2)
+//output: cluster_idxs, int (sumNPoint, 2), dim 0 for cluster_id, dim 1 for corresponding point idxs in N
+//output: cluster_offsets, int (nCluster + 1)
+void bfs_occupancy_cluster(at::Tensor semantic_label_tensor, at::Tensor occupancy_preds_tensor, at::Tensor ball_query_idxs_tensor, at::Tensor start_len_tensor,
+at::Tensor cluster_idxs_tensor, at::Tensor cluster_offsets_tensor, const int N, int threshold, float occupancy_threshold){
+    int *semantic_label = semantic_label_tensor.data<int>();
+    float *occupancy_preds = occupancy_preds_tensor.data<float>();
+    Int *ball_query_idxs = ball_query_idxs_tensor.data<Int>();
+    int *start_len = start_len_tensor.data<int>();
+
+    ConnectedComponents CCs;
+    int sumNPoint = get_occupancy_clusters(semantic_label, occupancy_preds, ball_query_idxs, start_len, N, threshold, CCs, occupancy_threshold);
 
     int nCluster = (int)CCs.size();
     cluster_idxs_tensor.resize_({sumNPoint, 2});
