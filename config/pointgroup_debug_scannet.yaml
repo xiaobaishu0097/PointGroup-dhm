@@ -139,8 +139,9 @@ TRAIN:
   }
 
   occupancy_cluster: {
-    'occupancy_threshold': 1.0,
+    'occupancy_threshold': 0.75,
     'occupancy_threshold_shift': 1.0,
+    'occupancy_filter_threshold': 0.3,
   }
 
   fg_thresh: 0.75
