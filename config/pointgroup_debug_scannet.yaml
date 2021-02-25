@@ -31,8 +31,7 @@ STRUCTURE:
   scatter_type: max
   unet3d_num_levels: 3
   model_mode: Center_pointnet++_clustering
-  # Center_clustering or Zheng_panoptic_wpointnet_PointGroup or Zheng_upper_wpointnet_PointGroup or Zheng_panoptic_wopointnet_PointGroup
-  # or Zheng_upper_wopointnet_PointGroup or Jiang_original_PointGroup or Yu_refine_clustering_PointGroup
+  # Center_clustering or Jiang_original_PointGroup or Yu_refine_clustering_PointGroup
   # or Li_simple_backbone_PointGroup or Yu_refine_clustering_scorenet_PointGroup
   # or PointNet_point_prediction_test_PointGroup or Yu_rc_scorenet_confidence_PointGroup
   # or PointNet_deeper_PointGroup or PointNet_sample_PointGroup or Yu_RC_ScoreNet_Conf_Transformer_PointGroup
