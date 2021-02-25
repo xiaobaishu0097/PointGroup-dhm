@@ -185,22 +185,6 @@ def test(model, model_fn, dataset, epoch):
                     matches[test_scene_name]['gt'] = gt2pred
                     matches[test_scene_name]['pred'] = pred2gt
 
-            # elif cfg.model_mode == 'Fan_occupancy_PointGroup':
-            #     voxel_occupancy_preds = preds['voxel_occupancy_preds']
-            #
-            #     voxel_instance_labels = preds['voxel_instance_labels']
-            #     voxel_occupancy_labels = preds['voxel_occupancy_labels']
-            #
-            #     os.makedirs(os.path.join(result_dir, 'voxel_occupancy_preds'), exist_ok=True)
-            #     os.makedirs(os.path.join(result_dir, 'voxel_instance_labels'), exist_ok=True)
-            #     os.makedirs(os.path.join(result_dir, 'voxel_occupancy_labels'), exist_ok=True)
-            #     voxel_occupancy_preds = voxel_occupancy_preds[0].cpu().numpy()
-            #     voxel_instance_labels = voxel_instance_labels.cpu().numpy()
-            #     voxel_occupancy_labels = voxel_occupancy_labels.cpu().numpy()
-            #     np.save(os.path.join(result_dir, 'voxel_occupancy_preds', test_scene_name + '.npy'), voxel_occupancy_preds)
-            #     np.save(os.path.join(result_dir, 'voxel_instance_labels', test_scene_name + '.npy'), voxel_instance_labels)
-            #     np.save(os.path.join(result_dir, 'voxel_occupancy_labels', test_scene_name + '.npy'), voxel_occupancy_labels)
-
             elif cfg.model_mode.endswith('_PointGroup'):
                 ##### get predictions (#1 semantic_pred, pt_offsets; #2 scores, proposals_pred)
                 if preds['semantic'][-1].shape[0] == N:
@@ -348,6 +332,21 @@ def test(model, model_fn, dataset, epoch):
                         f.write('\n')
                     np.savetxt(os.path.join(result_dir, 'predicted_masks', test_scene_name + '_%03d.txt' % (proposal_id)), clusters_i, fmt='%d')
                 f.close()
+
+            if cfg.eval_save['occupancy']:
+                point_occupancy_preds = preds['point_occupancy_preds']
+                point_instance_labels = preds['point_instance_labels']
+                point_occupancy_labels = preds['point_occupancy_labels']
+
+                os.makedirs(os.path.join(result_dir, 'point_occupancy_preds'), exist_ok=True)
+                os.makedirs(os.path.join(result_dir, 'point_instance_labels'), exist_ok=True)
+                os.makedirs(os.path.join(result_dir, 'point_occupancy_labels'), exist_ok=True)
+                point_occupancy_preds = point_occupancy_preds.cpu().numpy()
+                point_instance_labels = point_instance_labels.cpu().numpy()
+                point_occupancy_labels = point_occupancy_labels.cpu().numpy()
+                np.save(os.path.join(result_dir, 'point_occupancy_preds', test_scene_name + '.npy'), point_occupancy_preds)
+                np.save(os.path.join(result_dir, 'point_instance_labels', test_scene_name + '.npy'), point_instance_labels)
+                np.save(os.path.join(result_dir, 'point_occupancy_labels', test_scene_name + '.npy'), point_occupancy_labels)
 
             end3 = time.time() - start3
             end = time.time() - start

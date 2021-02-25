@@ -188,6 +188,7 @@ TEST:
     'instance': False,
     'pt_offsets': False,
     'pt_shifted_coords': False,
+    'occupancy': False,
   }
 
 DISTRIBUTE:

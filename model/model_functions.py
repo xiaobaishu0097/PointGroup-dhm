@@ -146,13 +146,13 @@ def model_fn_decorator(cfg, test=False):
             if 'point_semantic_pred_full' in ret.keys():
                 preds['point_semantic_pred_full'] = ret['point_semantic_pred_full']
             if ('occupancy' in cfg.model_mode.split('_')) and ('voxel_occupancy_preds' in ret.keys()):
-                preds['voxel_occupancy_preds'] = ret['voxel_occupancy_preds']
+                preds['point_occupancy_preds'] = ret['voxel_occupancy_preds'][0][p2v_map.long()]
 
                 voxel_instance_labels = batch['voxel_instance_labels'].cuda()
                 voxel_occupancy_labels = batch['voxel_occupancy_labels'].cuda()
 
-                preds['voxel_instance_labels'] = voxel_instance_labels
-                preds['voxel_occupancy_labels'] = voxel_occupancy_labels
+                preds['point_instance_labels'] = voxel_instance_labels[p2v_map.long()]
+                preds['point_occupancy_labels'] = voxel_occupancy_labels[p2v_map.long()]
 
             preds['pt_semantic_labels'] = point_semantic_labels
             preds['pt_offset_labels'] = point_offset_labels

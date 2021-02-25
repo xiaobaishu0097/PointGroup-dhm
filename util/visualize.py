@@ -318,6 +318,29 @@ def get_coords_color(opt):
         label_pred_rgb = np.array(itemgetter(*SEMANTIC_NAMES[label_pred])(CLASS_COLOR))
         rgb = label_pred_rgb
 
+    elif (opt.task == 'occupancy'):
+        assert opt.room_split != 'train'
+        point_occupancy_preds_file = os.path.join(opt.result_root, opt.room_split, 'point_occupancy_preds', opt.room_name + '.npy')
+        point_instance_labels_file = os.path.join(opt.result_root, opt.room_split, 'point_instance_labels', opt.room_name + '.npy')
+        point_occupancy_labels_file = os.path.join(opt.result_root, opt.room_split, 'point_occupancy_labels', opt.room_name + '.npy')
+        assert os.path.isfile(point_occupancy_preds_file), 'No semantic result - {}.'.format(point_occupancy_preds_file)
+        assert os.path.isfile(point_instance_labels_file), 'No semantic result - {}.'.format(point_instance_labels_file)
+        assert os.path.isfile(point_occupancy_labels_file), 'No semantic result - {}.'.format(point_occupancy_labels_file)
+        point_occupancy_preds = np.load(point_occupancy_preds_file).astype(np.float)  # 0~19
+        point_instance_labels = np.load(point_instance_labels_file).astype(np.float)  # 0~19
+        point_occupancy_labels = np.load(point_occupancy_labels_file).astype(np.float)  # 0~19
+
+        inst_label_rgb = np.zeros(rgb.shape)
+        inst_label = inst_label.astype(np.int)
+        object_idx = (inst_label >= 0)
+        inst_label_rgb[object_idx] = COLOR20[inst_label[object_idx] % len(COLOR20)]
+        rgb = inst_label_rgb
+        rgb = np.ones_like(rgb)
+
+        point_occupancy_labels[point_occupancy_labels == 0] = 1.1
+        point_occupancy_error = np.abs(point_occupancy_preds.squeeze(axis=1) - np.log(point_occupancy_labels)) / np.log(point_occupancy_labels)
+        rgb[inst_label > 1, 0] += (point_occupancy_error[inst_label > 1] * 2200)
+
     elif opt.task == 'semantic_error':
         assert opt.room_split != 'train'
         semantic_file = os.path.join(opt.result_root, opt.room_split, 'semantic_pred', opt.room_name + '.npy')
