@@ -101,7 +101,7 @@ TRAIN:
     # three losses from OccuSeg
     'feature_variance_loss': 1.0,
     'feature_distance_loss': 1.0,
-    'feature_instance_regression_loss': 1.0,
+    'feature_instance_regression_loss': 0.001,
     'voxel_occupancy_loss': 1.0,
   }
 
