@@ -16,6 +16,7 @@ from model.common import generate_heatmap, normalize_3d_coordinate, coordinate2i
 sys.path.append('../')
 
 from lib.pointgroup_ops.functions import pointgroup_ops
+from model.Pointnet2.pointnet2 import pointnet2_utils
 
 SEMANTIC_NAME2INDEX = {
     'wall': 0, 'floor': 1, 'cabinet': 2, 'bed': 3, 'chair': 4, 'sofa': 5, 'table': 6, 'door': 7, 'window': 8,
@@ -120,7 +121,7 @@ class ScannetDatast:
         instance_info = np.ones((xyz.shape[0], 9), dtype=np.float32) * -100.0   # (n, 9), float, (cx, cy, cz, minx, miny, minz, maxx, maxy, maxz)
         instance_pointnum = []   # (nInst), int
         instance_num = int(instance_label.max()) + 1
-        instance_centres = []
+        instance_centers = []
         instance_sizes = []
         instance_labels = []
         for i_ in range(instance_num):
@@ -140,8 +141,8 @@ class ScannetDatast:
 
             ret = {}
 
-            ### instance_centres
-            instance_centres.append(mean_xyz_i)
+            ### instance_centers
+            instance_centers.append(mean_xyz_i)
             instance_sizes.append(size_xyz_i)
             if semantic_label is not None:
                 semantic_label[semantic_label == -100] = 20
@@ -153,7 +154,7 @@ class ScannetDatast:
 
             ret['instance_info'] = instance_info
             ret['instance_pointnum'] = instance_pointnum
-            ret['instance_centre'] = instance_centres
+            ret['instance_center'] = instance_centers
             ret['instance_size'] = instance_sizes
 
         return instance_num, ret
@@ -239,20 +240,20 @@ class ScannetDatast:
         point_semantic_labels = []  # (N)
         point_instance_labels = []  # (N)
         point_instance_infos = []  # (N, 9)
-        instance_centres = []  # (nInst, 3) (instance_xyz)
+        instance_centers = []  # (nInst, 3) (instance_xyz)
 
         # variables for grid-wise predictions
-        grid_centre_heatmaps = []  # (B, nGrid)
-        grid_centre_indicators = []  # (nInst) --> (B, nGrid)
-        grid_centre_offset_labels = []  # (nInst, 3) --> (B, nGrid, 3)
-        grid_centre_semantic_labels = []  # (B, nGrid)
+        grid_center_heatmaps = []  # (B, nGrid)
+        grid_center_indicators = []  # (nInst) --> (B, nGrid)
+        grid_center_offset_labels = []  # (nInst, 3) --> (B, nGrid, 3)
+        grid_center_semantic_labels = []  # (B, nGrid)
 
-        # variables for centre queries
-        centre_queries_coords = []
-        centre_queries_probs = []
-        centre_queries_semantic_labels = []
-        centre_queries_offsets = []
-        centre_queries_batch_offsets = [0]
+        # variables for center queries
+        center_queries_coords = []
+        center_queries_probs = []
+        center_queries_semantic_labels = []
+        center_queries_offsets = []
+        center_queries_batch_offsets = [0]
 
         #
         instance_pointnum = []  # (total_nInst), int
@@ -307,15 +308,15 @@ class ScannetDatast:
             inst_num, inst_infos = self.getInstanceInfo(xyz_middle, instance_label.astype(np.int32), label.copy())
             instance_infos = inst_infos["instance_info"]  # (n, 9), (cx, cy, cz, minx, miny, minz, maxx, maxy, maxz)
             inst_pointnum = inst_infos["instance_pointnum"]  # (nInst), list
-            inst_centres = inst_infos['instance_centre']  # (nInst, 3) (cx, cy, cz)
+            inst_centers = inst_infos['instance_center']  # (nInst, 3) (cx, cy, cz)
             inst_size = inst_infos['instance_size']
             inst_label = inst_infos['instance_label']
 
             instance_label[np.where(instance_label != -100)] += total_inst_num
             total_inst_num += inst_num
 
-            if 'Centre' in self.model_mode.split('_'):
-                ### get instance centre heatmap
+            if 'Center' in self.model_mode.split('_'):
+                ### get instance center heatmap
                 grid_xyz = np.zeros((32 ** 3, 3), dtype=np.float32)
                 grid_xyz += xyz_middle.min(axis=0, keepdims=True)
                 grid_size = (xyz_middle.max(axis=0, keepdims=True) - xyz_middle.min(axis=0, keepdims=True)) / 32
@@ -330,64 +331,64 @@ class ScannetDatast:
                 ### size adaptive gaussian function or fixed sigma gaussian
                 if not self.heatmap_sigma:
                     grid_infos = generate_adaptive_heatmap(
-                        torch.tensor(grid_xyz, dtype=torch.float64), torch.tensor(inst_centres), torch.tensor(inst_size),
+                        torch.tensor(grid_xyz, dtype=torch.float64), torch.tensor(inst_centers), torch.tensor(inst_size),
                         torch.tensor(inst_label), min_IoU=self.min_IoU, min_radius=np.linalg.norm(grid_size),
                     )
-                    grid_centre_heatmap = grid_infos['heatmap']
+                    grid_center_heatmap = grid_infos['heatmap']
                     grid_instance_label = grid_infos['grid_instance_label']
                     grid_instance_label[grid_instance_label == 20] = -100
                 else:
-                    grid_centre_heatmap = generate_heatmap(grid_xyz.astype(np.double), np.asarray(inst_centres),
+                    grid_center_heatmap = generate_heatmap(grid_xyz.astype(np.double), np.asarray(inst_centers),
                                                     sigma=self.heatmap_sigma)
 
-                ### sample centre queries around instance centres
-                centre_queries_coord = []
-                centre_queries_offset = []
+                ### sample center queries around instance centers
+                center_queries_coord = []
+                center_queries_offset = []
                 n_queries = 1000
-                for inst_cent in inst_centres:
-                    centre_queries_offset.append(torch.randn(n_queries, 3).double() * 0.05)
-                    centre_query_coords = torch.from_numpy(inst_cent) - centre_queries_offset[-1]
-                    centre_queries_coord.append(centre_query_coords)
+                for inst_cent in inst_centers:
+                    center_queries_offset.append(torch.randn(n_queries, 3).double() * 0.05)
+                    center_query_coords = torch.from_numpy(inst_cent) - center_queries_offset[-1]
+                    center_queries_coord.append(center_query_coords)
 
-                centre_queries_coord = torch.cat(centre_queries_coord, dim=0)
-                centre_queries_offset = torch.cat(centre_queries_offset, dim=0)
+                center_queries_coord = torch.cat(center_queries_coord, dim=0)
+                center_queries_offset = torch.cat(center_queries_offset, dim=0)
 
-                centre_queries_infos = generate_adaptive_heatmap(
-                    centre_queries_coord, torch.tensor(inst_centres), torch.tensor(inst_size),
+                center_queries_infos = generate_adaptive_heatmap(
+                    center_queries_coord, torch.tensor(inst_centers), torch.tensor(inst_size),
                     torch.tensor(inst_label), min_IoU=self.min_IoU, min_radius=np.linalg.norm(grid_size),
                 )
-                centre_queries_prob = centre_queries_infos['heatmap']
-                centre_queries_semantic_label = centre_queries_infos['grid_instance_label']
-                centre_queries_semantic_label[centre_queries_semantic_label == 20] = -100
-                centre_queries_offset[centre_queries_semantic_label == -100] = torch.zeros_like(centre_queries_offset[0, :])
+                center_queries_prob = center_queries_infos['heatmap']
+                center_queries_semantic_label = center_queries_infos['grid_instance_label']
+                center_queries_semantic_label[center_queries_semantic_label == 20] = -100
+                center_queries_offset[center_queries_semantic_label == -100] = torch.zeros_like(center_queries_offset[0, :])
 
-                centre_queries_batch_offsets.append(centre_queries_batch_offsets[-1] + centre_queries_coord.shape[0])
+                center_queries_batch_offsets.append(center_queries_batch_offsets[-1] + center_queries_coord.shape[0])
 
                 norm_coords = normalize_3d_coordinate(
-                    torch.cat((torch.from_numpy(xyz_middle), torch.from_numpy(np.asarray(inst_centres))), dim=0).unsqueeze(
+                    torch.cat((torch.from_numpy(xyz_middle), torch.from_numpy(np.asarray(inst_centers))), dim=0).unsqueeze(
                         dim=0).clone()
                 )
-                norm_inst_centres = norm_coords[:, -len(inst_centres):, :]
-                grid_centre_gt = coordinate2index(norm_inst_centres, 32, coord_type='3d').squeeze()
-                if grid_centre_gt.ndimension() == 0:
-                    grid_centre_gt = grid_centre_gt.unsqueeze(dim=0)
-                assert grid_centre_gt.ndimension() == 1, 'the dimension of grid_centre_gt is {}'.format(
-                    grid_centre_gt.ndimension())
-                grid_centre_indicator = torch.cat(
-                    (torch.LongTensor(grid_centre_gt.shape[-1], 1).fill_(i), grid_centre_gt.unsqueeze(dim=-1)), dim=1
+                norm_inst_centers = norm_coords[:, -len(inst_centers):, :]
+                grid_center_gt = coordinate2index(norm_inst_centers, 32, coord_type='3d').squeeze()
+                if grid_center_gt.ndimension() == 0:
+                    grid_center_gt = grid_center_gt.unsqueeze(dim=0)
+                assert grid_center_gt.ndimension() == 1, 'the dimension of grid_center_gt is {}'.format(
+                    grid_center_gt.ndimension())
+                grid_center_indicator = torch.cat(
+                    (torch.LongTensor(grid_center_gt.shape[-1], 1).fill_(i), grid_center_gt.unsqueeze(dim=-1)), dim=1
                 )
 
-                ### only the centre grid point require to predict the offset vector
-                grid_cent_xyz = grid_xyz[grid_centre_gt]
-                grid_centre_offset = grid_cent_xyz - np.array(inst_centres)
-                grid_centre_offset = grid_centre_offset.squeeze()
-                grid_centre_offset = torch.from_numpy(grid_centre_offset)
-                if grid_centre_offset.ndimension() == 1:
-                    grid_centre_offset = grid_centre_offset.unsqueeze(dim=0)
-                assert grid_centre_offset.ndimension() == 2, 'the dimension of grid_centre_gt is {}'.format(
-                    grid_centre_offset.ndimension())
-                grid_centre_offset_label = torch.cat(
-                    (torch.DoubleTensor(grid_centre_offset.shape[0], 1).fill_(i), grid_centre_offset), dim=1
+                ### only the center grid point require to predict the offset vector
+                grid_cent_xyz = grid_xyz[grid_center_gt]
+                grid_center_offset = grid_cent_xyz - np.array(inst_centers)
+                grid_center_offset = grid_center_offset.squeeze()
+                grid_center_offset = torch.from_numpy(grid_center_offset)
+                if grid_center_offset.ndimension() == 1:
+                    grid_center_offset = grid_center_offset.unsqueeze(dim=0)
+                assert grid_center_offset.ndimension() == 2, 'the dimension of grid_center_gt is {}'.format(
+                    grid_center_offset.ndimension())
+                grid_center_offset_label = torch.cat(
+                    (torch.DoubleTensor(grid_center_offset.shape[0], 1).fill_(i), grid_center_offset), dim=1
                 )
 
             ### merge the scene to the batch
@@ -400,24 +401,24 @@ class ScannetDatast:
             point_semantic_labels.append(torch.from_numpy(label))  # (N)
             point_instance_labels.append(torch.from_numpy(instance_label))  # (N)
             point_instance_infos.append(torch.from_numpy(instance_infos))  # (N, 9) (cx, cy, cz, minx, miny, minz, maxx, maxy, maxz)
-            instance_centres.append(
+            instance_centers.append(
                 torch.cat(
-                    (torch.DoubleTensor(len(inst_centres), 1).fill_(i), torch.from_numpy(np.array(inst_centres))),
+                    (torch.DoubleTensor(len(inst_centers), 1).fill_(i), torch.from_numpy(np.array(inst_centers))),
                     dim=1
                 )
-            )  # (nInst, 4) (sample_index, instance_centre_xyz)
+            )  # (nInst, 4) (sample_index, instance_center_xyz)
 
-            if 'Centre' in self.model_mode.split('_'):
+            if 'Center' in self.model_mode.split('_'):
                 # variables for grid-wise predictions
-                grid_centre_heatmaps.append(grid_centre_heatmap.unsqueeze(dim=0))  # (B, nGrid)
-                grid_centre_indicators.append(grid_centre_indicator)  # (NGrid, 2) (sample_index, grid_index)
-                grid_centre_offset_labels.append(grid_centre_offset_label)  # (NGrid, 4) (sample_index, grid_centre_offset)
-                grid_centre_semantic_labels.append(grid_instance_label.unsqueeze(dim=0))  # (B, nGrid)
+                grid_center_heatmaps.append(grid_center_heatmap.unsqueeze(dim=0))  # (B, nGrid)
+                grid_center_indicators.append(grid_center_indicator)  # (NGrid, 2) (sample_index, grid_index)
+                grid_center_offset_labels.append(grid_center_offset_label)  # (NGrid, 4) (sample_index, grid_center_offset)
+                grid_center_semantic_labels.append(grid_instance_label.unsqueeze(dim=0))  # (B, nGrid)
 
-                centre_queries_coords.append(centre_queries_coord)
-                centre_queries_probs.append(centre_queries_prob)
-                centre_queries_semantic_labels.append(centre_queries_semantic_label)
-                centre_queries_offsets.append(centre_queries_offset)
+                center_queries_coords.append(center_queries_coord)
+                center_queries_probs.append(center_queries_prob)
+                center_queries_semantic_labels.append(center_queries_semantic_label)
+                center_queries_offsets.append(center_queries_offset)
 
             # variable for other uses
             instance_pointnum.extend(inst_pointnum)
@@ -432,7 +433,7 @@ class ScannetDatast:
         point_semantic_labels = torch.cat(point_semantic_labels, 0).long()  # (N)
         point_instance_labels = torch.cat(point_instance_labels, 0).long()  # (N)
         point_instance_infos = torch.cat(point_instance_infos, 0).to(torch.float32) # (N, 9) (cx, cy, cz, minx, miny, minz, maxx, maxy, maxz)
-        instance_centres = torch.cat(instance_centres, 0)  # (nInst, 3) (instance_centre_xyz)
+        instance_centers = torch.cat(instance_centers, 0)  # (nInst, 3) (instance_center_xyz)
 
         # variables for backbone
         ret_dict['point_locs'] = point_locs # (N, 4) (sample_index, xyz)
@@ -441,32 +442,32 @@ class ScannetDatast:
         ret_dict['point_semantic_labels'] = point_semantic_labels  # (N)
         ret_dict['point_instance_labels'] = point_instance_labels  # (N)
         ret_dict['point_instance_infos'] = point_instance_infos  # (N, 9)
-        ret_dict['instance_centres'] = instance_centres  # (nInst, 3) (instance_xyz)
+        ret_dict['instance_centers'] = instance_centers  # (nInst, 3) (instance_xyz)
 
-        if 'Centre' in self.model_mode.split('_'):
+        if 'Center' in self.model_mode.split('_'):
             # variables for grid-wise predictions
-            grid_centre_heatmaps = torch.cat(grid_centre_heatmaps, 0).to(torch.float32)  # (B, nGrid)
-            grid_centre_indicators = torch.cat(grid_centre_indicators, 0)  # (NInst, 2) (sample_index, grid_index)
-            grid_centre_offset_labels = torch.cat(grid_centre_offset_labels, 0).to(torch.float32)  # (NInst, 4) (sample_index, grid_centre_offset)
-            grid_centre_semantic_labels = torch.cat(grid_centre_semantic_labels, 0)  # (B, nGrid)
+            grid_center_heatmaps = torch.cat(grid_center_heatmaps, 0).to(torch.float32)  # (B, nGrid)
+            grid_center_indicators = torch.cat(grid_center_indicators, 0)  # (NInst, 2) (sample_index, grid_index)
+            grid_center_offset_labels = torch.cat(grid_center_offset_labels, 0).to(torch.float32)  # (NInst, 4) (sample_index, grid_center_offset)
+            grid_center_semantic_labels = torch.cat(grid_center_semantic_labels, 0)  # (B, nGrid)
 
-            centre_queries_coords = torch.cat(centre_queries_coords, dim=0)
-            centre_queries_probs = torch.cat(centre_queries_probs, dim=0).to(torch.float32)
-            centre_queries_semantic_labels = torch.cat(centre_queries_semantic_labels, dim=0)
-            centre_queries_offsets = torch.cat(centre_queries_offsets, dim=0).to(torch.float32)
-            centre_queries_batch_offsets = torch.tensor(centre_queries_batch_offsets, dtype=torch.int)
+            center_queries_coords = torch.cat(center_queries_coords, dim=0)
+            center_queries_probs = torch.cat(center_queries_probs, dim=0).to(torch.float32)
+            center_queries_semantic_labels = torch.cat(center_queries_semantic_labels, dim=0)
+            center_queries_offsets = torch.cat(center_queries_offsets, dim=0).to(torch.float32)
+            center_queries_batch_offsets = torch.tensor(center_queries_batch_offsets, dtype=torch.int)
 
             # variables for grid-wise predictions
-            ret_dict['grid_centre_heatmap'] = grid_centre_heatmaps  # (B, nGrid)
-            ret_dict['grid_centre_indicator'] = grid_centre_indicators  # (NGrid, 2) (sample_index, grid_index)
-            ret_dict['grid_centre_offset_labels'] = grid_centre_offset_labels  # (NGrid, 4) (sample_index, grid_centre_offset)
-            ret_dict['grid_centre_semantic_labels'] = grid_centre_semantic_labels  # (B, nGrid)
+            ret_dict['grid_center_heatmap'] = grid_center_heatmaps  # (B, nGrid)
+            ret_dict['grid_center_indicator'] = grid_center_indicators  # (NGrid, 2) (sample_index, grid_index)
+            ret_dict['grid_center_offset_labels'] = grid_center_offset_labels  # (NGrid, 4) (sample_index, grid_center_offset)
+            ret_dict['grid_center_semantic_labels'] = grid_center_semantic_labels  # (B, nGrid)
 
-            ret_dict['centre_queries_coords'] = centre_queries_coords
-            ret_dict['centre_queries_probs'] = centre_queries_probs
-            ret_dict['centre_queries_semantic_labels'] = centre_queries_semantic_labels
-            ret_dict['centre_queries_offsets'] = centre_queries_offsets
-            ret_dict['centre_queries_batch_offsets'] = centre_queries_batch_offsets
+            ret_dict['center_queries_coords'] = center_queries_coords
+            ret_dict['center_queries_probs'] = center_queries_probs
+            ret_dict['center_queries_semantic_labels'] = center_queries_semantic_labels
+            ret_dict['center_queries_offsets'] = center_queries_offsets
+            ret_dict['center_queries_batch_offsets'] = center_queries_batch_offsets
 
         # variable for other uses
         instance_pointnum = torch.tensor(instance_pointnum, dtype=torch.int) # int (total_nInst)
@@ -527,20 +528,20 @@ class ScannetDatast:
         point_semantic_labels = []  # (N)
         point_instance_labels = []  # (N)
         point_instance_infos = []  # (N, 9)
-        instance_centres = []  # (nInst, 3) (instance_xyz)
+        instance_centers = []  # (nInst, 3) (instance_xyz)
 
         # variables for grid-wise predictions
-        grid_centre_heatmaps = []  # (B, nGrid)
-        grid_centre_indicators = []  # (nInst) --> (B, nGrid)
-        grid_centre_offset_labels = []  # (nInst, 3) --> (B, nGrid, 3)
-        grid_centre_semantic_labels = []  # (B, nGrid)
+        grid_center_heatmaps = []  # (B, nGrid)
+        grid_center_indicators = []  # (nInst) --> (B, nGrid)
+        grid_center_offset_labels = []  # (nInst, 3) --> (B, nGrid, 3)
+        grid_center_semantic_labels = []  # (B, nGrid)
 
-        # variables for centre queries
-        centre_queries_coords = []
-        centre_queries_probs = []
-        centre_queries_semantic_labels = []
-        centre_queries_offsets = []
-        centre_queries_batch_offsets = [0]
+        # variables for center queries
+        center_queries_coords = []
+        center_queries_probs = []
+        center_queries_semantic_labels = []
+        center_queries_offsets = []
+        center_queries_batch_offsets = [0]
 
         #
         instance_pointnum = []  # (total_nInst), int
@@ -582,15 +583,15 @@ class ScannetDatast:
             inst_num, inst_infos = self.getInstanceInfo(xyz_middle, instance_label.astype(np.int32), label.copy())
             instance_infos = inst_infos["instance_info"]  # (n, 9), (cx, cy, cz, minx, miny, minz, maxx, maxy, maxz)
             inst_pointnum = inst_infos["instance_pointnum"]  # (nInst), list
-            inst_centres = inst_infos['instance_centre']  # (nInst, 3) (cx, cy, cz)
+            inst_centers = inst_infos['instance_center']  # (nInst, 3) (cx, cy, cz)
             inst_size = inst_infos['instance_size']
             inst_label = inst_infos['instance_label']
 
             instance_label[np.where(instance_label != -100)] += total_inst_num
             total_inst_num += inst_num
 
-            if 'Centre' in self.model_mode.split('_'):
-                ### get instance centre heatmap
+            if 'Center' in self.model_mode.split('_'):
+                ### get instance center heatmap
                 grid_xyz = np.zeros((32 ** 3, 3), dtype=np.float32)
                 grid_xyz += xyz_middle.min(axis=0, keepdims=True)
                 grid_size = (xyz_middle.max(axis=0, keepdims=True) - xyz_middle.min(axis=0, keepdims=True)) / 32
@@ -605,55 +606,55 @@ class ScannetDatast:
                 ### size adaptive gaussian function or fixed sigma gaussian
                 if not self.heatmap_sigma:
                     grid_infos = generate_adaptive_heatmap(
-                        torch.tensor(grid_xyz, dtype=torch.float64), torch.tensor(inst_centres), torch.tensor(inst_size),
+                        torch.tensor(grid_xyz, dtype=torch.float64), torch.tensor(inst_centers), torch.tensor(inst_size),
                         torch.tensor(inst_label), min_IoU=self.min_IoU, min_radius=np.linalg.norm(grid_size),
                     )
-                    grid_centre_heatmap = grid_infos['heatmap']
+                    grid_center_heatmap = grid_infos['heatmap']
                     grid_instance_label = grid_infos['grid_instance_label']
                     grid_instance_label[grid_instance_label == 20] = -100
                 else:
-                    grid_centre_heatmap = generate_heatmap(grid_xyz.astype(np.double), np.asarray(inst_centres),
+                    grid_center_heatmap = generate_heatmap(grid_xyz.astype(np.double), np.asarray(inst_centers),
                                                     sigma=self.heatmap_sigma)
 
-                ### sample centre queries around instance centres
-                centre_queries_coord = []
-                centre_queries_offset = []
+                ### sample center queries around instance centers
+                center_queries_coord = []
+                center_queries_offset = []
                 n_queries = 100
-                for inst_cent in inst_centres:
-                    centre_queries_offset.append(torch.randn(n_queries, 3).double() * 0.05)
-                    centre_query_coords = torch.from_numpy(inst_cent) - centre_queries_offset[-1]
-                    centre_queries_coord.append(centre_query_coords)
+                for inst_cent in inst_centers:
+                    center_queries_offset.append(torch.randn(n_queries, 3).double() * 0.05)
+                    center_query_coords = torch.from_numpy(inst_cent) - center_queries_offset[-1]
+                    center_queries_coord.append(center_query_coords)
 
-                centre_queries_coord = torch.cat(centre_queries_coord, dim=0)
-                centre_queries_offset = torch.cat(centre_queries_offset, dim=0)
+                center_queries_coord = torch.cat(center_queries_coord, dim=0)
+                center_queries_offset = torch.cat(center_queries_offset, dim=0)
 
-                centre_queries_infos = generate_adaptive_heatmap(
-                    centre_queries_coord, torch.tensor(inst_centres), torch.tensor(inst_size),
+                center_queries_infos = generate_adaptive_heatmap(
+                    center_queries_coord, torch.tensor(inst_centers), torch.tensor(inst_size),
                     torch.tensor(inst_label), min_IoU=self.min_IoU, min_radius=np.linalg.norm(grid_size),
                 )
-                centre_queries_prob = centre_queries_infos['heatmap']
-                centre_queries_semantic_label = centre_queries_infos['grid_instance_label']
-                centre_queries_semantic_label[centre_queries_semantic_label == 20] = -100
-                centre_queries_offset[centre_queries_semantic_label == -100] = torch.zeros_like(centre_queries_offset[0, :])
+                center_queries_prob = center_queries_infos['heatmap']
+                center_queries_semantic_label = center_queries_infos['grid_instance_label']
+                center_queries_semantic_label[center_queries_semantic_label == 20] = -100
+                center_queries_offset[center_queries_semantic_label == -100] = torch.zeros_like(center_queries_offset[0, :])
 
-                centre_queries_batch_offsets.append(centre_queries_batch_offsets[-1] + centre_queries_coord.shape[0])
+                center_queries_batch_offsets.append(center_queries_batch_offsets[-1] + center_queries_coord.shape[0])
 
                 norm_coords = normalize_3d_coordinate(
-                    torch.cat((torch.from_numpy(xyz_middle), torch.from_numpy(np.asarray(inst_centres))), dim=0).unsqueeze(
+                    torch.cat((torch.from_numpy(xyz_middle), torch.from_numpy(np.asarray(inst_centers))), dim=0).unsqueeze(
                         dim=0).clone()
                 )
-                norm_inst_centres = norm_coords[:, -len(inst_centres):, :]
-                grid_centre_gt = coordinate2index(norm_inst_centres, 32, coord_type='3d').squeeze()
-                grid_centre_indicator = torch.cat(
-                    (torch.LongTensor(grid_centre_gt.shape[0], 1).fill_(i), grid_centre_gt.unsqueeze(dim=-1)), dim=1
+                norm_inst_centers = norm_coords[:, -len(inst_centers):, :]
+                grid_center_gt = coordinate2index(norm_inst_centers, 32, coord_type='3d').squeeze()
+                grid_center_indicator = torch.cat(
+                    (torch.LongTensor(grid_center_gt.shape[0], 1).fill_(i), grid_center_gt.unsqueeze(dim=-1)), dim=1
                 )
 
-                ### only the centre grid point require to predict the offset vector
-                grid_cent_xyz = grid_xyz[grid_centre_gt]
-                grid_centre_offset = grid_cent_xyz - np.array(inst_centres)
-                grid_centre_offset = grid_centre_offset.squeeze()
-                grid_centre_offset_label = torch.cat(
-                    (torch.DoubleTensor(grid_centre_offset.shape[0], 1).fill_(i), torch.from_numpy(grid_centre_offset)), dim=1
+                ### only the center grid point require to predict the offset vector
+                grid_cent_xyz = grid_xyz[grid_center_gt]
+                grid_center_offset = grid_cent_xyz - np.array(inst_centers)
+                grid_center_offset = grid_center_offset.squeeze()
+                grid_center_offset_label = torch.cat(
+                    (torch.DoubleTensor(grid_center_offset.shape[0], 1).fill_(i), torch.from_numpy(grid_center_offset)), dim=1
                 )
 
             ### merge the scene to the batch
@@ -666,24 +667,24 @@ class ScannetDatast:
             point_semantic_labels.append(torch.from_numpy(label))  # (N)
             point_instance_labels.append(torch.from_numpy(instance_label))  # (N)
             point_instance_infos.append(torch.from_numpy(instance_infos))  # (N, 9) (cx, cy, cz, minx, miny, minz, maxx, maxy, maxz)
-            instance_centres.append(
+            instance_centers.append(
                 torch.cat(
-                    (torch.DoubleTensor(len(inst_centres), 1).fill_(i), torch.from_numpy(np.array(inst_centres))),
+                    (torch.DoubleTensor(len(inst_centers), 1).fill_(i), torch.from_numpy(np.array(inst_centers))),
                     dim=1
                 )
-            )  # (nInst, 4) (sample_index, instance_centre_xyz)
+            )  # (nInst, 4) (sample_index, instance_center_xyz)
 
-            if 'Centre' in self.model_mode.split('_'):
+            if 'Center' in self.model_mode.split('_'):
                 # variables for grid-wise predictions
-                grid_centre_heatmaps.append(grid_centre_heatmap.unsqueeze(dim=0))  # (B, nGrid)
-                grid_centre_indicators.append(grid_centre_indicator)  # (NGrid, 2) (sample_index, grid_index)
-                grid_centre_offset_labels.append(grid_centre_offset_label)  # (NGrid, 4) (sample_index, grid_centre_offset)
-                grid_centre_semantic_labels.append(grid_instance_label.unsqueeze(dim=0))  # (B, nGrid)
+                grid_center_heatmaps.append(grid_center_heatmap.unsqueeze(dim=0))  # (B, nGrid)
+                grid_center_indicators.append(grid_center_indicator)  # (NGrid, 2) (sample_index, grid_index)
+                grid_center_offset_labels.append(grid_center_offset_label)  # (NGrid, 4) (sample_index, grid_center_offset)
+                grid_center_semantic_labels.append(grid_instance_label.unsqueeze(dim=0))  # (B, nGrid)
 
-                centre_queries_coords.append(centre_queries_coord)
-                centre_queries_probs.append(centre_queries_prob)
-                centre_queries_semantic_labels.append(centre_queries_semantic_label)
-                centre_queries_offsets.append(centre_queries_offset)
+                center_queries_coords.append(center_queries_coord)
+                center_queries_probs.append(center_queries_prob)
+                center_queries_semantic_labels.append(center_queries_semantic_label)
+                center_queries_offsets.append(center_queries_offset)
 
             # variable for other uses
             instance_pointnum.extend(inst_pointnum)
@@ -698,7 +699,7 @@ class ScannetDatast:
         point_semantic_labels = torch.cat(point_semantic_labels, 0).long()  # (N)
         point_instance_labels = torch.cat(point_instance_labels, 0).long()  # (N)
         point_instance_infos = torch.cat(point_instance_infos, 0).to(torch.float32) # (N, 9) (cx, cy, cz, minx, miny, minz, maxx, maxy, maxz)
-        instance_centres = torch.cat(instance_centres, 0)  # (nInst, 3) (instance_centre_xyz)
+        instance_centers = torch.cat(instance_centers, 0)  # (nInst, 3) (instance_center_xyz)
 
         # variables for backbone
         ret_dict['point_locs'] = point_locs  # (N, 4) (sample_index, xyz)
@@ -707,32 +708,32 @@ class ScannetDatast:
         ret_dict['point_semantic_labels'] = point_semantic_labels  # (N)
         ret_dict['point_instance_labels'] = point_instance_labels  # (N)
         ret_dict['point_instance_infos'] = point_instance_infos  # (N, 9)
-        ret_dict['instance_centres'] = instance_centres  # (nInst, 3) (instance_xyz)
+        ret_dict['instance_centers'] = instance_centers  # (nInst, 3) (instance_xyz)
 
-        if 'Centre' in self.model_mode.split('_'):
+        if 'Center' in self.model_mode.split('_'):
             # variables for grid-wise predictions
-            grid_centre_heatmaps = torch.cat(grid_centre_heatmaps, 0).to(torch.float32)  # (B, nGrid)
-            grid_centre_indicators = torch.cat(grid_centre_indicators, 0)  # (NInst, 2) (sample_index, grid_index)
-            grid_centre_offset_labels = torch.cat(grid_centre_offset_labels, 0).to(torch.float32)  # (NInst, 4) (sample_index, grid_centre_offset)
-            grid_centre_semantic_labels = torch.cat(grid_centre_semantic_labels, 0)  # (B, nGrid)
+            grid_center_heatmaps = torch.cat(grid_center_heatmaps, 0).to(torch.float32)  # (B, nGrid)
+            grid_center_indicators = torch.cat(grid_center_indicators, 0)  # (NInst, 2) (sample_index, grid_index)
+            grid_center_offset_labels = torch.cat(grid_center_offset_labels, 0).to(torch.float32)  # (NInst, 4) (sample_index, grid_center_offset)
+            grid_center_semantic_labels = torch.cat(grid_center_semantic_labels, 0)  # (B, nGrid)
 
-            centre_queries_coords = torch.cat(centre_queries_coords, dim=0)
-            centre_queries_probs = torch.cat(centre_queries_probs, dim=0).to(torch.float32)
-            centre_queries_semantic_labels = torch.cat(centre_queries_semantic_labels, dim=0)
-            centre_queries_offsets = torch.cat(centre_queries_offsets, dim=0).to(torch.float32)
-            centre_queries_batch_offsets = torch.tensor(centre_queries_batch_offsets, dtype=torch.int)
+            center_queries_coords = torch.cat(center_queries_coords, dim=0)
+            center_queries_probs = torch.cat(center_queries_probs, dim=0).to(torch.float32)
+            center_queries_semantic_labels = torch.cat(center_queries_semantic_labels, dim=0)
+            center_queries_offsets = torch.cat(center_queries_offsets, dim=0).to(torch.float32)
+            center_queries_batch_offsets = torch.tensor(center_queries_batch_offsets, dtype=torch.int)
 
             # variables for grid-wise predictions
-            ret_dict['grid_centre_heatmap'] = grid_centre_heatmaps  # (B, nGrid)
-            ret_dict['grid_centre_indicator'] = grid_centre_indicators  # (NGrid, 2) (sample_index, grid_index)
-            ret_dict['grid_centre_offset_labels'] = grid_centre_offset_labels  # (NGrid, 4) (sample_index, grid_centre_offset)
-            ret_dict['grid_centre_semantic_labels'] = grid_centre_semantic_labels  # (B, nGrid)
+            ret_dict['grid_center_heatmap'] = grid_center_heatmaps  # (B, nGrid)
+            ret_dict['grid_center_indicator'] = grid_center_indicators  # (NGrid, 2) (sample_index, grid_index)
+            ret_dict['grid_center_offset_labels'] = grid_center_offset_labels  # (NGrid, 4) (sample_index, grid_center_offset)
+            ret_dict['grid_center_semantic_labels'] = grid_center_semantic_labels  # (B, nGrid)
 
-            ret_dict['centre_queries_coords'] = centre_queries_coords
-            ret_dict['centre_queries_probs'] = centre_queries_probs
-            ret_dict['centre_queries_semantic_labels'] = centre_queries_semantic_labels
-            ret_dict['centre_queries_offsets'] = centre_queries_offsets
-            ret_dict['centre_queries_batch_offsets'] = centre_queries_batch_offsets
+            ret_dict['center_queries_coords'] = center_queries_coords
+            ret_dict['center_queries_probs'] = center_queries_probs
+            ret_dict['center_queries_semantic_labels'] = center_queries_semantic_labels
+            ret_dict['center_queries_offsets'] = center_queries_offsets
+            ret_dict['center_queries_batch_offsets'] = center_queries_batch_offsets
 
         # variable for other uses
         instance_pointnum = torch.tensor(instance_pointnum, dtype=torch.int) # int (total_nInst)
@@ -818,7 +819,7 @@ class ScannetDatast:
             ### offset
             xyz -= xyz.min(0)
 
-            if 'Centre' in self.model_mode.split('_'):
+            if 'Center' in self.model_mode.split('_'):
                 ### get instance center heatmap
                 grid_xyz = np.zeros((32 ** 3, 3), dtype=np.float32)
                 grid_xyz += xyz_middle.min(axis=0, keepdims=True)
@@ -840,7 +841,7 @@ class ScannetDatast:
             if self.test_split == 'val':
                 point_instance_labels.append(torch.from_numpy(instance_label))  # (N)
 
-            if 'Centre' in self.model_mode.split('_'):
+            if 'Center' in self.model_mode.split('_'):
                 grid_xyzs.append(torch.from_numpy(grid_xyz))
 
             if self.test_split == 'val':
@@ -866,7 +867,7 @@ class ScannetDatast:
         ret_dict['point_coords'] = point_coords  # (N, 6) (shifted_xyz, original_xyz)
         ret_dict['point_feats'] = point_feats  # (N, 3) (rgb)
 
-        if 'Centre' in self.model_mode.split('_'):
+        if 'Center' in self.model_mode.split('_'):
             grid_xyzs = torch.cat(grid_xyzs, 0)
 
             ret_dict['grid_xyz'] = grid_xyzs

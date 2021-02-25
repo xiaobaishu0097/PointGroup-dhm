@@ -82,7 +82,7 @@ class PointGroup(nn.Module):
         self.unet3d = None
 
         ### Our target model, based on Panoptic Deeplab
-        if self.model_mode == 'Centre_clustering' or self.model_mode == 'Zheng_panoptic_wpointnet_PointGroup':
+        if self.model_mode == 'Center_clustering' or self.model_mode == 'Zheng_panoptic_wpointnet_PointGroup':
             if self.backbone == 'pointnet':
                 #### PointNet backbone encoder
                 self.pointnet_encoder = pointnet.LocalPoolPointnet(
@@ -115,9 +115,9 @@ class PointGroup(nn.Module):
                 nn.ReLU()
             )
 
-            ### centre prediction branch
+            ### center prediction branch
             ### convolutional occupancy networks decoder
-            self.centre_decoder = decoder.LocalDecoder(
+            self.center_decoder = decoder.LocalDecoder(
                 dim=3,
                 c_dim=32,
                 hidden_size=32,
@@ -137,19 +137,84 @@ class PointGroup(nn.Module):
                 nn.Linear(m, classes, bias=True),
             )
 
-            self.centre_pred = nn.Sequential(
+            self.center_pred = nn.Sequential(
                 nn.Linear(m, m),
                 nn.ReLU(),
                 nn.Linear(m, 1)
             )
 
-            self.centre_semantic = nn.Sequential(
+            self.center_semantic = nn.Sequential(
                 nn.Linear(m, m),
                 nn.ReLU(),
                 nn.Linear(m, classes)
             )
 
-            self.centre_offset = nn.Sequential(
+            self.center_offset = nn.Sequential(
+                nn.Linear(m, m),
+                nn.ReLU(),
+                nn.Linear(m, 3)
+            )
+
+            module_map = {
+                'module.point_offset': self.point_offset,
+            }
+
+        elif self.model_mode == 'Center_pointnet++_clustering':
+            if self.backbone == 'pointnet':
+                #### PointNet backbone encoder
+                self.pointnet_encoder = pointnet.LocalPoolPointnet(
+                    c_dim=m, dim=6, hidden_dim=m, scatter_type=cfg.scatter_type, grid_resolution=32,
+                    plane_type='grid', padding=0.1, n_blocks=5
+                )
+            elif self.backbone == 'pointnet++_yanx':
+                self.pointnet_encoder = pointnetpp.PointNetPlusPlus(
+                    c_dim=self.m, include_rgb=self.pointnet_include_rgb
+                )
+
+            elif self.backbone == 'pointnet++_shi':
+                self.pointnet_encoder = backbone_pointnet2(output_dim=m)
+
+            ### point prediction branch
+            ### sparse 3D U-Net
+            self.input_conv = spconv.SparseSequential(
+                spconv.SubMConv3d(m, m, kernel_size=3, padding=1, bias=False, indice_key='subm1')
+            )
+
+            self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
+                               indice_key_id=1, backbone=True, UNet_Transformer=cfg.UNet_Transformer)
+
+            self.output_layer = spconv.SparseSequential(
+                norm_fn(m),
+                nn.ReLU()
+            )
+
+            self.point_offset = nn.Sequential(
+                nn.Linear(m, m, bias=True),
+                norm_fn(m),
+                nn.ReLU(),
+                nn.Linear(m, 3, bias=True),
+            )
+
+            self.point_semantic = nn.Sequential(
+                nn.Linear(m, m, bias=True),
+                norm_fn(m),
+                nn.ReLU(),
+                nn.Linear(m, classes, bias=True),
+            )
+
+            self.center_pred = nn.Sequential(
+                nn.Linear(m, m),
+                nn.ReLU(),
+                nn.Linear(m, 1)
+            )
+
+            self.center_semantic = nn.Sequential(
+                nn.Linear(m, m),
+                nn.ReLU(),
+                nn.Linear(m, classes)
+            )
+
+            self.center_offset = nn.Sequential(
                 nn.Linear(m, m),
                 nn.ReLU(),
                 nn.Linear(m, 3)
@@ -222,7 +287,7 @@ class PointGroup(nn.Module):
                 nn.ReLU()
             )
 
-            ### centre prediction branch
+            ### center prediction branch
             #### PointNet encoder
             if self.backbone == 'pointnet':
                 #### PointNet backbone encoder
@@ -243,7 +308,7 @@ class PointGroup(nn.Module):
             )
 
             ### convolutional occupancy networks decoder
-            self.centre_decoder = decoder.LocalDecoder(
+            self.center_decoder = decoder.LocalDecoder(
                 dim=3,
                 c_dim=32,
                 hidden_size=32,
@@ -263,19 +328,19 @@ class PointGroup(nn.Module):
                 nn.Linear(m, classes, bias=True),
             )
 
-            self.centre_pred = nn.Sequential(
+            self.center_pred = nn.Sequential(
                 nn.Linear(m, m),
                 nn.ReLU(),
                 nn.Linear(m, 1)
             )
 
-            self.centre_semantic = nn.Sequential(
+            self.center_semantic = nn.Sequential(
                 nn.Linear(m, m),
                 nn.ReLU(),
                 nn.Linear(m, classes)
             )
 
-            self.centre_offset = nn.Sequential(
+            self.center_offset = nn.Sequential(
                 nn.Linear(m, m),
                 nn.ReLU(),
                 nn.Linear(m, 3)
@@ -461,7 +526,7 @@ class PointGroup(nn.Module):
                 'module.score_linear': self.score_linear
             }
 
-        elif self.model_mode == 'Fan_centre_loss_PointGroup':
+        elif self.model_mode == 'Fan_center_loss_PointGroup':
             self.input_conv = spconv.SparseSequential(
                 spconv.SubMConv3d(input_c, m, kernel_size=3, padding=1, bias=False, indice_key='subm1')
             )
@@ -544,19 +609,19 @@ class PointGroup(nn.Module):
                 nn.Linear(m, classes, bias=True),
             )
 
-            self.centre_pred = nn.Sequential(
+            self.center_pred = nn.Sequential(
                 nn.Linear(m, m),
                 nn.ReLU(),
                 nn.Linear(m, 1)
             )
 
-            self.centre_semantic = nn.Sequential(
+            self.center_semantic = nn.Sequential(
                 nn.Linear(m, m),
                 nn.ReLU(),
                 nn.Linear(m, classes)
             )
 
-            self.centre_offset = nn.Sequential(
+            self.center_offset = nn.Sequential(
                 nn.Linear(m, m),
                 nn.ReLU(),
                 nn.Linear(m, 3)
@@ -800,7 +865,7 @@ class PointGroup(nn.Module):
                 'module.output_layer': self.output_layer,
             }
 
-        elif self.model_mode == 'Centre_sample_cluster':
+        elif self.model_mode == 'Center_sample_cluster':
             if self.backbone == 'pointnet':
                 #### PointNet backbone encoder
                 self.pointnet_encoder = pointnet.LocalPoolPointnet(
@@ -854,27 +919,27 @@ class PointGroup(nn.Module):
                 nn.Linear(m, classes, bias=True),
             )
 
-            self.centre_pred = nn.Sequential(
+            self.center_pred = nn.Sequential(
                 nn.Linear(m, m),
                 nn.ReLU(),
                 nn.Linear(m, 1)
             )
 
-            self.centre_semantic = nn.Sequential(
+            self.center_semantic = nn.Sequential(
                 nn.Linear(m, m),
                 nn.ReLU(),
                 nn.Linear(m, classes)
             )
 
-            self.centre_offset = nn.Sequential(
+            self.center_offset = nn.Sequential(
                 nn.Linear(m, m),
                 nn.ReLU(),
                 nn.Linear(m, 3)
             )
 
-            ### centre prediction branch
+            ### center prediction branch
             ### convolutional occupancy networks decoder
-            self.centre_decoder = decoder.LocalDecoder(
+            self.center_decoder = decoder.LocalDecoder(
                 dim=3,
                 c_dim=32,
                 hidden_size=32,
@@ -1145,7 +1210,7 @@ class PointGroup(nn.Module):
 
         batch_idxs = batch_idxs.squeeze()
 
-        if self.model_mode == 'Centre_clustering':
+        if self.model_mode == 'Center_clustering':
             semantic_scores = []
             point_offset_preds = []
 
@@ -1171,20 +1236,77 @@ class PointGroup(nn.Module):
             #### point offset prediction
             point_offset_preds.append(self.point_offset(output_feats))  # (N, 3), float32
 
-            ### centre prediction
+            ### center prediction
             bs, c_dim, grid_size = grid_feats.shape[0], grid_feats.shape[1], grid_feats.shape[2]
             grid_feats = grid_feats.reshape(bs, c_dim, -1).permute(0, 2, 1)
 
-            centre_preds = self.centre_pred(grid_feats)
-            centre_semantic_preds = self.centre_semantic(grid_feats)
-            centre_offset_preds = self.centre_offset(grid_feats)
+            center_preds = self.center_pred(grid_feats)
+            center_semantic_preds = self.center_semantic(grid_feats)
+            center_offset_preds = self.center_offset(grid_feats)
 
             ret['point_semantic_scores'] = semantic_scores
             ret['point_offset_preds'] = point_offset_preds
 
-            ret['centre_preds'] = centre_preds
-            ret['centre_semantic_preds'] = centre_semantic_preds
-            ret['centre_offset_preds'] = centre_offset_preds
+            ret['center_preds'] = center_preds
+            ret['center_semantic_preds'] = center_semantic_preds
+            ret['center_offset_preds'] = center_offset_preds
+
+        elif self.model_mode == 'Center_pointnet++_clustering':
+            semantic_scores = []
+            point_offset_preds = []
+
+            point_feats = []
+            sampled_indexes = []
+            for sample_indx in range(1, len(batch_offsets)):
+                coords_input = coords[batch_offsets[sample_indx - 1]:batch_offsets[sample_indx], :].unsqueeze(dim=0)
+                rgb_input = rgb[batch_offsets[sample_indx - 1]:batch_offsets[sample_indx], :].unsqueeze(dim=0)
+
+                sampled_index = pointnet2_utils.furthest_point_sample(
+                    coords_input[:, :, :3].contiguous(), self.pointnet_max_npoint).squeeze(dim=0).long()
+                sampled_indexes.append(sampled_index)
+
+                sampled_coords_input = coords_input[:, sampled_index, :]
+                sampled_rgb_input = rgb_input[:, sampled_index, :]
+
+                point_feat, _ = self.pointnet_encoder(
+                    sampled_coords_input,
+                    torch.cat((sampled_rgb_input, sampled_coords_input), dim=2).transpose(1, 2).contiguous()
+                )
+                point_feats.append(point_feat)
+
+            point_feats = torch.cat(point_feats, dim=0)
+
+            voxel_feats = pointgroup_ops.voxelization(input['pt_feats'], input['v2p_map'], input['mode'])  # (M, C), float, cuda
+
+            input_ = spconv.SparseConvTensor(
+                voxel_feats, input['voxel_coords'],
+                input['spatial_shape'], input['batch_size']
+            )
+            output = self.input_conv(input_)
+            output = self.unet(output)
+            output = self.output_layer(output)
+            output_feats = output.features[input_map.long()]
+            output_feats = output_feats.squeeze(dim=0)
+
+            ### point prediction
+            #### point semantic label prediction
+            semantic_scores.append(self.point_semantic(output_feats))  # (N, nClass), float
+            # point_semantic_preds = semantic_scores
+            point_semantic_preds = semantic_scores[0].max(1)[1]
+            #### point offset prediction
+            point_offset_preds.append(self.point_offset(output_feats))  # (N, 3), float32
+
+            ### center prediction
+            center_preds = self.center_pred(point_feats)
+            center_semantic_preds = self.center_semantic(point_feats)
+            center_offset_preds = self.center_offset(point_feats)
+
+            ret['point_semantic_scores'] = semantic_scores
+            ret['point_offset_preds'] = point_offset_preds
+
+            ret['center_preds'] = (center_preds, sampled_index)
+            ret['center_semantic_preds'] = (center_semantic_preds, sampled_index)
+            ret['center_offset_preds'] = (center_offset_preds, sampled_index)
 
         elif self.model_mode == 'Zheng_panoptic_wpointnet_PointGroup':
             point_feats, grid_feats = self.pointnet_backbone_forward(coords, ori_coords, rgb, batch_offsets)
@@ -1209,13 +1331,13 @@ class PointGroup(nn.Module):
             #### point offset prediction
             point_offset_preds = self.point_offset(output_feats)  # (N, 3), float32
 
-            ### centre prediction
+            ### center prediction
             bs, c_dim, grid_size = grid_feats.shape[0], grid_feats.shape[1], grid_feats.shape[2]
             grid_feats = grid_feats.reshape(bs, c_dim, -1).permute(0, 2, 1)
 
-            centre_preds = self.centre_pred(grid_feats)
-            centre_semantic_preds = self.centre_semantic(grid_feats)
-            centre_offset_preds = self.centre_offset(grid_feats)
+            center_preds = self.center_pred(grid_feats)
+            center_semantic_preds = self.center_semantic(grid_feats)
+            center_offset_preds = self.center_offset(grid_feats)
 
             if (epoch == self.test_epoch):
                 scores, proposals_idx, proposals_offset = self.pointgroup_cluster_algorithm(
@@ -1226,9 +1348,9 @@ class PointGroup(nn.Module):
             ret['point_semantic_scores'] = semantic_scores
             ret['point_offset_preds'] = point_offset_preds
 
-            ret['centre_preds'] = centre_preds
-            ret['centre_semantic_preds'] = centre_semantic_preds
-            ret['centre_offset_preds'] = centre_offset_preds
+            ret['center_preds'] = center_preds
+            ret['center_semantic_preds'] = center_semantic_preds
+            ret['center_offset_preds'] = center_offset_preds
 
         elif self.model_mode == 'Zheng_upper_wpointnet_PointGroup':
             point_feats, _ = self.pointnet_backbone_forward(coords, ori_coords, rgb, batch_offsets)
@@ -1285,8 +1407,8 @@ class PointGroup(nn.Module):
             #### point offset prediction
             point_offset_preds = self.point_offset(output_feats)  # (N, 3), float32
 
-            ### centre prediction
-            # encoded_feats = self.pointnet_centre_encoder(coords.unsqueeze(dim=0), rgb.unsqueeze(dim=0))
+            ### center prediction
+            # encoded_feats = self.pointnet_center_encoder(coords.unsqueeze(dim=0), rgb.unsqueeze(dim=0))
             # bs, c_dim, grid_size = encoded_feats['grid'].shape[0], encoded_feats['grid'].shape[1], \
             #                        encoded_feats['grid'].shape[2]
             # grid_feats = encoded_feats['grid'].reshape(bs, c_dim, -1).permute(0, 2, 1)
@@ -1294,9 +1416,9 @@ class PointGroup(nn.Module):
             bs, c_dim, grid_size = grid_feats.shape[0], grid_feats.shape[1], grid_feats.shape[2]
             grid_feats = grid_feats.reshape(bs, c_dim, -1).permute(0, 2, 1)
 
-            centre_preds = self.centre_pred(grid_feats)
-            centre_semantic_preds = self.centre_semantic(grid_feats)
-            centre_offset_preds = self.centre_offset(grid_feats)
+            center_preds = self.center_pred(grid_feats)
+            center_semantic_preds = self.center_semantic(grid_feats)
+            center_offset_preds = self.center_offset(grid_feats)
 
             if (epoch == self.test_epoch):
                 scores, proposals_idx, proposals_offset = self.pointgroup_cluster_algorithm(
@@ -1307,9 +1429,9 @@ class PointGroup(nn.Module):
             ret['point_semantic_scores'] = semantic_scores
             ret['point_offset_preds'] = point_offset_preds
 
-            ret['centre_preds'] = centre_preds
-            ret['centre_semantic_preds'] = centre_semantic_preds
-            ret['centre_offset_preds'] = centre_offset_preds
+            ret['center_preds'] = center_preds
+            ret['center_semantic_preds'] = center_semantic_preds
+            ret['center_offset_preds'] = center_offset_preds
 
         elif self.model_mode == 'Zheng_upper_wopointnet_PointGroup':
             semantic_scores = []
@@ -1701,7 +1823,7 @@ class PointGroup(nn.Module):
             ret['point_features'] = output_feats
             ret['voxel_occupancy_preds'] = voxel_occupancy_preds
 
-        elif self.model_mode == 'Fan_centre_loss_PointGroup':
+        elif self.model_mode == 'Fan_center_loss_PointGroup':
             semantic_scores = []
             point_offset_preds = []
             points_semantic_center_loss_feature = []
@@ -1816,9 +1938,9 @@ class PointGroup(nn.Module):
             bs, c_dim, grid_size = grid_feats.shape[0], grid_feats.shape[1], grid_feats.shape[2]
             grid_feats = grid_feats.reshape(bs, c_dim, -1).permute(0, 2, 1)
 
-            centre_preds = self.centre_pred(grid_feats)
-            centre_semantic_preds = self.centre_semantic(grid_feats)
-            centre_offset_preds = self.centre_offset(grid_feats)
+            center_preds = self.center_pred(grid_feats)
+            center_semantic_preds = self.center_semantic(grid_feats)
+            center_offset_preds = self.center_offset(grid_feats)
 
             if (epoch == self.test_epoch) and input['test']:
                 self.cluster_sets = 'Q'
@@ -1831,9 +1953,9 @@ class PointGroup(nn.Module):
             ret['point_semantic_scores'] = point_semantic_scores
             ret['point_offset_preds'] = point_offset_preds
 
-            ret['centre_preds'] = centre_preds
-            ret['centre_semantic_preds'] = centre_semantic_preds
-            ret['centre_offset_preds'] = centre_offset_preds
+            ret['center_preds'] = center_preds
+            ret['center_semantic_preds'] = center_semantic_preds
+            ret['center_offset_preds'] = center_offset_preds
 
         elif self.model_mode == 'Yu_refine_clustering_scorenet_PointGroup':
             point_offset_preds = []
@@ -2400,7 +2522,7 @@ class PointGroup(nn.Module):
             ret['point_semantic_scores'] = point_semantic_scores
             ret['point_offset_preds'] = point_offset_preds
 
-        elif self.model_mode == 'Centre_sample_cluster':
+        elif self.model_mode == 'Center_sample_cluster':
             semantic_scores = []
             point_offset_preds = []
 
@@ -2428,10 +2550,10 @@ class PointGroup(nn.Module):
 
                 if not input['test']:
                     decoder_input = {'grid': grid_feats[-1]}
-                    centre_queries_coords_input = input['centre_queries_coords'][
-                                                  input['centre_queries_batch_offsets'][sample_indx - 1]:
-                                                  input['centre_queries_batch_offsets'][sample_indx], :].unsqueeze(dim=0)
-                    queries_feats.append(self.decoder(centre_queries_coords_input, decoder_input).squeeze(dim=0))
+                    center_queries_coords_input = input['center_queries_coords'][
+                                                  input['center_queries_batch_offsets'][sample_indx - 1]:
+                                                  input['center_queries_batch_offsets'][sample_indx], :].unsqueeze(dim=0)
+                    queries_feats.append(self.decoder(center_queries_coords_input, decoder_input).squeeze(dim=0))
 
             grid_feats = torch.cat(grid_feats, dim=0).contiguous()
             if not input['test']:
@@ -2458,25 +2580,25 @@ class PointGroup(nn.Module):
             #### point offset prediction
             point_offset_preds.append(self.point_offset(output_feats))  # (N, 3), float32
 
-            ### centre prediction
+            ### center prediction
             bs, c_dim, grid_size = grid_feats.shape[0], grid_feats.shape[1], grid_feats.shape[2]
             grid_feats = grid_feats.reshape(bs, c_dim, -1).permute(0, 2, 1)
 
-            centre_preds = self.centre_pred(grid_feats)
-            centre_semantic_preds = self.centre_semantic(grid_feats)
-            centre_offset_preds = self.centre_offset(grid_feats)
+            center_preds = self.center_pred(grid_feats)
+            center_semantic_preds = self.center_semantic(grid_feats)
+            center_offset_preds = self.center_offset(grid_feats)
 
             if not input['test']:
-                queries_preds = self.centre_pred(queries_feats)
-                queries_semantic_preds = self.centre_semantic(queries_feats)
-                queries_offset_preds = self.centre_offset(queries_feats)
+                queries_preds = self.center_pred(queries_feats)
+                queries_semantic_preds = self.center_semantic(queries_feats)
+                queries_offset_preds = self.center_offset(queries_feats)
 
             ret['point_semantic_scores'] = semantic_scores
             ret['point_offset_preds'] = point_offset_preds
 
-            ret['centre_preds'] = centre_preds
-            ret['centre_semantic_preds'] = centre_semantic_preds
-            ret['centre_offset_preds'] = centre_offset_preds
+            ret['center_preds'] = center_preds
+            ret['center_semantic_preds'] = center_semantic_preds
+            ret['center_offset_preds'] = center_offset_preds
 
             if not input['test']:
                 ret['queries_preds'] = queries_preds

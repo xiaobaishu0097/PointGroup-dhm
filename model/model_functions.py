@@ -16,17 +16,17 @@ def model_fn_decorator(cfg, test=False):
     semantic_criterion = nn.CrossEntropyLoss(ignore_index=cfg.ignore_label).cuda()
     stuff_criterion = nn.CrossEntropyLoss(ignore_index=cfg.ignore_label).cuda()
 
-    semantic_centre_criterion = CenterLoss(num_classes=cfg.classes, feat_dim=cfg.m, use_gpu=True)
+    semantic_center_criterion = CenterLoss(num_classes=cfg.classes, feat_dim=cfg.m, use_gpu=True)
     instance_triplet_criterion = TripletLoss(margin=cfg.instance_triplet_loss['margin'])
 
     if cfg.offset_norm_criterion == 'l2':
         offset_norm_criterion = nn.MSELoss().cuda()
 
-    centre_criterion = WeightedFocalLoss(alpha=cfg.focal_loss['alpha'], gamma=cfg.focal_loss['gamma']).cuda()
-    centre_semantic_criterion = nn.CrossEntropyLoss(ignore_index=cfg.ignore_label).cuda()
-    centre_offset_criterion = nn.L1Loss().cuda()
+    center_criterion = WeightedFocalLoss(alpha=cfg.focal_loss['alpha'], gamma=cfg.focal_loss['gamma']).cuda()
+    center_semantic_criterion = nn.CrossEntropyLoss(ignore_index=cfg.ignore_label).cuda()
+    center_offset_criterion = nn.L1Loss().cuda()
 
-    centre_query_criterion = nn.BCEWithLogitsLoss().cuda()
+    center_query_criterion = nn.BCEWithLogitsLoss().cuda()
 
     score_criterion = nn.BCELoss(reduction='none').cuda()
     confidence_criterion = nn.BCELoss(reduction='none').cuda()
@@ -96,21 +96,21 @@ def model_fn_decorator(cfg, test=False):
         if 'proposal_scores' in ret.keys():
             scores, proposals_idx, proposals_offset = ret['proposal_scores']
 
-        if 'centre_preds' in ret.keys():
-            centre_preds = ret['centre_preds']
-            centre_preds = centre_preds.squeeze(dim=-1)
+        if 'center_preds' in ret.keys():
+            center_preds = ret['center_preds']
+            center_preds = center_preds.squeeze(dim=-1)
 
-            centre_semantic_preds = ret['centre_semantic_preds']
-            centre_semantic_preds = centre_semantic_preds.squeeze(dim=0)
-            centre_semantic_preds = centre_semantic_preds.max(dim=1)[1]
+            center_semantic_preds = ret['center_semantic_preds']
+            center_semantic_preds = center_semantic_preds.squeeze(dim=0)
+            center_semantic_preds = center_semantic_preds.max(dim=1)[1]
 
-            centre_offset_preds = ret['centre_offset_preds'] # (B, 32**3, 3)
+            center_offset_preds = ret['center_offset_preds'] # (B, 32**3, 3)
 
         ### only be used during debugging
         # instance_info = batch['point_instance_infos'].squeeze(dim=0).cuda()  # (N, 9), float32, cuda, (meanxyz, minxyz, maxxyz)
         # labels = batch['point_semantic_labels'].squeeze(dim=0).cuda()  # (N), long, cuda
-        # grid_centre_gt = batch['grid_centre_gt'].squeeze(dim=0).cuda()
-        # grid_centre_offset = batch['grid_centre_offset'].squeeze(dim=0).cuda()
+        # grid_center_gt = batch['grid_center_gt'].squeeze(dim=0).cuda()
+        # grid_center_offset = batch['grid_center_offset'].squeeze(dim=0).cuda()
         # grid_instance_label = batch['grid_instance_label'].squeeze(dim=0).cuda()
 
         # point_offset_preds = instance_info[:, 0:3] - coords_float
@@ -119,13 +119,13 @@ def model_fn_decorator(cfg, test=False):
         # labels[labels == -100] = 0
         # point_semantic_scores.append(torch.nn.functional.one_hot(labels))
 
-        # fake_grid_centre = torch.zeros_like(grid_centre_preds)
-        # fake_grid_centre[0, grid_centre_gt.long()] = 1
-        # grid_centre_preds = fake_grid_centre
+        # fake_grid_center = torch.zeros_like(grid_center_preds)
+        # fake_grid_center[0, grid_center_gt.long()] = 1
+        # grid_center_preds = fake_grid_center
         #
-        # grid_centre_offset_preds[grid_centre_gt.long(), :] = grid_centre_offset
+        # grid_center_offset_preds[grid_center_gt.long(), :] = grid_center_offset
         #
-        # grid_centre_semantic_preds = grid_instance_label
+        # grid_center_semantic_preds = grid_instance_label
         # grid_instance_label[grid_instance_label == -100] = 20
 
         ##### preds
@@ -133,10 +133,10 @@ def model_fn_decorator(cfg, test=False):
             preds = {}
             preds['pt_offsets'] = point_offset_preds
             preds['semantic'] = point_semantic_scores
-            if 'centre_preds' in ret.keys():
-                preds['centre_preds'] = centre_preds
-                preds['centre_semantic_preds'] = centre_semantic_preds
-                preds['centre_offset_preds'] = centre_offset_preds
+            if 'center_preds' in ret.keys():
+                preds['center_preds'] = center_preds
+                preds['center_semantic_preds'] = center_semantic_preds
+                preds['center_offset_preds'] = center_offset_preds
             preds['pt_coords'] = coords_float
             if (epoch == cfg.test_epoch) and ('proposal_scores' in ret.keys()):
                 preds['score'] = scores
@@ -176,7 +176,7 @@ def model_fn_decorator(cfg, test=False):
 
         instance_info = batch['point_instance_infos'].cuda()  # (N, 9), float32, cuda, (meanxyz, minxyz, maxxyz)
         instance_pointnum = batch['instance_pointnum'].cuda()  # (total_nInst), int, cuda
-        instance_centres = batch['instance_centres'].cuda()
+        instance_centers = batch['instance_centers'].cuda()
 
         batch_offsets = batch['batch_offsets'].cuda()  # (B + 1), int, cuda
 
@@ -207,20 +207,20 @@ def model_fn_decorator(cfg, test=False):
             'test': False,
         }
 
-        if 'Centre' in cfg.model_mode.split('_'):
-            instance_heatmap = batch['grid_centre_heatmap'].cuda()
-            grid_centre_gt = batch['grid_centre_indicator'].cuda()
-            centre_offset_labels = batch['grid_centre_offset_labels'].cuda()
-            centre_semantic_labels = batch['grid_centre_semantic_labels'].cuda()
+        if 'Center' in cfg.model_mode.split('_'):
+            instance_heatmap = batch['grid_center_heatmap'].cuda()
+            grid_center_gt = batch['grid_center_indicator'].cuda()
+            center_offset_labels = batch['grid_center_offset_labels'].cuda()
+            center_semantic_labels = batch['grid_center_semantic_labels'].cuda()
 
-            centre_queries_coords = batch['centre_queries_coords'].cuda()
-            centre_queries_probs = batch['centre_queries_probs'].cuda()
-            centre_queries_semantic_labels = batch['centre_queries_semantic_labels'].cuda()
-            centre_queries_offsets = batch['centre_queries_offsets'].cuda()
-            centre_queries_batch_offsets = batch['centre_queries_batch_offsets'].cuda()
+            center_queries_coords = batch['center_queries_coords'].cuda()
+            center_queries_probs = batch['center_queries_probs'].cuda()
+            center_queries_semantic_labels = batch['center_queries_semantic_labels'].cuda()
+            center_queries_offsets = batch['center_queries_offsets'].cuda()
+            center_queries_batch_offsets = batch['center_queries_batch_offsets'].cuda()
 
-            input_['centre_queries_coords'] = centre_queries_coords
-            input_['centre_queries_batch_offsets'] = centre_queries_batch_offsets
+            input_['center_queries_coords'] = center_queries_coords
+            input_['center_queries_batch_offsets'] = center_queries_batch_offsets
 
         if 'stuff' in cfg.model_mode.split('_'):
             nonstuff_feats = feats[labels > 1]
@@ -247,39 +247,48 @@ def model_fn_decorator(cfg, test=False):
         point_offset_preds = ret['point_offset_preds']
         point_semantic_scores = ret['point_semantic_scores']
 
-        if 'centre_preds' in ret.keys():
-            centre_preds = ret['centre_preds'] # (B, 32**3)
-            centre_preds = centre_preds.squeeze(dim=-1)
-
-            centre_semantic_preds = ret['centre_semantic_preds']
-
-            centre_offset_preds = []
-            centre_offset_pred = ret['centre_offset_preds'] # (B, 32**3, 3)
-            for sample_indx in range(len(batch_offsets) - 1):
-                centre_offset_preds.append(
-                    centre_offset_pred[sample_indx, grid_centre_gt[grid_centre_gt[:, 0] == sample_indx, :][:, 1]]
-                )
-            centre_offset_preds = torch.cat(centre_offset_preds, 0) # (nInst, 3)
-
         loss_inp = {}
 
         if point_offset_preds[0].shape[0] == coords_float.shape[0]:
             loss_inp['pt_offsets'] = (
-                point_offset_preds, coords_float, instance_info, instance_centres, instance_labels
+                point_offset_preds, coords_float, instance_info, instance_centers, instance_labels
             )
             loss_inp['semantic_scores'] = (point_semantic_scores, labels)
 
         elif point_offset_preds[0].shape[0] == nonstuff_feats.shape[0]:
             loss_inp['pt_offsets'] = (
                 point_offset_preds, coords_float[labels > 1], instance_info[labels > 1],
-                instance_centres, instance_labels[labels > 1]
+                instance_centers, instance_labels[labels > 1]
             )
             loss_inp['semantic_scores'] = (point_semantic_scores, labels[labels > 1])
 
-        if 'centre_preds' in ret.keys():
-            loss_inp['centre_preds'] = (centre_preds, instance_heatmap)
-            loss_inp['centre_semantic_preds'] = (centre_semantic_preds, centre_semantic_labels)
-            loss_inp['centre_offset_preds'] = (centre_offset_preds, centre_offset_labels[:, 1:])
+        if 'center_preds' in ret.keys():
+            if not isinstance(ret['center_preds'], tuple):
+                center_preds = ret['center_preds'] # (B, 32**3)
+                center_preds = center_preds.squeeze(dim=-1)
+
+                center_semantic_preds = ret['center_semantic_preds']
+
+                center_offset_preds = []
+                center_offset_pred = ret['center_offset_preds'] # (B, 32**3, 3)
+                for sample_indx in range(len(batch_offsets) - 1):
+                    center_offset_preds.append(
+                        center_offset_pred[sample_indx, grid_center_gt[grid_center_gt[:, 0] == sample_indx, :][:, 1]]
+                    )
+                center_offset_preds = torch.cat(center_offset_preds, 0) # (nInst, 3)
+
+                loss_inp['center_preds'] = (center_preds, instance_heatmap)
+                loss_inp['center_semantic_preds'] = (center_semantic_preds, center_semantic_labels)
+                loss_inp['center_offset_preds'] = (center_offset_preds, center_offset_labels[:, 1:])
+            else:
+                center_preds, sampled_indexes = ret['center_preds'] # (B, 8196, 1)
+                center_semantic_preds, _ = ret['center_semantic_preds'] # (B, 8196, 20)
+                center_offset_preds, _ = ret['center_offset_preds'] # (B, 8196, 3)
+
+                loss_inp['center_preds'] = (center_preds, sampled_indexes, instance_heatmap)
+                loss_inp['center_semantic_preds'] = (center_semantic_preds, sampled_indexes, labels)
+                loss_inp['center_offset_preds'] = (center_offset_preds, sampled_indexes, coords_float, instance_info)
+
 
         if (epoch > cfg.prepare_epochs) and ('proposal_scores' in ret.keys()):
             scores, proposals_idx, proposals_offset = ret['proposal_scores']
@@ -308,9 +317,9 @@ def model_fn_decorator(cfg, test=False):
             queries_semantic_preds = ret['queries_semantic_preds']
             queries_offset_preds = ret['queries_offset_preds']
 
-            loss_inp['queries_preds'] = (queries_preds.squeeze(dim=-1), centre_queries_probs)
-            loss_inp['queries_semantic_preds'] = (queries_semantic_preds, centre_queries_semantic_labels)
-            loss_inp['queries_offset_preds'] = (queries_offset_preds, centre_queries_offsets)
+            loss_inp['queries_preds'] = (queries_preds.squeeze(dim=-1), center_queries_probs)
+            loss_inp['queries_semantic_preds'] = (queries_semantic_preds, center_queries_semantic_labels)
+            loss_inp['queries_offset_preds'] = (queries_offset_preds, center_queries_offsets)
 
         if 'points_semantic_center_loss_feature' in ret.keys():
             points_semantic_center_loss_feature = ret['points_semantic_center_loss_feature']
@@ -348,10 +357,10 @@ def model_fn_decorator(cfg, test=False):
             preds = {}
             preds['pt_offsets'] = point_offset_preds
             preds['semantic_scores'] = point_semantic_scores
-            if 'centre_preds' in ret.keys():
-                preds['centre_preds'] = centre_preds
-                preds['centre_semantic_preds'] = centre_semantic_preds
-                preds['centre_offset_preds'] = centre_offset_preds
+            if 'center_preds' in ret.keys():
+                preds['center_preds'] = center_preds
+                preds['center_semantic_preds'] = center_semantic_preds
+                preds['center_offset_preds'] = center_offset_preds
             if (epoch > cfg.prepare_epochs) and ('proposal_scores' in ret.keys()):
                 preds['score'] = scores
                 preds['proposals'] = (proposals_idx, proposals_offset)
@@ -390,7 +399,7 @@ def model_fn_decorator(cfg, test=False):
         loss_out['semantic_loss'] = (semantic_loss, semantic_scores[0].shape[0])
 
         '''offset loss'''
-        pt_offsets, coords, instance_info, instance_centre, instance_labels = loss_inp['pt_offsets']
+        pt_offsets, coords, instance_info, instance_center, instance_labels = loss_inp['pt_offsets']
         # pt_offsets: (N, 3), float, cuda
         # coords: (N, 3), float32
         # instance_info: (N, 9), float32 tensor (meanxyz, minxyz, maxxyz)
@@ -420,39 +429,42 @@ def model_fn_decorator(cfg, test=False):
         loss_out['offset_norm_loss'] = (offset_norm_loss, valid.sum())
         loss_out['offset_dir_loss'] = (offset_dir_loss, valid.sum())
 
-        if 'centre_preds' in loss_inp.keys():
-            '''centre loss'''
-            centre_preds, instance_heatmap = loss_inp['centre_preds']
+        if 'center_preds' in loss_inp.keys():
+            if len(loss_inp['center_preds']) == 2:
+                '''center loss'''
+                center_preds, instance_heatmap = loss_inp['center_preds']
 
-            centre_loss = centre_criterion(centre_preds, instance_heatmap)
-            loss_out['centre_loss'] = (centre_loss, instance_heatmap.shape[-1])
+                center_loss = center_criterion(center_preds, instance_heatmap)
+                loss_out['center_loss'] = (center_loss, instance_heatmap.shape[-1])
 
-            '''centre semantic loss'''
-            centre_semantic_preds, grid_instance_label = loss_inp['centre_semantic_preds']
-            # grid_valid_index = instance_heatmap > 0
-            # centre_semantic_loss = []
-            # for sample_index in range(instance_heatmap.shape[0]):
-            #     if sum(grid_valid_index[sample_index, :]) != 0:
-            #         centre_semantic_loss.append(
-            #             centre_semantic_criterion(
-            #                 centre_semantic_preds[sample_index, grid_valid_index[sample_index, :], :],
-            #                 grid_instance_label[sample_index, grid_valid_index[sample_index, :]].to(torch.long)
-            #             )
-            #         )
-            # if len(centre_semantic_loss) != 0:
-            #     centre_semantic_loss = torch.mean(torch.stack(centre_semantic_loss))
-            # else:
-            #     centre_semantic_loss = 0
-            centre_semantic_loss = centre_semantic_criterion(
-                centre_semantic_preds.reshape(-1, centre_semantic_preds.shape[-1]), grid_instance_label.reshape(-1))
+                '''center semantic loss'''
+                center_semantic_preds, grid_instance_label = loss_inp['center_semantic_preds']
+                center_semantic_loss = center_semantic_criterion(
+                    center_semantic_preds.reshape(-1, center_semantic_preds.shape[-1]), grid_instance_label.reshape(-1))
 
-            loss_out['centre_semantic_loss'] = (centre_semantic_loss, grid_instance_label.shape[0])
+                loss_out['center_semantic_loss'] = (center_semantic_loss, grid_instance_label.shape[0])
 
-            '''centre offset loss'''
-            centre_offset_preds, grid_centre_offsets = loss_inp['centre_offset_preds']
+                '''center offset loss'''
+                center_offset_preds, grid_center_offsets = loss_inp['center_offset_preds']
 
-            centre_offset_loss = centre_offset_criterion(centre_offset_preds, grid_centre_offsets)
-            loss_out['centre_offset_loss'] = (centre_offset_loss, grid_centre_offsets.shape[0])
+                center_offset_loss = center_offset_criterion(center_offset_preds, grid_center_offsets)
+                loss_out['center_offset_loss'] = (center_offset_loss, grid_center_offsets.shape[0])
+            elif len(loss_inp['center_preds']) == 3:
+                '''center loss'''
+                center_preds, sampled_indexes, instance_heatmap = loss_inp['center_preds']
+
+                '''center semantic loss'''
+                center_semantic_preds, sampled_indexes, point_semantic_labels = loss_inp['center_semantic_preds']
+
+                center_semantic_loss = center_semantic_criterion(
+                    center_semantic_preds, point_semantic_labels[sampled_indexes]
+                )
+                loss_out['center_semantic_loss'] = (center_semantic_loss, sampled_indexes.shape[0] * 8196)
+
+                '''center offset loss'''
+                center_offset_preds, sampled_indexes, point_coords, point_instance_info = loss_inp['center_offset_preds']
+
+
 
         if (epoch > cfg.prepare_epochs) and ('proposal_scores' in loss_inp.keys()):
             '''score loss'''
@@ -508,37 +520,37 @@ def model_fn_decorator(cfg, test=False):
             stuff_output_feats = output_feats[stuff_indx]
             stuff_feats_norm_loss = torch.norm(torch.mean(stuff_output_feats, dim=0), p=2, dim=0)
 
-        ### calculate loss related with centre queries
+        ### calculate loss related with center queries
         if 'queries_preds' in loss_inp.keys():
-            queries_preds, centre_queries_probs = loss_inp['queries_preds']
-            centre_queries_loss = centre_query_criterion(queries_preds, centre_queries_probs)
-            loss_out['centre_loss'] = (centre_queries_loss, centre_queries_probs.shape[-1])
+            queries_preds, center_queries_probs = loss_inp['queries_preds']
+            center_queries_loss = center_query_criterion(queries_preds, center_queries_probs)
+            loss_out['center_loss'] = (center_queries_loss, center_queries_probs.shape[-1])
 
-            queries_semantic_preds, centre_queries_semantic_labels = loss_inp['queries_semantic_preds']
-            centre_queries_semantic_loss = centre_semantic_criterion(
+            queries_semantic_preds, center_queries_semantic_labels = loss_inp['queries_semantic_preds']
+            center_queries_semantic_loss = center_semantic_criterion(
                 queries_semantic_preds.reshape(-1, queries_semantic_preds.shape[-1]),
-                centre_queries_semantic_labels.reshape(-1)
+                center_queries_semantic_labels.reshape(-1)
             )
-            loss_out['centre_semantic_loss'] = (centre_queries_semantic_loss, centre_queries_semantic_labels.shape[0])
+            loss_out['center_semantic_loss'] = (center_queries_semantic_loss, center_queries_semantic_labels.shape[0])
 
-            queries_offset_preds, centre_queries_offsets = loss_inp['queries_offset_preds']
-            centre_queries_offset_loss = centre_offset_criterion(queries_offset_preds, centre_queries_offsets)
-            loss_out['centre_offset_loss'] = (centre_queries_offset_loss, centre_queries_offsets.shape[0])
+            queries_offset_preds, center_queries_offsets = loss_inp['queries_offset_preds']
+            center_queries_offset_loss = center_offset_criterion(queries_offset_preds, center_queries_offsets)
+            loss_out['center_offset_loss'] = (center_queries_offset_loss, center_queries_offsets.shape[0])
 
         if 'points_semantic_center_loss_feature' in loss_inp.keys():
             points_semantic_center_loss_features, labels, batch_offsets = loss_inp['points_semantic_center_loss_feature']
 
-            semantic_centre_loss = torch.zeros(1).cuda()
+            semantic_center_loss = torch.zeros(1).cuda()
             for points_semantic_center_loss_feature in points_semantic_center_loss_features:
                 semantic_cent_loss = torch.zeros(1).cuda()
                 for batch_id in range(1, len(batch_offsets)):
                     points_semantic_feat = points_semantic_center_loss_feature[
                                            batch_offsets[batch_id - 1]:batch_offsets[batch_id]]
                     label = labels[batch_offsets[batch_id - 1]:batch_offsets[batch_id]]
-                    semantic_cent_loss += semantic_centre_criterion(points_semantic_feat, label)
-                semantic_centre_loss += semantic_cent_loss / (len(batch_offsets) - 1)
+                    semantic_cent_loss += semantic_center_criterion(points_semantic_feat, label)
+                semantic_center_loss += semantic_cent_loss / (len(batch_offsets) - 1)
 
-            loss_out['centre_offset_loss'] = (semantic_centre_loss, labels.shape[0])
+            loss_out['center_offset_loss'] = (semantic_center_loss, labels.shape[0])
 
         if cfg.instance_triplet_loss['activate'] and 'point_offset_feats' in loss_inp.keys():
             point_offset_feats, instance_labels, batch_offsets = loss_inp['point_offset_feats']
@@ -565,7 +577,7 @@ def model_fn_decorator(cfg, test=False):
 
             instance_triplet_loss = instance_triplet_loss / (len(batch_offsets) - 1)
 
-            loss_out['centre_offset_loss'] = (instance_triplet_loss, instance_labels.shape[0])
+            loss_out['center_offset_loss'] = (instance_triplet_loss, instance_labels.shape[0])
 
         ### three different feature term losses mentioned in OccuSeg
         if cfg.feature_variance_loss['activate'] and ('feature_variance_loss' in loss_inp.keys()):
@@ -638,10 +650,10 @@ def model_fn_decorator(cfg, test=False):
                cfg.loss_weights['point_offset_norm'] * offset_norm_loss + \
                cfg.loss_weights['point_offset_dir'] * offset_dir_loss
 
-        if ('centre_preds' in loss_inp.keys()):
-            loss += cfg.loss_weights['center_prob'] * centre_loss + \
-                    cfg.loss_weights['center_semantic'] * centre_semantic_loss + \
-                    cfg.loss_weights['center_offset'] * centre_offset_loss
+        if ('center_preds' in loss_inp.keys()):
+            loss += cfg.loss_weights['center_prob'] * center_loss + \
+                    cfg.loss_weights['center_semantic'] * center_semantic_loss + \
+                    cfg.loss_weights['center_offset'] * center_offset_loss
 
         if (epoch > cfg.prepare_epochs) and ('proposal_scores' in loss_inp.keys()):
             loss += cfg.loss_weights['score'] * score_loss
@@ -656,10 +668,10 @@ def model_fn_decorator(cfg, test=False):
             loss += cfg.loss_weights['stuff_feats_norm'] * stuff_feats_norm_loss
 
         if ('queries_preds' in loss_inp.keys()):
-            loss = loss + centre_queries_loss + centre_queries_semantic_loss + centre_queries_offset_loss
+            loss = loss + center_queries_loss + center_queries_semantic_loss + center_queries_offset_loss
 
         if ('points_semantic_center_loss_feature' in loss_inp.keys()):
-            loss += cfg.loss_weights['point_semantic_center'] * semantic_centre_loss
+            loss += cfg.loss_weights['point_semantic_center'] * semantic_center_loss
 
         if cfg.instance_triplet_loss['activate'] and ('point_offset_feats' in loss_inp.keys()):
             loss += cfg.loss_weights['point_instance_triplet'] * instance_triplet_loss

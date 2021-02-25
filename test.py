@@ -117,9 +117,9 @@ def test(model, model_fn, dataset, epoch):
                 # valid_index = (semantic_pred != 20)
                 # semantic_pred[~valid_index] = 0
 
-                grid_center_preds = torch.sigmoid(preds['centre_preds'])
-                grid_center_semantic_preds = preds['centre_semantic_preds']
-                grid_center_offset_preds = preds['centre_offset_preds']
+                grid_center_preds = torch.sigmoid(preds['center_preds'])
+                grid_center_semantic_preds = preds['center_semantic_preds']
+                grid_center_offset_preds = preds['center_offset_preds']
 
                 grid_pred_max = maxpool3d(grid_center_preds.reshape(1, 1, 32, 32, 32)).reshape(1, 32**3)
                 cent_candidates_indexs = (grid_center_preds == grid_pred_max)
