@@ -339,7 +339,7 @@ def get_coords_color(opt):
 
         point_occupancy_labels[point_occupancy_labels == 0] = 1.1
         point_occupancy_error = np.abs(point_occupancy_preds.squeeze(axis=1) - np.log(point_occupancy_labels)) / np.log(point_occupancy_labels)
-        rgb[inst_label > 1, 0] += (point_occupancy_error[inst_label > 1] * 2200)
+        rgb[inst_label >= 0, 0] += (point_occupancy_error[inst_label >= 0] * 2200)
 
     elif opt.task == 'semantic_error':
         assert opt.room_split != 'train'
