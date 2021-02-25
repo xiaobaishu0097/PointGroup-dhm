@@ -350,6 +350,13 @@ def model_fn_decorator(cfg, test=False):
 
             loss_inp['voxel_occupancy_loss'] = (voxel_occupancy_preds, voxel_instance_labels, voxel_occupancy_labels)
 
+        if ('local_point_semantic_scores' in ret.keys()) and (cfg.local_proposal['scatter_mean_target'] == False):
+            local_point_semantic_scores, local_proposals_idx = ret['local_point_semantic_scores']
+            local_point_offset_preds, _ = ret['local_point_offset_preds']
+
+            loss_inp['local_point_semantic'] = (local_point_semantic_scores, local_proposals_idx, labels)
+            loss_inp['local_point_offset'] = (local_point_offset_preds, local_proposals_idx, coords_float, instance_info, instance_labels)
+
         loss, loss_out, infos = loss_fn(loss_inp, epoch)
 
         ##### accuracy / visual_dict / meter_dict
@@ -644,6 +651,38 @@ def model_fn_decorator(cfg, test=False):
             voxel_occupancy_loss = voxel_occupancy_loss / len(point_occupancy_preds)
             loss_out['voxel_occupancy_loss'] = (voxel_occupancy_loss, point_occupancy_preds[0].shape[0])
 
+        if ('local_point_semantic' in loss_inp.keys()) and (cfg.local_proposal['scatter_mean_target'] == False):
+            # local proposal point semantic loss calculate
+            local_point_semantic_scores, local_proposals_idx, labels = loss_inp['local_point_semantic']
+
+            local_point_semantic_loss = torch.zeros(1).cuda()
+            for local_point_semantic_score in local_point_semantic_scores:
+                local_point_semantic_loss += semantic_criterion(local_point_semantic_score, labels[local_proposals_idx[:, 1].long()])
+
+            loss_out['local_point_semantic_loss'] = (local_point_semantic_loss, local_proposals_idx.shape[0])
+
+            # local proposal point offset losses
+            local_point_offset_preds, local_proposals_idx, coords, instance_info, instance_labels = loss_inp['local_point_offset']
+
+            local_point_offset_norm_loss = torch.zeros(1).cuda()
+            local_point_offset_dir_loss = torch.zeros(1).cuda()
+            for local_point_offset_pred in local_point_offset_preds:
+                gt_offsets = instance_info[:, 0:3] - coords  # (N, 3)
+                gt_offsets = gt_offsets[local_proposals_idx[:, 1].long(), :]
+                pt_diff = local_point_offset_pred - gt_offsets  # (N, 3)
+                pt_dist = torch.sum(torch.abs(pt_diff), dim=-1)  # (N)
+                valid = (instance_labels[local_proposals_idx[:, 1].long()] != cfg.ignore_label).float()
+                local_point_offset_norm_loss += torch.sum(pt_dist * valid) / (torch.sum(valid) + 1e-6)
+
+                gt_offsets_norm = torch.norm(gt_offsets, p=2, dim=1)  # (N), float
+                gt_offsets_ = gt_offsets / (gt_offsets_norm.unsqueeze(-1) + 1e-8)
+                local_point_offsets_norm = torch.norm(local_point_offset_pred, p=2, dim=1)
+                local_point_offsets_ = local_point_offset_pred / (local_point_offsets_norm.unsqueeze(-1) + 1e-8)
+                direction_diff = - (gt_offsets_ * local_point_offsets_).sum(-1)  # (N)
+                local_point_offset_dir_loss += torch.sum(direction_diff * valid) / (torch.sum(valid) + 1e-6)
+
+            loss_out['local_point_offset_norm_loss'] = (local_point_offset_norm_loss, valid.sum())
+            loss_out['local_point_offset_dir_loss'] = (local_point_offset_dir_loss, valid.sum())
 
         '''total loss'''
         loss = cfg.loss_weights['point_semantic'] * semantic_loss + \
@@ -687,6 +726,11 @@ def model_fn_decorator(cfg, test=False):
 
         if ('occupancy' in cfg.model_mode.split('_')) and ('voxel_occupancy_loss' in loss_inp.keys()):
             loss += cfg.loss_weights['voxel_occupancy_loss'] * voxel_occupancy_loss
+
+        if ('local_point_semantic' in loss_inp.keys()) and (cfg.local_proposal['scatter_mean_target'] == False):
+            loss += cfg.loss_weights['local_point_semantic_loss'] * local_point_semantic_loss + \
+                    cfg.loss_weights['local_point_offset_norm'] * local_point_offset_norm_loss + \
+                    cfg.loss_weights['local_point_offset_dir'] * local_point_offset_dir_loss
 
         return loss, loss_out, infos
 

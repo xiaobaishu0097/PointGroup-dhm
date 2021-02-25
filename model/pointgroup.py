@@ -601,7 +601,7 @@ class PointGroup(nn.Module):
                 nn.Linear(m, classes, bias=True),
             )
 
-            self.proposal_unet = UBlock([m, 2 * m, 3 * m, 4 * m], norm_fn, 2, block, indice_key_id=1,
+            self.proposal_unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m], norm_fn, 2, block, indice_key_id=1,
                                         backbone=False)
             self.proposal_outputlayer = spconv.SparseSequential(
                 norm_fn(m),
@@ -1752,6 +1752,9 @@ class PointGroup(nn.Module):
         elif self.model_mode == 'Yu_local_proposal_PointGroup':
             point_offset_preds = []
             point_semantic_scores = []
+            
+            local_point_semantic_scores = []
+            local_point_offset_preds = []
 
             voxel_feats = pointgroup_ops.voxelization(input['pt_feats'], input['v2p_map'],
                                                       input['mode'])  # (M, C), float, cuda
@@ -1842,8 +1845,9 @@ class PointGroup(nn.Module):
 
                 #### proposals voxelization again
                 input_feats, inp_map = self.clusters_voxelization(
-                    local_proposals_idx, local_proposals_offset, output_feats, coords,
-                    self.score_fullscale, self.score_scale, self.mode
+                    local_proposals_idx, local_proposals_offset, output_feats,
+                    coords, self.local_proposal['local_proposal_full_scale'],
+                    self.local_proposal['local_proposal_scale'], self.mode
                 )
 
                 #### cluster features
@@ -1883,6 +1887,13 @@ class PointGroup(nn.Module):
                     #### point offset prediction
                     point_offset_preds.append(self.point_offset(output_feats + refined_point_features))  # (N, 3), float32
 
+                elif self.local_proposal['scatter_mean_target'] == False:
+                    local_point_semantic_scores.append(self.point_semantic(proposals_point_features))
+                    local_point_offset_preds.append(self.point_offset(proposals_point_features))
+
+                    ret['local_point_semantic_scores'] = (local_point_semantic_scores, local_proposals_idx)
+                    ret['local_point_offset_preds'] = (local_point_offset_preds, local_proposals_idx)
+
             if (epoch == self.test_epoch) and input['test']:
                 self.cluster_sets = 'Q'
                 scores, proposals_idx, proposals_offset = self.pointgroup_cluster_algorithm(
@@ -1893,6 +1904,7 @@ class PointGroup(nn.Module):
 
             ret['point_semantic_scores'] = point_semantic_scores
             ret['point_offset_preds'] = point_offset_preds
+            ret['point_features'] = output_feats
 
         elif self.model_mode == 'Yu_stuff_recurrent_PointGroup':
             point_offset_preds = []

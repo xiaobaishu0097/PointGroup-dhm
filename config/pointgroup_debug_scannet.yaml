@@ -30,11 +30,11 @@ STRUCTURE:
   block_reps: 2
   scatter_type: max
   unet3d_num_levels: 3
-  model_mode: Center_pointnet++_clustering
+  model_mode: Yu_local_proposal_PointGroup
   # Center_clustering or Jiang_original_PointGroup or Yu_refine_clustering_PointGroup
   # or Li_simple_backbone_PointGroup or Yu_refine_clustering_scorenet_PointGroup
   # or PointNet_point_prediction_test_PointGroup or Yu_rc_scorenet_confidence_PointGroup
-  # or PointNet_deeper_PointGroup or PointNet_sample_PointGroup or Yu_RC_ScoreNet_Conf_Transformer_PointGroup
+  # or PointNet_sample_PointGroup or Yu_RC_ScoreNet_Conf_Transformer_PointGroup
   # or Yu_stuff_recurrent_PointGroup or Yu_stuff_remove_PointGroup or Yu_local_proposal_PointGroup
   # or Center_sample_cluster or Fan_center_loss_PointGroup or Position_enhanced_PointGroup or Fan_occupancy_PointGroup
   # or Center_pointnet++_clustering
@@ -102,6 +102,9 @@ TRAIN:
     'feature_distance_loss': 1.0,
     'feature_instance_regression_loss': 0.001,
     'voxel_occupancy_loss': 1.0,
+    'local_point_semantic_loss': 1.0,
+    'local_point_offset_norm': 1.0,
+    'local_point_offset_dir': 1.0,
   }
 
   heatmap_sigma: 0
@@ -112,6 +115,8 @@ TRAIN:
 
   proposal_refinement: {
     'refine_times': 2,
+    'proposal_refine_scale': 50,
+    'proposal_refine_full_scale': 128,
   }
 
   Proposal_Transformer: {
@@ -131,7 +136,9 @@ TRAIN:
   local_proposal: {
     'topk': 3,
     'dist_th': 0.5,
-    'scatter_mean_target': feature, # feature or prediction
+    'scatter_mean_target': False, # feature or prediction
+    'local_proposal_scale': 50,
+    'local_proposal_full_scale': 128,
   }
 
   stuff_recurrent: {
