@@ -2149,8 +2149,9 @@ class PointGroup(nn.Module):
 
                     #### proposals voxelization again
                     input_feats, inp_map = self.clusters_voxelization(
-                        proposals_idx_shift, proposals_offset_shift, output_feats, coords,
-                        self.score_fullscale, self.score_scale, self.mode
+                        proposals_idx_shift, proposals_offset_shift, output_feats,
+                        coords, self.proposal_refinement['proposal_refine_full_scale'],
+                        self.proposal_refinement['proposal_refine_scale'], self.mode
                     )
 
                     #### proposal features
