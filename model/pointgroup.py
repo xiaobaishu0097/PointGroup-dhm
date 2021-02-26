@@ -1104,7 +1104,7 @@ class PointGroup(nn.Module):
 
                 sampled_index = pointnet2_utils.furthest_point_sample(
                     coords_input[:, :, :3].contiguous(), self.pointnet_max_npoint).squeeze(dim=0).long()
-                sampled_indexes.append(sampled_index)
+                sampled_indexes.append(sampled_index.unsqueeze(dim=0))
 
                 sampled_coords_input = coords_input[:, sampled_index, :]
                 sampled_rgb_input = rgb_input[:, sampled_index, :]
@@ -1116,6 +1116,7 @@ class PointGroup(nn.Module):
                 point_feats.append(point_feat)
 
             point_feats = torch.cat(point_feats, dim=0)
+            sampled_indexes = torch.cat(sampled_indexes, dim=0)
 
             voxel_feats = pointgroup_ops.voxelization(input['pt_feats'], input['v2p_map'], input['mode'])  # (M, C), float, cuda
 
@@ -1145,9 +1146,9 @@ class PointGroup(nn.Module):
             ret['point_semantic_scores'] = semantic_scores
             ret['point_offset_preds'] = point_offset_preds
 
-            ret['center_preds'] = (center_preds, sampled_index)
-            ret['center_semantic_preds'] = (center_semantic_preds, sampled_index)
-            ret['center_offset_preds'] = (center_offset_preds, sampled_index)
+            ret['center_preds'] = (center_preds, sampled_indexes)
+            ret['center_semantic_preds'] = (center_semantic_preds, sampled_indexes)
+            ret['center_offset_preds'] = (center_offset_preds, sampled_indexes)
 
         elif self.model_mode == 'Yu_refine_clustering_PointGroup':
             point_offset_preds = []

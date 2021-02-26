@@ -30,7 +30,7 @@ STRUCTURE:
   block_reps: 2
   scatter_type: max
   unet3d_num_levels: 3
-  model_mode: Yu_local_proposal_PointGroup
+  model_mode: Center_pointnet++_clustering
   # Center_clustering or Jiang_original_PointGroup or Yu_refine_clustering_PointGroup
   # or Li_simple_backbone_PointGroup or Yu_refine_clustering_scorenet_PointGroup
   # or PointNet_point_prediction_test_PointGroup or Yu_rc_scorenet_confidence_PointGroup
@@ -105,6 +105,8 @@ TRAIN:
     'local_point_semantic_loss': 1.0,
     'local_point_offset_norm': 1.0,
     'local_point_offset_dir': 1.0,
+    'center_offset_norm_loss': 1.0,
+    'center_offset_dir_loss': 1.0,
   }
 
   heatmap_sigma: 0

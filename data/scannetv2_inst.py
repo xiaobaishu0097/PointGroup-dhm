@@ -241,6 +241,7 @@ class ScannetDatast:
         point_instance_labels = []  # (N)
         point_instance_infos = []  # (N, 9)
         instance_centers = []  # (nInst, 3) (instance_xyz)
+        instance_sizes = []
 
         # variables for grid-wise predictions
         grid_center_heatmaps = []  # (B, nGrid)
@@ -407,6 +408,12 @@ class ScannetDatast:
                     dim=1
                 )
             )  # (nInst, 4) (sample_index, instance_center_xyz)
+            instance_sizes.append(
+                torch.cat(
+                    (torch.DoubleTensor(torch.tensor(inst_size).shape[0], 1).fill_(i), torch.tensor(inst_size)),
+                    dim=1
+                )
+            )
 
             if 'Center' in self.model_mode.split('_'):
                 # variables for grid-wise predictions
@@ -430,10 +437,11 @@ class ScannetDatast:
         point_coords = torch.cat(point_coords, 0).to(torch.float32)  # (N, 6) (shifted_xyz, original_xyz)
         point_feats = torch.cat(point_feats, 0)  # (N, 3) (rgb)
         # variables for point-wise predictions
-        point_semantic_labels = torch.cat(point_semantic_labels, 0).long()  # (N)
-        point_instance_labels = torch.cat(point_instance_labels, 0).long()  # (N)
-        point_instance_infos = torch.cat(point_instance_infos, 0).to(torch.float32) # (N, 9) (cx, cy, cz, minx, miny, minz, maxx, maxy, maxz)
-        instance_centers = torch.cat(instance_centers, 0)  # (nInst, 3) (instance_center_xyz)
+        point_semantic_labels = torch.cat(point_semantic_labels, dim=0).long()  # (N)
+        point_instance_labels = torch.cat(point_instance_labels, dim=0).long()  # (N)
+        point_instance_infos = torch.cat(point_instance_infos, dim=0).to(torch.float32) # (N, 9) (cx, cy, cz, minx, miny, minz, maxx, maxy, maxz)
+        instance_centers = torch.cat(instance_centers, dim=0)  # (nInst, 3) (instance_center_xyz)
+        instance_sizes = torch.cat(instance_sizes, dim=0)
 
         # variables for backbone
         ret_dict['point_locs'] = point_locs # (N, 4) (sample_index, xyz)
@@ -443,6 +451,7 @@ class ScannetDatast:
         ret_dict['point_instance_labels'] = point_instance_labels  # (N)
         ret_dict['point_instance_infos'] = point_instance_infos  # (N, 9)
         ret_dict['instance_centers'] = instance_centers  # (nInst, 3) (instance_xyz)
+        ret_dict['instance_sizes'] = instance_sizes
 
         if 'Center' in self.model_mode.split('_'):
             # variables for grid-wise predictions
@@ -529,6 +538,7 @@ class ScannetDatast:
         point_instance_labels = []  # (N)
         point_instance_infos = []  # (N, 9)
         instance_centers = []  # (nInst, 3) (instance_xyz)
+        instance_sizes = []
 
         # variables for grid-wise predictions
         grid_center_heatmaps = []  # (B, nGrid)
@@ -673,6 +683,12 @@ class ScannetDatast:
                     dim=1
                 )
             )  # (nInst, 4) (sample_index, instance_center_xyz)
+            instance_sizes.append(
+                torch.cat(
+                    (torch.DoubleTensor(torch.tensor(inst_size).shape[0], 1).fill_(i), torch.tensor(inst_size)),
+                    dim=1
+                )
+            )
 
             if 'Center' in self.model_mode.split('_'):
                 # variables for grid-wise predictions
@@ -700,6 +716,7 @@ class ScannetDatast:
         point_instance_labels = torch.cat(point_instance_labels, 0).long()  # (N)
         point_instance_infos = torch.cat(point_instance_infos, 0).to(torch.float32) # (N, 9) (cx, cy, cz, minx, miny, minz, maxx, maxy, maxz)
         instance_centers = torch.cat(instance_centers, 0)  # (nInst, 3) (instance_center_xyz)
+        instance_sizes = torch.cat(instance_sizes, dim=0)
 
         # variables for backbone
         ret_dict['point_locs'] = point_locs  # (N, 4) (sample_index, xyz)
@@ -709,6 +726,7 @@ class ScannetDatast:
         ret_dict['point_instance_labels'] = point_instance_labels  # (N)
         ret_dict['point_instance_infos'] = point_instance_infos  # (N, 9)
         ret_dict['instance_centers'] = instance_centers  # (nInst, 3) (instance_xyz)
+        ret_dict['instance_sizes'] = instance_sizes
 
         if 'Center' in self.model_mode.split('_'):
             # variables for grid-wise predictions
