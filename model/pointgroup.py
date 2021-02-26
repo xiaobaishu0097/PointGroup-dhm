@@ -1149,6 +1149,8 @@ class PointGroup(nn.Module):
             ret['center_preds'] = (center_preds, sampled_indexes)
             ret['center_semantic_preds'] = (center_semantic_preds, sampled_indexes)
             ret['center_offset_preds'] = (center_offset_preds, sampled_indexes)
+            
+            ret['point_features'] = output_feats
 
         elif self.model_mode == 'Yu_refine_clustering_PointGroup':
             point_offset_preds = []
