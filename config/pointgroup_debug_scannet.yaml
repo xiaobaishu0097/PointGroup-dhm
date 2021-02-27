@@ -71,7 +71,7 @@ TRAIN:
   }
 
   feature_semantic_regression_loss: {
-    'activate': True,
+    'activate': False,
   }
 
   feature_variance_loss: {
