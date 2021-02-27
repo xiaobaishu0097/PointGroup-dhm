@@ -1819,8 +1819,9 @@ class PointGroup(nn.Module):
 
                 proposal_dist_mat = euclidean_dist(proposal_center_coords, proposal_center_coords)
                 proposal_dist_mat[range(len(proposal_dist_mat)), range(len(proposal_dist_mat))] = 10
-                closest_proposals_dist, closest_proposals_index = proposal_dist_mat.topk(k=self.local_proposal['topk'],
-                                                                                         dim=1, largest=False)
+                closest_proposals_dist, closest_proposals_index = proposal_dist_mat.topk(
+                    k=min(self.local_proposal['topk'], proposal_dist_mat.shape[1]), dim=1, largest=False
+                )
                 valid_closest_proposals_index = closest_proposals_dist < self.local_proposal['dist_th']
 
                 # select proposals which are the closest and in the distance threshold
