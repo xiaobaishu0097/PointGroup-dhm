@@ -518,9 +518,10 @@ def model_fn_decorator(cfg, test=False):
                 center_probs_loss = center_criterion(center_preds, center_heatmaps)
 
                 center_semantic_labels = torch.cat(center_semantic_labels, dim=0)
+                batch_size = center_semantic_preds.shape[0]
                 center_semantic_loss = center_semantic_criterion(
-                    center_semantic_preds.view(cfg.batch_size * 8196, 20),
-                    center_semantic_labels.view(cfg.batch_size * 8196)
+                    center_semantic_preds.view(batch_size * 8196, 20),
+                    center_semantic_labels.view(batch_size * 8196)
                 )
                 center_offset_norm_loss = center_offset_norm_loss / cfg.batch_size
                 center_offset_dir_loss = center_offset_dir_loss / cfg.batch_size
