@@ -1421,52 +1421,52 @@ class PointGroup(nn.Module):
 
                 semantic_preds_cpu = point_semantic_preds[object_idxs].int().cpu()
 
-                idx_occupancy, start_len_occupancy = pointgroup_ops.ballquery_batch_p(
-                    coords_ + pt_offsets_, batch_idxs_,
-                    batch_offsets_, self.cluster_radius, self.cluster_shift_meanActive
-                )
-                proposals_idx_occupancy, proposals_offset_occupancy = pointgroup_ops.bfs_occupancy_cluster(
-                    semantic_preds_cpu, point_occupancy_pred_.cpu(), idx_occupancy.cpu(),
-                    start_len_occupancy.cpu(), self.cluster_npoint_thre, self.occupancy_cluster['occupancy_threshold_shift']
-                )
-                proposals_idx_occupancy[:, 1] = object_idxs[proposals_idx_occupancy[:, 1].long()].int()
-                # proposals_idx_shift: (sumNPoint, 2), int, dim 0 for cluster_id, dim 1 for corresponding point idxs in N
-                # proposals_offset_shift: (nProposal + 1), int
+                # idx_occupancy, start_len_occupancy = pointgroup_ops.ballquery_batch_p(
+                #     coords_ + pt_offsets_, batch_idxs_,
+                #     batch_offsets_, self.cluster_radius, self.cluster_shift_meanActive
+                # )
+                # proposals_idx_occupancy, proposals_offset_occupancy = pointgroup_ops.bfs_occupancy_cluster(
+                #     semantic_preds_cpu, point_occupancy_pred_.cpu(), idx_occupancy.cpu(),
+                #     start_len_occupancy.cpu(), self.cluster_npoint_thre, self.occupancy_cluster['occupancy_threshold_shift']
+                # )
+                # proposals_idx_occupancy[:, 1] = object_idxs[proposals_idx_occupancy[:, 1].long()].int()
+                # # proposals_idx_shift: (sumNPoint, 2), int, dim 0 for cluster_id, dim 1 for corresponding point idxs in N
+                # # proposals_offset_shift: (nProposal + 1), int
+                #
+                # idx, start_len = pointgroup_ops.ballquery_batch_p(
+                #     coords_, batch_idxs_, batch_offsets_, self.cluster_radius, self.cluster_meanActive
+                # )
+                # proposals_idx, proposals_offset = pointgroup_ops.bfs_occupancy_cluster(
+                #     semantic_preds_cpu, point_occupancy_pred_.cpu(), idx.cpu(),
+                #     start_len.cpu(), self.cluster_npoint_thre, self.occupancy_cluster['occupancy_threshold']
+                # )
+                # proposals_idx[:, 1] = object_idxs[proposals_idx[:, 1].long()].int()
+
 
                 idx, start_len = pointgroup_ops.ballquery_batch_p(
                     coords_, batch_idxs_, batch_offsets_, self.cluster_radius, self.cluster_meanActive
                 )
-                proposals_idx, proposals_offset = pointgroup_ops.bfs_occupancy_cluster(
-                    semantic_preds_cpu, point_occupancy_pred_.cpu(), idx.cpu(),
-                    start_len.cpu(), self.cluster_npoint_thre, self.occupancy_cluster['occupancy_threshold']
+                proposals_idx, proposals_offset = pointgroup_ops.bfs_cluster(
+                    semantic_preds_cpu, idx.cpu(), start_len.cpu(), self.cluster_npoint_thre
                 )
                 proposals_idx[:, 1] = object_idxs[proposals_idx[:, 1].long()].int()
 
 
-                # idx, start_len = pointgroup_ops.ballquery_batch_p(
-                #     coords_, batch_idxs_, batch_offsets_, self.cluster_radius, self.cluster_meanActive
-                # )
-                # proposals_idx, proposals_offset = pointgroup_ops.bfs_cluster(
-                #     semantic_preds_cpu, idx.cpu(), start_len.cpu(), self.cluster_npoint_thre
-                # )
-                # proposals_idx[:, 1] = object_idxs[proposals_idx[:, 1].long()].int()
-                #
-                #
-                # idx_shift, start_len_shift = pointgroup_ops.ballquery_batch_p(
-                #     coords_ + pt_offsets_, batch_idxs_,
-                #     batch_offsets_, self.cluster_radius, self.cluster_shift_meanActive
-                # )
-                # proposals_idx_shift, proposals_offset_shift = pointgroup_ops.bfs_cluster(
-                #     semantic_preds_cpu, idx_shift.cpu(), start_len_shift.cpu(), self.cluster_npoint_thre
-                # )
-                # proposals_idx_shift[:, 1] = object_idxs[proposals_idx_shift[:, 1].long()].int()
-                # # proposals_idx_shift: (sumNPoint, 2), int, dim 0 for cluster_id, dim 1 for corresponding point idxs in N
-                # # proposals_offset_shift: (nProposal + 1), int
+                idx_shift, start_len_shift = pointgroup_ops.ballquery_batch_p(
+                    coords_ + pt_offsets_, batch_idxs_,
+                    batch_offsets_, self.cluster_radius, self.cluster_shift_meanActive
+                )
+                proposals_idx_shift, proposals_offset_shift = pointgroup_ops.bfs_cluster(
+                    semantic_preds_cpu, idx_shift.cpu(), start_len_shift.cpu(), self.cluster_npoint_thre
+                )
+                proposals_idx_shift[:, 1] = object_idxs[proposals_idx_shift[:, 1].long()].int()
+                # proposals_idx_shift: (sumNPoint, 2), int, dim 0 for cluster_id, dim 1 for corresponding point idxs in N
+                # proposals_offset_shift: (nProposal + 1), int
 
-                proposals_idx_occupancy[:, 0] += (proposals_offset.size(0) - 1)
-                proposals_offset_occupancy += proposals_offset[-1]
-                proposals_idx = torch.cat((proposals_idx, proposals_idx_occupancy), dim=0)
-                proposals_offset = torch.cat((proposals_offset, proposals_offset_occupancy[1:]))
+                # proposals_idx_occupancy[:, 0] += (proposals_offset.size(0) - 1)
+                # proposals_offset_occupancy += proposals_offset[-1]
+                # proposals_idx = torch.cat((proposals_idx, proposals_idx_occupancy), dim=0)
+                # proposals_offset = torch.cat((proposals_offset, proposals_offset_occupancy[1:]))
 
                 # proposals_idx_filtered = []
                 # proposals_offset_filtered = [0]
@@ -1492,10 +1492,10 @@ class PointGroup(nn.Module):
                 # proposals_idx_shift = proposals_idx_filtered
                 # proposals_offset_shift = proposals_offset_filtered
 
-                # proposals_idx_shift[:, 0] += (proposals_offset.size(0) - 1)
-                # proposals_offset_shift += proposals_offset[-1]
-                # proposals_idx = torch.cat((proposals_idx, proposals_idx_shift), dim=0)
-                # proposals_offset = torch.cat((proposals_offset, proposals_offset_shift[1:]))
+                proposals_idx_shift[:, 0] += (proposals_offset.size(0) - 1)
+                proposals_offset_shift += proposals_offset[-1]
+                proposals_idx = torch.cat((proposals_idx, proposals_idx_shift), dim=0)
+                proposals_offset = torch.cat((proposals_offset, proposals_offset_shift[1:]))
 
                 #### proposals voxelization again
                 input_feats, inp_map = self.clusters_voxelization(proposals_idx, proposals_offset, output_feats, coords,
