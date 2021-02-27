@@ -351,6 +351,10 @@ def model_fn_decorator(cfg, test=False):
             point_features = ret['point_features']
             loss_inp['feature_instance_regression_loss'] = (point_features, instance_labels)
 
+        if cfg.feature_semantic_regression_loss['activate'] and ('point_features' in ret.keys()):
+            point_features = ret['point_features']
+            loss_inp['feature_semantic_regression_loss'] = (point_features, labels)
+
         ### occupancy loss to predict the voxel number for each voxel
         if ('occupancy' in cfg.model_mode.split('_')) and ('voxel_occupancy_preds' in ret.keys()):
             voxel_occupancy_preds = ret['voxel_occupancy_preds']
@@ -698,6 +702,18 @@ def model_fn_decorator(cfg, test=False):
 
             loss_out['feature_instance_regression_loss'] = (feature_instance_regression_loss, instance_labels.shape[0])
 
+        if cfg.feature_semantic_regression_loss['activate'] and ('feature_semantic_regression_loss' in loss_inp.keys()):
+            point_features, semantic_labels = loss_inp['feature_semantic_regression_loss']
+
+            valid_semantic_index = (semantic_labels != cfg.ignore_label)
+            semantic_features = scatter_mean(
+                point_features[valid_semantic_index], semantic_labels[valid_semantic_index], dim=0
+            )
+            feature_semantic_regression_loss = torch.norm(torch.sum(semantic_features, dim=0), p=2) / \
+                                               semantic_features.shape[0]
+
+            loss_out['feature_semantic_regression_loss'] = (feature_semantic_regression_loss, semantic_labels.shape[0])
+
         ### occupancy loss to predict the voxel number for each voxel
         if ('occupancy' in cfg.model_mode.split('_')) and ('voxel_occupancy_loss' in loss_inp.keys()):
             point_occupancy_preds, voxel_instance_labels, voxel_occupancy_labels = loss_inp['voxel_occupancy_loss']
@@ -754,6 +770,7 @@ def model_fn_decorator(cfg, test=False):
 
             point_reconstruction_loss = point_reconstruction_criterion(point_reconstructed_coords, coords_float)
 
+        ### ============================================================================================================
         '''total loss'''
         loss = cfg.loss_weights['point_semantic'] * semantic_loss + \
                cfg.loss_weights['point_offset_norm'] * offset_norm_loss + \
@@ -799,6 +816,9 @@ def model_fn_decorator(cfg, test=False):
 
         if cfg.feature_instance_regression_loss['activate'] and ('feature_instance_regression_loss' in loss_inp.keys()):
             loss += cfg.loss_weights['feature_instance_regression_loss'] * feature_instance_regression_loss
+
+        if cfg.feature_semantic_regression_loss['activate'] and ('feature_semantic_regression_loss' in loss_inp.keys()):
+            loss += cfg.loss_weights['feature_semantic_regression_loss'] * feature_semantic_regression_loss
 
         if ('occupancy' in cfg.model_mode.split('_')) and ('voxel_occupancy_loss' in loss_inp.keys()):
             loss += cfg.loss_weights['voxel_occupancy_loss'] * voxel_occupancy_loss

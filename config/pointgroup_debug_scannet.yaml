@@ -70,6 +70,10 @@ TRAIN:
     'activate': False,
   }
 
+  feature_semantic_regression_loss: {
+    'activate': True,
+  }
+
   feature_variance_loss: {
     'activate': False,
     'variance_threshold': 0.1,
@@ -112,6 +116,7 @@ TRAIN:
     'center_offset_norm_loss': 1.0,
     'center_offset_dir_loss': 1.0,
     'point_reconstruction_loss': 1.0,
+    'feature_semantic_regression_loss': 1.0,
   }
 
   heatmap_sigma: 0
