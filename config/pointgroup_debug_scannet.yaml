@@ -85,7 +85,7 @@ TRAIN:
   }
 
   point_reconstruction_loss: {
-    'activate': True,
+    'activate': False,
   }
 
   loss_weights: {
