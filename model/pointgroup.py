@@ -59,6 +59,7 @@ class PointGroup(nn.Module):
 
         self.pointnet_include_rgb = cfg.pointnet_include_rgb
         self.proposal_refinement = cfg.proposal_refinement
+        self.point_reconstruction_loss = cfg.point_reconstruction_loss
 
         self.pointnet_max_npoint = 8196
 
@@ -300,6 +301,14 @@ class PointGroup(nn.Module):
                 nn.ReLU()
             )
             self.score_linear = nn.Linear(m, 1)
+
+            if self.point_reconstruction_loss['activate']:
+                self.point_reconstruction_coords = nn.Sequential(
+                    nn.Linear(m, m, bias=True),
+                    norm_fn(m),
+                    nn.ReLU(),
+                    nn.Linear(m, 3, bias=True),
+                )
 
             self.apply(self.set_bn_init)
 
@@ -1292,6 +1301,11 @@ class PointGroup(nn.Module):
             point_offset_preds.append(point_offset_pred)  # (N, 3), float32
             # only used to evaluate based on ground truth
             # point_offset_preds.append(input['point_offset_preds'])  # (N, 3), float32
+
+            if self.point_reconstruction_loss['activate']:
+                point_reconstructed_coords = self.point_reconstruction_coords(output_feats)
+
+                ret['point_reconstructed_coords'] = point_reconstructed_coords
 
             if (epoch > self.prepare_epochs):
                 #### get prooposal clusters

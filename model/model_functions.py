@@ -32,6 +32,8 @@ def model_fn_decorator(cfg, test=False):
     score_criterion = nn.BCELoss(reduction='none').cuda()
     confidence_criterion = nn.BCELoss(reduction='none').cuda()
 
+    point_reconstruction_criterion = nn.SmoothL1Loss().cuda()
+
     def test_model_fn(batch, model, epoch):
         coords = batch['point_locs'].cuda()  # (N, 1 + 3), long, cuda, dimension 0 for batch_idx
         voxel_coords = batch['voxel_locs'].cuda()  # (M, 1 + 3), long, cuda
@@ -361,6 +363,11 @@ def model_fn_decorator(cfg, test=False):
 
             loss_inp['local_point_semantic'] = (local_point_semantic_scores, local_proposals_idx, labels)
             loss_inp['local_point_offset'] = (local_point_offset_preds, local_proposals_idx, coords_float, instance_info, instance_labels)
+
+        if ('point_reconstructed_coords' in ret.keys()) and (cfg.point_reconstruction_loss['activate']):
+            point_reconstructed_coords = ret['point_reconstructed_coords']
+
+            loss_inp['point_reconstructed_coords'] = (point_reconstructed_coords, coords_float)
 
         loss, loss_out, infos = loss_fn(loss_inp, epoch)
 
@@ -742,6 +749,11 @@ def model_fn_decorator(cfg, test=False):
             loss_out['local_point_offset_norm_loss'] = (local_point_offset_norm_loss, valid.sum())
             loss_out['local_point_offset_dir_loss'] = (local_point_offset_dir_loss, valid.sum())
 
+        if ('point_reconstructed_coords' in loss_inp.keys()) and (cfg.point_reconstruction_loss['activate']):
+            point_reconstructed_coords, coords_float = loss_inp['point_reconstructed_coords']
+
+            point_reconstruction_loss = point_reconstruction_criterion(point_reconstructed_coords, coords_float)
+
         '''total loss'''
         loss = cfg.loss_weights['point_semantic'] * semantic_loss + \
                cfg.loss_weights['point_offset_norm'] * offset_norm_loss + \
@@ -795,6 +807,9 @@ def model_fn_decorator(cfg, test=False):
             loss += cfg.loss_weights['local_point_semantic_loss'] * local_point_semantic_loss + \
                     cfg.loss_weights['local_point_offset_norm'] * local_point_offset_norm_loss + \
                     cfg.loss_weights['local_point_offset_dir'] * local_point_offset_dir_loss
+
+        if ('point_reconstructed_coords' in loss_inp.keys()) and (cfg.point_reconstruction_loss['activate']):
+            loss += cfg.loss_weights['point_reconstruction_loss'] * point_reconstruction_loss
 
         return loss, loss_out, infos
 
