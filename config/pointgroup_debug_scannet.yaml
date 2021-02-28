@@ -165,7 +165,7 @@ TRAIN:
   }
 
   instance_classifier: {
-    'activate': True,
+    'activate': False,
     'instance_num': 0,
     'epochs_per_instance': 10,
   }
