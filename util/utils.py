@@ -69,6 +69,7 @@ def checkpoint_restore(model, exp_path, exp_name, epoch=0, dist=False, f='', gpu
 
 
 def checkpoint_scene_restore(model, exp_path, exp_name, epoch=0, dist=False, f='', gpu=0):
+    scene_id = 0
     if not f:
         if epoch > 0:
             f = os.path.join(exp_path, exp_name + '-%09d'%epoch + '.pth')
