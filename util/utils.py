@@ -68,6 +68,39 @@ def checkpoint_restore(model, exp_path, exp_name, epoch=0, dist=False, f='', gpu
     return epoch + 1, f
 
 
+def checkpoint_scene_restore(model, exp_path, exp_name, epoch=0, dist=False, f='', gpu=0):
+    if not f:
+        if epoch > 0:
+            f = os.path.join(exp_path, exp_name + '-%09d'%epoch + '.pth')
+            assert os.path.isfile(f)
+        else:
+            f = sorted(glob.glob(os.path.join(exp_path, exp_name + '-*.pth')))
+            if len(f) > 0:
+                f = f[-1]
+                epoch = int(f[len(exp_path) + len(exp_name) + 7 : -4])
+                scene_id = int(f[len(exp_path) + len(exp_name) + 2 : -14])
+
+    if len(f) > 0:
+        map_location = {'cuda:0': 'cuda:{}'.format(gpu)} if gpu > 0 else None
+        checkpoint = torch.load(f, map_location=map_location)
+        for k, v in checkpoint.items():
+            if 'module.' in k:
+                checkpoint = {k[len('module.'):]: v for k, v in checkpoint.items()}
+            break
+
+        ### only load parameters without instance prediction head
+        model_dict = model.state_dict()
+        checkpoint_dict = {k: v for k, v in checkpoint.items() if (k in model_dict) and (not 'point_instance_classifier' in k)}
+        model_dict.update(checkpoint_dict)
+
+        if dist:
+            model.module.load_state_dict(model_dict)
+        else:
+            model.load_state_dict(model_dict)
+
+    return epoch + 1, scene_id, f
+
+
 def is_power2(num):
     return num != 0 and ((num & (num - 1)) == 0)
 
@@ -83,6 +116,20 @@ def checkpoint_save(model, exp_path, exp_name, epoch, save_freq=16):
     #remove previous checkpoints unless they are a power of 2 or a multiple of 16 to save disk space
     epoch = epoch - 1
     fd = os.path.join(exp_path, exp_name + '-%09d'%epoch + '.pth')
+    if os.path.isfile(fd):
+        if not is_multiple(epoch, save_freq) and not is_power2(epoch):
+            os.remove(fd)
+
+    return f
+
+
+def checkpoint_scene_save(model, exp_path, exp_name, epoch, scene_id, save_freq=16):
+    f = os.path.join(exp_path, exp_name + '-%04d'%scene_id + '-%09d'%epoch + '.pth')
+    torch.save(model.state_dict(), f)
+
+    #remove previous checkpoints unless they are a power of 2 or a multiple of 16 to save disk space
+    epoch = epoch - 1
+    fd = os.path.join(exp_path, exp_name + '-%04d'%scene_id + '-%09d'%epoch + '.pth')
     if os.path.isfile(fd):
         if not is_multiple(epoch, save_freq) and not is_power2(epoch):
             os.remove(fd)

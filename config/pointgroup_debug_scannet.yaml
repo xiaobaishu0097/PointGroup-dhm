@@ -117,6 +117,7 @@ TRAIN:
     'center_offset_dir_loss': 1.0,
     'point_reconstruction_loss': 1.0,
     'feature_semantic_regression_loss': 1.0,
+    'point_instance_id_loss': 1.0,
   }
 
   heatmap_sigma: 0
@@ -161,6 +162,12 @@ TRAIN:
     'occupancy_threshold': 0.75,
     'occupancy_threshold_shift': 1.0,
     'occupancy_filter_threshold': 0.3,
+  }
+
+  instance_classifier: {
+    'activate': True,
+    'instance_num': 0,
+    'epochs_per_instance': 10,
   }
 
   fg_thresh: 0.75

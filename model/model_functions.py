@@ -33,6 +33,7 @@ def model_fn_decorator(cfg, test=False):
     confidence_criterion = nn.BCELoss(reduction='none').cuda()
 
     point_reconstruction_criterion = nn.SmoothL1Loss().cuda()
+    point_instance_id_criterion = nn.CrossEntropyLoss(ignore_index=cfg.ignore_label).cuda()
 
     def test_model_fn(batch, model, epoch):
         coords = batch['point_locs'].cuda()  # (N, 1 + 3), long, cuda, dimension 0 for batch_idx
@@ -372,6 +373,11 @@ def model_fn_decorator(cfg, test=False):
             point_reconstructed_coords = ret['point_reconstructed_coords']
 
             loss_inp['point_reconstructed_coords'] = (point_reconstructed_coords, coords_float)
+
+        if ('instance_id_preds' in ret.keys()) and (cfg.instance_classifier['activate']):
+            instance_id_preds = ret['instance_id_preds']
+
+            loss_inp['instance_id_preds'] = (instance_id_preds, instance_labels)
 
         loss, loss_out, infos = loss_fn(loss_inp, epoch)
 
@@ -770,6 +776,15 @@ def model_fn_decorator(cfg, test=False):
 
             point_reconstruction_loss = point_reconstruction_criterion(point_reconstructed_coords, coords_float)
 
+            loss_out['point_reconstruction_loss'] = (point_reconstruction_loss, coords_float.shape[0])
+
+        if ('instance_id_preds' in loss_inp.keys()) and (cfg.instance_classifier['activate']):
+            instance_id_preds, instance_labels = loss_inp['instance_id_preds']
+
+            point_instance_id_loss = point_instance_id_criterion(instance_id_preds, instance_labels)
+
+            loss_out['point_instance_id_loss'] = (point_instance_id_loss, instance_labels.shape[0])
+
         ### ============================================================================================================
         '''total loss'''
         loss = cfg.loss_weights['point_semantic'] * semantic_loss + \
@@ -830,6 +845,9 @@ def model_fn_decorator(cfg, test=False):
 
         if ('point_reconstructed_coords' in loss_inp.keys()) and (cfg.point_reconstruction_loss['activate']):
             loss += cfg.loss_weights['point_reconstruction_loss'] * point_reconstruction_loss
+
+        if ('instance_id_preds' in loss_inp.keys()) and (cfg.instance_classifier['activate']):
+            loss += cfg.loss_weights['point_instance_id_loss'] * point_instance_id_loss
 
         return loss, loss_out, infos
 

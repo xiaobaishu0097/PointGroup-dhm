@@ -68,6 +68,8 @@ class PointGroup(nn.Module):
         self.stuff_norm_loss = cfg.stuff_norm_loss
         self.instance_triplet_loss = cfg.instance_triplet_loss
 
+        self.instance_classifier = cfg.instance_classifier
+
         norm_fn = functools.partial(nn.BatchNorm1d, eps=1e-4, momentum=0.1)
 
         if block_residual:
@@ -308,6 +310,14 @@ class PointGroup(nn.Module):
                     norm_fn(m),
                     nn.ReLU(),
                     nn.Linear(m, 3, bias=True),
+                )
+
+            if self.instance_classifier['activate']:
+                self.point_instance_classifier = nn.Sequential(
+                    nn.Linear(m, m, bias=True),
+                    norm_fn(m),
+                    nn.ReLU(),
+                    nn.Linear(m, self.instance_classifier['instance_num'], bias=True),
                 )
 
             self.apply(self.set_bn_init)
@@ -1306,6 +1316,11 @@ class PointGroup(nn.Module):
                 point_reconstructed_coords = self.point_reconstruction_coords(output_feats)
 
                 ret['point_reconstructed_coords'] = point_reconstructed_coords
+
+            if self.instance_classifier['activate']:
+                instance_id_preds = self.point_instance_classifier(output_feats)
+
+                ret['instance_id_preds'] = instance_id_preds
 
             if (epoch > self.prepare_epochs):
                 #### get prooposal clusters

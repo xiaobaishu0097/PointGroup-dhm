@@ -26,6 +26,14 @@ SEMANTIC_NAME2INDEX = {
 
 class ScannetDatast:
     def __init__(self, cfg, test=False):
+        if test:
+            self.test_split = cfg.split  # val or test
+            self.test_workers = cfg.test_workers
+            cfg.batch_size = 1
+
+        if cfg.instance_classifier['activate']:
+            cfg.batch_size = 1
+
         self.data_root = cfg.data_root
         self.dataset = cfg.dataset
         self.filename_suffix = cfg.filename_suffix
@@ -49,11 +57,6 @@ class ScannetDatast:
         self.remove_class = []
         for class_name in cfg.remove_class:
             self.remove_class.append(SEMANTIC_NAME2INDEX[class_name])
-
-        if test:
-            self.test_split = cfg.split  # val or test
-            self.test_workers = cfg.test_workers
-            cfg.batch_size = 1
 
     def trainLoader(self):
         self.train_file_names = sorted(glob.glob(os.path.join(self.data_root, self.dataset, 'train', '*' + self.filename_suffix)))
@@ -85,6 +88,18 @@ class ScannetDatast:
         test_set = list(np.arange(len(self.test_file_names)))
         self.test_data_loader = DataLoader(test_set, batch_size=1, collate_fn=self.testMerge, num_workers=self.test_workers,
                                            shuffle=False, drop_last=False, pin_memory=True)
+
+    def trainInstanceLoader(self, train_id):
+        self.train_instance_file_names = sorted(glob.glob(os.path.join(self.data_root, self.dataset, 'train', '*' + self.filename_suffix)))
+        self.train_instance_file_names = [self.train_instance_file_names[train_id]]
+        if not self.cache:
+            self.train_instance_files = [torch.load(i) for i in self.train_instance_file_names]
+
+        train_set = list(range(len(self.train_instance_file_names)))
+        self.train_instance_sampler = torch.utils.data.distributed.DistributedSampler(train_set) if self.dist else None
+        self.train_instance_data_loader = DataLoader(train_set, batch_size=self.batch_size, collate_fn=self.trainMerge, num_workers=self.train_workers,
+                                            shuffle=(self.train_sampler is None), sampler=self.train_sampler, drop_last=True, pin_memory=True,
+                                            worker_init_fn=self._worker_init_fn_)
 
     def _worker_init_fn_(self, worker_id):
         torch_seed = torch.initial_seed()
@@ -216,17 +231,6 @@ class ScannetDatast:
         instance_label_padded = np.concatenate((instance_label, instance_label_padding), axis=0)
 
         return xyz_padded, rgb_padded, label_padded, instance_label_padded
-
-    def positional_encoding_func(self, position, embed_dim):
-        pos_en = []
-        for pos_idx in range(position.shape[1]):
-            pos = position[:, pos_idx]
-            for d in range(embed_dim):
-                pos_en.append(np.sin(np.array(np.pi) * (2 ** d) * pos).unsqueeze(dim=1))
-                pos_en.append(np.cos(np.array(np.pi) * (2 ** d) * pos).unsqueeze(dim=1))
-        pos_en = torch.cat(pos_en, dim=1)
-
-        return pos_en
 
     def trainMerge(self, id):
         ret_dict = {}
