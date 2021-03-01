@@ -160,16 +160,7 @@ def get_coords_color(opt):
         pt_offsets = np.load(pt_offsets_file)
         xyz = xyz + 1 * pt_offsets[:, :]
 
-        remove_class = []
-        for class_name in ['table', 'desk']:
-            remove_class.append(SEMANTIC_NAME2INDEX[class_name])
 
-        for class_idx in remove_class:
-            valid_class_indx = (label != class_idx)
-            xyz = xyz[valid_class_indx, :]
-            rgb = rgb[valid_class_indx, :]
-            label = label[valid_class_indx]
-            inst_label = inst_label[valid_class_indx]
 
     elif opt.task == 'grid_gt':
         # sem_valid = (label != 100)

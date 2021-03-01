@@ -88,7 +88,11 @@ TRAIN:
     'activate': False,
   }
 
-  point_reconstruction_loss: {
+  point_xyz_reconstruction_loss: {
+    'activate': False,
+  }
+
+  point_rgb_reconstruction_loss: {
     'activate': False,
   }
 
@@ -115,7 +119,8 @@ TRAIN:
     'local_point_offset_dir': 1.0,
     'center_offset_norm_loss': 1.0,
     'center_offset_dir_loss': 1.0,
-    'point_reconstruction_loss': 1.0,
+    'point_xyz_reconstruction_loss': 1.0,
+    'point_rgb_reconstruction_loss': 1.0,
     'feature_semantic_regression_loss': 1.0,
     'point_instance_id_loss': 1.0,
   }
@@ -180,8 +185,6 @@ TRAIN:
   pretrain_path:
   pretrain_module: []
   fix_module: []
-
-  remove_class: []
 
   validation: True
 

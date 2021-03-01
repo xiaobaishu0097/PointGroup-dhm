@@ -370,10 +370,15 @@ def model_fn_decorator(cfg, test=False):
             loss_inp['local_point_semantic'] = (local_point_semantic_scores, local_proposals_idx, labels)
             loss_inp['local_point_offset'] = (local_point_offset_preds, local_proposals_idx, coords_float, instance_info, instance_labels)
 
-        if ('point_reconstructed_coords' in ret.keys()) and (cfg.point_reconstruction_loss['activate']):
+        if ('point_reconstructed_coords' in ret.keys()) and (cfg.point_xyz_reconstruction_loss['activate']):
             point_reconstructed_coords = ret['point_reconstructed_coords']
 
             loss_inp['point_reconstructed_coords'] = (point_reconstructed_coords, coords_float)
+
+        if ('point_reconstructed_colors' in ret.keys()) and (cfg.point_rgb_reconstruction_loss['activate']):
+            point_reconstructed_colors = ret['point_reconstructed_colors']
+
+            loss_inp['point_reconstructed_colors'] = (point_reconstructed_colors, rgb)
 
         if ('instance_id_preds' in ret.keys()) and (cfg.instance_classifier['activate']):
             instance_id_preds = ret['instance_id_preds']
@@ -772,12 +777,19 @@ def model_fn_decorator(cfg, test=False):
             loss_out['local_point_offset_norm_loss'] = (local_point_offset_norm_loss, valid.sum())
             loss_out['local_point_offset_dir_loss'] = (local_point_offset_dir_loss, valid.sum())
 
-        if ('point_reconstructed_coords' in loss_inp.keys()) and (cfg.point_reconstruction_loss['activate']):
+        if ('point_reconstructed_coords' in loss_inp.keys()) and (cfg.point_xyz_reconstruction_loss['activate']):
             point_reconstructed_coords, coords_float = loss_inp['point_reconstructed_coords']
 
-            point_reconstruction_loss = point_reconstruction_criterion(point_reconstructed_coords, coords_float)
+            point_xyz_reconstruction_loss = point_reconstruction_criterion(point_reconstructed_coords, coords_float)
 
-            loss_out['point_reconstruction_loss'] = (point_reconstruction_loss, coords_float.shape[0])
+            loss_out['point_xyz_reconstruction_loss'] = (point_xyz_reconstruction_loss, coords_float.shape[0])
+
+        if ('point_reconstructed_colors' in loss_inp.keys()) and (cfg.point_rgb_reconstruction_loss['activate']):
+            point_reconstructed_colors, rgb = loss_inp['point_reconstructed_colors']
+
+            point_rgb_reconstruction_loss = point_reconstruction_criterion(point_reconstructed_colors, rgb)
+
+            loss_out['point_rgb_reconstruction_loss'] = (point_rgb_reconstruction_loss, rgb.shape[0])
 
         if ('instance_id_preds' in loss_inp.keys()) and (cfg.instance_classifier['activate']):
             instance_id_preds, instance_labels = loss_inp['instance_id_preds']
@@ -844,8 +856,11 @@ def model_fn_decorator(cfg, test=False):
                     cfg.loss_weights['local_point_offset_norm'] * local_point_offset_norm_loss + \
                     cfg.loss_weights['local_point_offset_dir'] * local_point_offset_dir_loss
 
-        if ('point_reconstructed_coords' in loss_inp.keys()) and (cfg.point_reconstruction_loss['activate']):
-            loss += cfg.loss_weights['point_reconstruction_loss'] * point_reconstruction_loss
+        if ('point_reconstructed_coords' in loss_inp.keys()) and (cfg.point_xyz_reconstruction_loss['activate']):
+            loss += cfg.loss_weights['point_xyz_reconstruction_loss'] * point_xyz_reconstruction_loss
+
+        if ('point_reconstructed_colors' in loss_inp.keys()) and (cfg.point_rgb_reconstruction_loss['activate']):
+            loss += cfg.loss_weights['point_rgb_reconstruction_loss'] * point_rgb_reconstruction_loss
 
         if ('instance_id_preds' in loss_inp.keys()) and (cfg.instance_classifier['activate']):
             loss += cfg.loss_weights['point_instance_id_loss'] * point_instance_id_loss

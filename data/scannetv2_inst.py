@@ -54,10 +54,6 @@ class ScannetDatast:
         self.heatmap_sigma = cfg.heatmap_sigma
         self.min_IoU = cfg.min_IoU
 
-        self.remove_class = []
-        for class_name in cfg.remove_class:
-            self.remove_class.append(SEMANTIC_NAME2INDEX[class_name])
-
     def trainLoader(self):
         self.train_file_names = sorted(glob.glob(os.path.join(self.data_root, self.dataset, 'train', '*' + self.filename_suffix)))
         if not self.cache:
@@ -275,13 +271,6 @@ class ScannetDatast:
                 instance_label = SA.attach("shm://{}_instance_label".format(fn)).copy()
             else:
                 xyz_origin, rgb, label, instance_label = self.train_files[idx]
-
-            for class_idx in self.remove_class:
-                valid_class_indx = (label != class_idx)
-                xyz_origin = xyz_origin[valid_class_indx, :]
-                rgb = rgb[valid_class_indx, :]
-                label = label[valid_class_indx]
-                instance_label = instance_label[valid_class_indx]
 
             ### jitter / flip x / rotation
             xyz_middle = self.dataAugment(xyz_origin, True, True, True)

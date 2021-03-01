@@ -59,7 +59,8 @@ class PointGroup(nn.Module):
 
         self.pointnet_include_rgb = cfg.pointnet_include_rgb
         self.proposal_refinement = cfg.proposal_refinement
-        self.point_reconstruction_loss = cfg.point_reconstruction_loss
+        self.point_xyz_reconstruction_loss = cfg.point_xyz_reconstruction_loss
+        self.point_rgb_reconstruction_loss = cfg.point_rgb_reconstruction_loss
 
         self.pointnet_max_npoint = 8196
 
@@ -304,8 +305,16 @@ class PointGroup(nn.Module):
             )
             self.score_linear = nn.Linear(m, 1)
 
-            if self.point_reconstruction_loss['activate']:
+            if self.point_xyz_reconstruction_loss['activate']:
                 self.point_reconstruction_coords = nn.Sequential(
+                    nn.Linear(m, m, bias=True),
+                    norm_fn(m),
+                    nn.ReLU(),
+                    nn.Linear(m, 3, bias=True),
+                )
+
+            if self.point_rgb_reconstruction_loss['activate']:
+                self.point_reconstruction_colors = nn.Sequential(
                     nn.Linear(m, m, bias=True),
                     norm_fn(m),
                     nn.ReLU(),
@@ -1170,13 +1179,13 @@ class PointGroup(nn.Module):
             ret['center_preds'] = (center_preds, sampled_indexes)
             ret['center_semantic_preds'] = (center_semantic_preds, sampled_indexes)
             ret['center_offset_preds'] = (center_offset_preds, sampled_indexes)
-            
+
             ret['point_features'] = output_feats
 
         elif self.model_mode == 'Yu_refine_clustering_PointGroup':
             point_offset_preds = []
             point_semantic_scores = []
-            
+
             voxel_feats = pointgroup_ops.voxelization(input['pt_feats'], input['v2p_map'], input['mode'])  # (M, C), float, cuda
 
             input_ = spconv.SparseConvTensor(
@@ -1314,10 +1323,15 @@ class PointGroup(nn.Module):
             # only used to evaluate based on ground truth
             # point_offset_preds.append(input['point_offset_preds'])  # (N, 3), float32
 
-            if self.point_reconstruction_loss['activate']:
+            if self.point_xyz_reconstruction_loss['activate']:
                 point_reconstructed_coords = self.point_reconstruction_coords(output_feats)
 
                 ret['point_reconstructed_coords'] = point_reconstructed_coords
+
+            if self.point_rgb_reconstruction_loss['activate']:
+                point_reconstructed_colors = self.point_reconstruction_colors(output_feats)
+
+                ret['point_reconstructed_colors'] = point_reconstructed_colors
 
             if self.instance_classifier['activate']:
                 instance_id_preds = self.point_instance_classifier(output_feats)
@@ -1786,7 +1800,7 @@ class PointGroup(nn.Module):
         elif self.model_mode == 'Yu_local_proposal_PointGroup':
             point_offset_preds = []
             point_semantic_scores = []
-            
+
             local_point_semantic_scores = []
             local_point_offset_preds = []
 
