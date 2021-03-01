@@ -628,11 +628,13 @@ class PointGroup(nn.Module):
             )
 
             module_map = {
-                'module.input_conv': self.input_conv,
-                'module.unet': self.unet,
-                'module.output_layer': self.output_layer,
-                'module.proposal_unet': self.proposal_unet,
-                'module.proposal_outputlayer': self.proposal_outputlayer,
+                'input_conv': self.input_conv,
+                'unet': self.unet,
+                'output_layer': self.output_layer,
+                'point_offset': self.point_offset,
+                'point_semantic': self.point_semantic,
+                'proposal_unet': self.proposal_unet,
+                'proposal_outputlayer': self.proposal_outputlayer,
             }
 
         elif self.model_mode == 'Yu_stuff_recurrent_PointGroup':
@@ -1812,6 +1814,8 @@ class PointGroup(nn.Module):
 
             if (epoch > self.prepare_epochs):
                 #### get prooposal clusters
+                if not input['test']:
+                    point_semantic_preds = input['semantic_labels']
                 object_idxs = torch.nonzero(point_semantic_preds > 1).view(-1)
 
                 batch_idxs_ = batch_idxs[object_idxs]
@@ -1928,9 +1932,25 @@ class PointGroup(nn.Module):
                     ret['local_point_offset_preds'] = (local_point_offset_preds, local_proposals_idx)
 
             if (epoch == self.test_epoch) and input['test']:
+                if self.local_proposal['scatter_mean_target'] == False:
+                    local_point_semantic_score = self.point_semantic(proposals_point_features)
+                    local_point_offset_pred = self.point_offset(proposals_point_features)
+
+                    local_point_semantic_score = scatter_mean(
+                        local_point_semantic_score, local_proposals_idx[:, 1].cuda().long(), dim=0)
+
+                    point_semantic_score = self.point_semantic(output_feats)
+                    point_semantic_score[:local_point_semantic_score.shape[0], :] += local_point_semantic_score
+                    point_semantic_preds = point_semantic_score.max(1)[1]
+
+                    point_offset_pred = self.point_offset(output_feats)
+                    local_point_offset_pred = scatter_mean(
+                        local_point_offset_pred, local_proposals_idx[:, 1].cuda().long(), dim=0)
+                    point_offset_pred[:local_point_offset_pred.shape[0], :] = local_point_offset_pred
+
                 self.cluster_sets = 'Q'
                 scores, proposals_idx, proposals_offset = self.pointgroup_cluster_algorithm(
-                    coords, point_offset_preds[-1], point_semantic_preds,
+                    coords, point_offset_pred, point_semantic_preds,
                     batch_idxs, input['batch_size']
                 )
                 ret['proposal_scores'] = (scores, proposals_idx, proposals_offset)

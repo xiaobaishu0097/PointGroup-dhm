@@ -210,6 +210,7 @@ def model_fn_decorator(cfg, test=False):
             'batch_size': cfg.batch_size,
             'point_locs': coords,
             'test': False,
+            'semantic_labels': labels,
         }
 
         if 'Center' in cfg.model_mode.split('_'):
