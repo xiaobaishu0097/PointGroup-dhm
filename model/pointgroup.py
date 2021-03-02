@@ -1831,7 +1831,7 @@ class PointGroup(nn.Module):
 
             if (epoch > self.prepare_epochs):
                 #### get prooposal clusters
-                if not input['test']:
+                if not input['test'] and self.local_proposal['use_gt_semantic']:
                     point_semantic_preds = input['semantic_labels']
                 object_idxs = torch.nonzero(point_semantic_preds > 1).view(-1)
 

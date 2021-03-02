@@ -164,6 +164,7 @@ TRAIN:
     'local_proposal_full_scale': 128,
     'reuse_backbone_unet': False,
     'local_point_feature_discriminative_loss': True,
+    'use_gt_semantic': True,
   }
 
   stuff_recurrent: {
