@@ -171,7 +171,7 @@ class PointGroup(nn.Module):
             ### point prediction branch
             ### sparse 3D U-Net
             self.input_conv = spconv.SparseSequential(
-                spconv.SubMConv3d(m, m, kernel_size=3, padding=1, bias=False, indice_key='subm1')
+                spconv.SubMConv3d(input_c, m, kernel_size=3, padding=1, bias=False, indice_key='subm1')
             )
 
             self.unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, block_reps, block,
@@ -215,7 +215,15 @@ class PointGroup(nn.Module):
             )
 
             module_map = {
-                'module.point_offset': self.point_offset,
+                'input_conv': self.input_conv,
+                'unet': self.unet,
+                'output_layer': self.output_layer,
+                'point_offset': self.point_offset,
+                'point_semantic': self.point_semantic,
+                'pointnet_encoder': self.pointnet_encoder,
+                'center_pred': self.center_pred,
+                'center_semantic': self.center_semantic,
+                'center_offset': self.center_offset,
             }
 
         ### only the upper branch of our target model
