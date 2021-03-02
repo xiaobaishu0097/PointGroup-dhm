@@ -309,6 +309,14 @@ def get_coords_color(opt):
         label_pred_rgb = np.array(itemgetter(*SEMANTIC_NAMES[label_pred])(CLASS_COLOR))
         rgb = label_pred_rgb
 
+    elif (opt.task == 'center_predictions'):
+        assert opt.room_split != 'train'
+        sampled_index_file = os.path.join(opt.result_root, opt.room_split, 'center_prediction', opt.room_name + '.npy')
+        assert os.path.isfile(sampled_index_file), 'No semantic result - {}.'.format(sampled_index_file)
+        sampled_index = np.load(sampled_index_file).astype(np.int)  # 0~19
+        rgb = np.zeros_like(rgb)
+        rgb[sampled_index, :] = np.array([220, 0, 0])
+
     elif (opt.task == 'occupancy'):
         assert opt.room_split != 'train'
         point_occupancy_preds_file = os.path.join(opt.result_root, opt.room_split, 'point_occupancy_preds', opt.room_name + '.npy')

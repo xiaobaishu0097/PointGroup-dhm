@@ -1902,8 +1902,8 @@ class PointGroup(nn.Module):
                 )
 
                 #### cluster features
-                proposals = self.proposal_unet(input_feats)
-                proposals = self.proposal_outputlayer(proposals)
+                proposals = self.unet(input_feats)
+                proposals = self.output_layer(proposals)
                 proposals_point_features = proposals.features[inp_map.long()]  # (sumNPoint, C)
 
                 ### scatter mean point predictions

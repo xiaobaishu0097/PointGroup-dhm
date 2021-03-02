@@ -101,14 +101,14 @@ def model_fn_decorator(cfg, test=False):
             scores, proposals_idx, proposals_offset = ret['proposal_scores']
 
         if 'center_preds' in ret.keys():
-            center_preds = ret['center_preds']
+            center_preds, sampled_index = ret['center_preds']
             center_preds = center_preds.squeeze(dim=-1)
 
-            center_semantic_preds = ret['center_semantic_preds']
+            center_semantic_preds, _ = ret['center_semantic_preds']
             center_semantic_preds = center_semantic_preds.squeeze(dim=0)
             center_semantic_preds = center_semantic_preds.max(dim=1)[1]
 
-            center_offset_preds = ret['center_offset_preds'] # (B, 32**3, 3)
+            center_offset_preds, _ = ret['center_offset_preds'] # (B, 32**3, 3)
 
         ### only be used during debugging
         # instance_info = batch['point_instance_infos'].squeeze(dim=0).cuda()  # (N, 9), float32, cuda, (meanxyz, minxyz, maxxyz)
@@ -157,6 +157,8 @@ def model_fn_decorator(cfg, test=False):
 
                 preds['point_instance_labels'] = voxel_instance_labels[p2v_map.long()]
                 preds['point_occupancy_labels'] = voxel_occupancy_labels[p2v_map.long()]
+            if cfg.model_mode == 'Center_pointnet++_clustering':
+                preds['sampled_index'] = sampled_index
 
             preds['pt_semantic_labels'] = point_semantic_labels
             preds['pt_offset_labels'] = point_offset_labels

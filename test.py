@@ -70,7 +70,113 @@ def test(model, model_fn, dataset, epoch):
             preds = model_fn(batch, model, epoch)
             end1 = time.time() - start1
 
-            if not cfg.model_mode.endswith('_PointGroup'):
+            if cfg.model_mode == 'Center_pointnet++_clustering':
+                ##### get predictions (#1 semantic_pred, pt_offsets; #2 scores, proposals_pred)
+
+                pt_offsets = preds['pt_offsets']    # (N, 3), float32, cuda
+                pt_coords = preds['pt_coords']
+
+                semantic_scores = preds['semantic']  # (N, nClass=20) float32, cuda
+                semantic_pred = semantic_scores[-1].max(1)[1]  # (N) long, cuda
+
+                pt_semantic_labels = preds['pt_semantic_labels']
+                pt_offset_labels = preds['pt_offset_labels']
+
+                pt_valid_indx = (pt_semantic_labels > 1)
+
+                if 'pt_semantic_eval' not in point_evaluations:
+                    point_evaluations['pt_semantic_eval'] = {
+                        'True': 0,
+                        'False': 0,
+                    }
+                point_evaluations['pt_semantic_eval']['True'] += (
+                        semantic_pred[pt_valid_indx] == pt_semantic_labels[pt_valid_indx]
+                ).sum()
+                point_evaluations['pt_semantic_eval']['False'] += (
+                        semantic_pred[pt_valid_indx] != pt_semantic_labels[pt_valid_indx]
+                ).sum()
+
+                if 'pt_offset_eval' not in point_evaluations:
+                    point_evaluations['pt_offset_eval'] = []
+                point_evaluations['pt_offset_eval'].append(
+                    (
+                        torch.abs(
+                            pt_offsets[-1][pt_valid_indx] - pt_offset_labels[pt_valid_indx]).sum() / pt_valid_indx.sum()
+                    ).cpu().numpy()
+                )
+
+                # ======================================================================================================
+                # semantic_pred = semantic_scores  # (N) long, cuda
+                # valid_index = (semantic_pred != 20)
+                valid_index = (semantic_pred > 1)
+
+                # semantic_pred = semantic_scores
+                # semantic_pred[semantic_pred == -100] = 20
+                # valid_index = (semantic_pred != 20)
+                # semantic_pred[~valid_index] = 0
+
+                center_preds = torch.sigmoid(preds['center_preds'])
+                center_semantic_preds = preds['center_semantic_preds']
+                center_offset_preds = preds['center_offset_preds']
+                sampled_index = preds['sampled_index']
+                point_coords = batch['point_coords'].cuda()
+
+                center_coords = point_coords[sampled_index][:, :, :3]
+                topk_value_, topk_index_ = torch.topk(center_preds, candidate_num, dim=1)
+                topk_index_ = topk_index_[topk_value_ > true_threshold]
+
+                inst_cent_cand_xyz = center_coords[:, topk_index_, :] + center_offset_preds[:, topk_index_, :]
+                pt_cent_xyz = (pt_coords + pt_offsets[-1]).unsqueeze(dim=1)
+                # pt_cent_xyz = pt_coords.permute(1, 0, 2)
+                pt_inst_cent_dist = torch.sum(torch.abs(
+                    pt_cent_xyz.repeat(1, inst_cent_cand_xyz.shape[1], 1) - inst_cent_cand_xyz.repeat(pt_cent_xyz.shape[0], 1, 1)
+                ), dim=2)
+
+                ### set the category restristion during instance generation
+                inst_identity_mat = torch.nn.functional.one_hot(
+                    center_semantic_preds[topk_index_].to(torch.long), num_classes=cfg.classes
+                ).float()
+                pt_identity_mat = torch.nn.functional.one_hot(semantic_pred.to(torch.long), num_classes=cfg.classes).float()
+                pt_inst_cov_mat = torch.mm(pt_identity_mat, inst_identity_mat.t())
+                pt_inst_cov_mat[pt_inst_cov_mat == 0] = 1000
+                pt_inst_cent_dist = pt_inst_cent_dist * pt_inst_cov_mat
+                ### set the minimum distance threshold between point and grid point
+                valid_dist_thresh = pt_inst_cent_dist.min(dim=1)[0] > cfg.TEST_DIST_THRESH
+                pt_inst_cent = torch.nn.functional.one_hot(pt_inst_cent_dist.min(dim=1)[1], num_classes=topk_index_.shape[0])
+                pt_inst_cent[valid_dist_thresh, :] = 0
+                ### set the minimum point number threshold for each center
+                valid_inst_index = pt_inst_cent.sum(dim=0) > cfg.TEST_NPOINT_THRESH
+                pt_inst_cent = pt_inst_cent[:, valid_inst_index].permute(1, 0)
+                pt_inst_cent[:, ~valid_index] = 0
+
+                ### instance semantic label
+                # TODO: decide which way to get instance semantic id
+                ### 1. based on the majority point semantic labels in the instance
+                # inst_semantic_id = torch.mm(pt_inst_cent.float(), torch.nn.functional.one_hot(semantic_pred.to(torch.int64)).float())
+                # inst_semantic_id = inst_semantic_id.max(dim=1)[1]
+                ### 2. based on grid center semantic predictions
+                inst_semantic_id = center_semantic_preds[topk_index_]
+                inst_semantic_id = inst_semantic_id[valid_inst_index].long()
+
+                inst_semantic_id = torch.tensor([semantic_label_idx[i] for i in inst_semantic_id])
+
+                inst_scores = torch.ones((pt_inst_cent.shape[0]))
+
+                ninst = pt_inst_cent.shape[0]
+
+                ##### prepare for evaluation
+                if cfg.eval:
+                    pred_info = {}
+                    pred_info['conf'] = inst_scores.cpu().numpy()
+                    pred_info['label_id'] = inst_semantic_id.cpu().numpy()
+                    pred_info['mask'] = pt_inst_cent.cpu().numpy()
+                    gt_file = os.path.join(cfg.data_root, cfg.dataset, cfg.split + '_gt', test_scene_name + '.txt')
+                    gt2pred, pred2gt = eval.assign_instances_for_scan(test_scene_name, pred_info, gt_file)
+                    matches[test_scene_name] = {}
+                    matches[test_scene_name]['gt'] = gt2pred
+                    matches[test_scene_name]['pred'] = pred2gt
+
+            elif not cfg.model_mode.endswith('_PointGroup'):
                 grid_xyz = batch['grid_xyz'].cuda()
 
                 ##### get predictions (#1 semantic_pred, pt_offsets; #2 scores, proposals_pred)
@@ -320,6 +426,11 @@ def test(model, model_fn, dataset, epoch):
                 np.save(os.path.join(result_dir, 'grid_center_preds', test_scene_name + '.npy'), grid_center_preds)
                 np.save(os.path.join(result_dir, 'pt_offsets', test_scene_name + '.npy'), pt_offsets)
                 np.save(os.path.join(result_dir, 'semantic_pred', test_scene_name + '.npy'), semantic_pred[-1])
+
+            if cfg.eval_save['center_predictions']:
+                os.makedirs(os.path.join(result_dir, 'center_prediction'), exist_ok=True)
+                sampled_index = sampled_index[:, :].squeeze(dim=0).cpu().numpy()
+                np.save(os.path.join(result_dir, 'center_prediction', test_scene_name + '.npy'), sampled_index)
 
             if(epoch > cfg.prepare_epochs and cfg.eval_save['instance']):
                 f = open(os.path.join(result_dir, test_scene_name + '.txt'), 'w')
