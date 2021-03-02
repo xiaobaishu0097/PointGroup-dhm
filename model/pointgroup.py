@@ -629,22 +629,25 @@ class PointGroup(nn.Module):
                 nn.Linear(m, classes, bias=True),
             )
 
-            self.proposal_unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m], norm_fn, 2, block, indice_key_id=1,
-                                        backbone=False)
-            self.proposal_outputlayer = spconv.SparseSequential(
-                norm_fn(m),
-                nn.ReLU()
-            )
-
             module_map = {
                 'input_conv': self.input_conv,
                 'unet': self.unet,
                 'output_layer': self.output_layer,
                 'point_offset': self.point_offset,
                 'point_semantic': self.point_semantic,
-                'proposal_unet': self.proposal_unet,
-                'proposal_outputlayer': self.proposal_outputlayer,
             }
+
+            if not self.local_proposal['reuse_backbone_unet']:
+                self.proposal_unet = UBlock([m, 2 * m, 3 * m, 4 * m, 5 * m, 6 * m, 7 * m], norm_fn, 2, block,
+                                            indice_key_id=1, backbone=False)
+                self.proposal_outputlayer = spconv.SparseSequential(
+                    norm_fn(m),
+                    nn.ReLU()
+                )
+
+                module_map['proposal_unet'] = self.proposal_unet
+                module_map['proposal_outputlayer'] = self.proposal_outputlayer
+
 
         elif self.model_mode == 'Yu_stuff_recurrent_PointGroup':
             self.stuff_recurrent = cfg.stuff_recurrent
@@ -1902,9 +1905,15 @@ class PointGroup(nn.Module):
                 )
 
                 #### cluster features
-                proposals = self.unet(input_feats)
-                proposals = self.output_layer(proposals)
+                if self.local_proposal['reuse_backbone_unet']:
+                    proposals = self.unet(input_feats)
+                    proposals = self.output_layer(proposals)
+                else:
+                    proposals = self.proposal_unet(input_feats)
+                    proposals = self.proposal_outputlayer(proposals)
                 proposals_point_features = proposals.features[inp_map.long()]  # (sumNPoint, C)
+
+                ret['proposals_point_features'] = (proposals_point_features, local_proposals_idx)
 
                 ### scatter mean point predictions
                 if self.local_proposal['scatter_mean_target'] == 'prediction':

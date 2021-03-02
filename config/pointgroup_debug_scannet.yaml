@@ -30,7 +30,7 @@ STRUCTURE:
   block_reps: 2
   scatter_type: max
   unet3d_num_levels: 3
-  model_mode: Jiang_original_PointGroup
+  model_mode: Yu_local_proposal_PointGroup
   # Center_clustering or Jiang_original_PointGroup or Yu_refine_clustering_PointGroup
   # or Li_simple_backbone_PointGroup or Yu_refine_clustering_scorenet_PointGroup
   # or PointNet_point_prediction_test_PointGroup or Yu_rc_scorenet_confidence_PointGroup
@@ -119,10 +119,15 @@ TRAIN:
     'local_point_offset_dir': 1.0,
     'center_offset_norm_loss': 1.0,
     'center_offset_dir_loss': 1.0,
+    # two point-wise reconstruction loss
     'point_xyz_reconstruction_loss': 1.0,
     'point_rgb_reconstruction_loss': 1.0,
     'feature_semantic_regression_loss': 1.0,
     'point_instance_id_loss': 1.0,
+    # three local feature discriminative losses
+    'local_feature_variance_loss': 1.0,
+    'local_feature_distance_loss': 1.0,
+    'local_feature_instance_regression_loss': 0.001,
   }
 
   heatmap_sigma: 0
@@ -157,6 +162,8 @@ TRAIN:
     'scatter_mean_target': False, # feature or prediction
     'local_proposal_scale': 50,
     'local_proposal_full_scale': 128,
+    'reuse_backbone_unet': False,
+    'local_point_feature_discriminative_loss': True,
   }
 
   stuff_recurrent: {
@@ -217,6 +224,7 @@ TEST:
     'pt_offsets': False,
     'pt_shifted_coords': False,
     'occupancy': False,
+    'center_predictions': False,
   }
 
 DISTRIBUTE:

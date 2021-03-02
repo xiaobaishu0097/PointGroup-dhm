@@ -387,6 +387,11 @@ def model_fn_decorator(cfg, test=False):
 
             loss_inp['instance_id_preds'] = (instance_id_preds, instance_labels)
 
+        if ('proposals_point_features' in ret.keys()) and (cfg.local_proposal['local_point_feature_discriminative_loss']):
+            proposals_point_features, proposals_idx = ret['proposals_point_features']
+
+            loss_inp['local_point_feature_discriminative_loss'] = (proposals_point_features, proposals_idx, instance_labels)
+
         loss, loss_out, infos = loss_fn(loss_inp, epoch)
 
         ##### accuracy / visual_dict / meter_dict
@@ -800,6 +805,55 @@ def model_fn_decorator(cfg, test=False):
 
             loss_out['point_instance_id_loss'] = (point_instance_id_loss, instance_labels.shape[0])
 
+        if ('local_point_feature_discriminative_loss' in loss_inp.keys()) and (cfg.local_proposal['local_point_feature_discriminative_loss']):
+            proposals_point_features, proposals_idx, instance_labels = loss_inp['local_point_feature_discriminative_loss']
+
+            local_feature_variance_loss = torch.zeros(1).cuda()
+            local_feature_distance_loss = torch.zeros(1).cuda()
+            local_feature_instance_regression_loss = torch.zeros(1).cuda()
+
+            for proposal_idx in proposals_idx[:, 0].unique():
+                proposal_valid_idx = (proposals_idx[:, 0] == proposal_idx)
+                proposals_point_feature = proposals_point_features[proposal_valid_idx]
+                proposal_valid_idx = proposals_idx[proposal_valid_idx, 1].long()
+                instance_label = instance_labels[proposal_valid_idx]
+
+                ## variance_loss
+                valid_instance_index = (instance_label != cfg.ignore_label)
+                instance_features = scatter_mean(
+                    proposals_point_feature[valid_instance_index], instance_label[valid_instance_index], dim=0
+                )
+                local_feature_variance_loss += scatter_mean(
+                    torch.relu(
+                        torch.norm(
+                            instance_features[instance_label[valid_instance_index]] - \
+                            proposals_point_feature[valid_instance_index], p=2, dim=1
+                        ) - cfg.feature_variance_loss['variance_threshold']) ** 2,
+                    instance_label[valid_instance_index], dim=0
+                ).mean()
+
+                ## distance_loss
+                instance_features = scatter_mean(
+                    proposals_point_feature[valid_instance_index], instance_label[valid_instance_index], dim=0
+                )
+                instance_dist_mat = torch.norm(
+                    instance_features.unsqueeze(dim=0) - instance_features.unsqueeze(dim=1), dim=2)
+                instance_dist_mat = torch.relu(
+                    (2 * cfg.feature_distance_loss['distance_threshold'] - instance_dist_mat) ** 2)
+                instance_dist_mat[range(len(instance_dist_mat)), range(len(instance_dist_mat))] = 0
+                local_feature_distance_loss += instance_dist_mat.sum() / (
+                            instance_dist_mat.shape[0] * (instance_dist_mat.shape[0] - 1))
+
+                ## instance_regression_loss
+                instance_features = scatter_mean(
+                    proposals_point_feature[valid_instance_index], instance_label[valid_instance_index], dim=0
+                )
+                local_feature_instance_regression_loss += torch.mean(torch.norm(instance_features, p=2, dim=1), dim=0)
+
+            local_feature_variance_loss = local_feature_variance_loss / len(proposals_idx[:, 0].unique())
+            local_feature_distance_loss = local_feature_distance_loss / len(proposals_idx[:, 0].unique())
+            local_feature_instance_regression_loss = local_feature_instance_regression_loss / len(proposals_idx[:, 0].unique())
+
         ### ============================================================================================================
         '''total loss'''
         loss = cfg.loss_weights['point_semantic'] * semantic_loss + \
@@ -866,6 +920,11 @@ def model_fn_decorator(cfg, test=False):
 
         if ('instance_id_preds' in loss_inp.keys()) and (cfg.instance_classifier['activate']):
             loss += cfg.loss_weights['point_instance_id_loss'] * point_instance_id_loss
+
+        if ('local_point_feature_discriminative_loss' in loss_inp.keys()) and (cfg.local_proposal['local_point_feature_discriminative_loss']):
+            loss += cfg.loss_weights['local_feature_variance_loss'] * local_feature_variance_loss + \
+                    cfg.loss_weights['local_feature_distance_loss'] * local_feature_distance_loss + \
+                    cfg.loss_weights['local_feature_instance_regression_loss'] * local_feature_instance_regression_loss
 
         return loss, loss_out, infos
 
