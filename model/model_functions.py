@@ -833,21 +833,18 @@ def model_fn_decorator(cfg, test=False):
                 ).mean()
 
                 ## distance_loss
-                instance_features = scatter_mean(
-                    proposals_point_feature[valid_instance_index], instance_label[valid_instance_index], dim=0
-                )
+                instance_features = instance_features[instance_features != torch.zeros(32).cuda()]
+                if instance_features.ndimension() == 1:
+                    instance_features = instance_features.unsqueeze(dim=0)
                 instance_dist_mat = torch.norm(
                     instance_features.unsqueeze(dim=0) - instance_features.unsqueeze(dim=1), dim=2)
                 instance_dist_mat = torch.relu(
                     (2 * cfg.feature_distance_loss['distance_threshold'] - instance_dist_mat) ** 2)
                 instance_dist_mat[range(len(instance_dist_mat)), range(len(instance_dist_mat))] = 0
-                local_feature_distance_loss += instance_dist_mat.sum() / (
-                            instance_dist_mat.shape[0] * (instance_dist_mat.shape[0] - 1))
+                local_feature_distance_loss += instance_dist_mat.sum() / max(
+                    (instance_dist_mat.shape[0] * (instance_dist_mat.shape[0] - 1)), 1)
 
                 ## instance_regression_loss
-                instance_features = scatter_mean(
-                    proposals_point_feature[valid_instance_index], instance_label[valid_instance_index], dim=0
-                )
                 local_feature_instance_regression_loss += torch.mean(torch.norm(instance_features, p=2, dim=1), dim=0)
 
             local_feature_variance_loss = local_feature_variance_loss / len(proposals_idx[:, 0].unique())
