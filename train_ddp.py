@@ -5,6 +5,7 @@ from tensorboardX import SummaryWriter
 
 import torch.multiprocessing as mp
 import torch.distributed as dist
+import setproctitle
 
 import util.utils as utils
 
@@ -118,6 +119,8 @@ def eval_epoch(val_loader, model, model_fn, epoch):
 
 
 def main(gpu, cfgs):
+    setproctitle.setproctitle('python')
+    
     ##### config
     global cfg
     cfg = cfgs
