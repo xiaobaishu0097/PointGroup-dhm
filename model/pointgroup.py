@@ -164,19 +164,9 @@ class PointGroup(nn.Module):
             }
 
         elif self.model_mode == 'Center_pointnet++_clustering':
-            if self.backbone == 'pointnet':
-                #### PointNet backbone encoder
-                self.pointnet_encoder = pointnet.LocalPoolPointnet(
-                    c_dim=m, dim=6, hidden_dim=m, scatter_type=cfg.scatter_type, grid_resolution=32,
-                    plane_type='grid', padding=0.1, n_blocks=5
-                )
-            elif self.backbone == 'pointnet++_yanx':
-                self.pointnet_encoder = pointnetpp.PointNetPlusPlus(
-                    c_dim=self.m, include_rgb=self.pointnet_include_rgb
-                )
+            self.center_clustering = cfg.center_clustering
 
-            elif self.backbone == 'pointnet++_shi':
-                self.pointnet_encoder = backbone_pointnet2(output_dim=m)
+            self.pointnet_encoder = backbone_pointnet2(output_dim=m)
 
             ### point prediction branch
             ### sparse 3D U-Net
@@ -1129,28 +1119,6 @@ class PointGroup(nn.Module):
             semantic_scores = []
             point_offset_preds = []
 
-            point_feats = []
-            sampled_indexes = []
-            for sample_indx in range(1, len(batch_offsets)):
-                coords_input = coords[batch_offsets[sample_indx - 1]:batch_offsets[sample_indx], :].unsqueeze(dim=0)
-                rgb_input = rgb[batch_offsets[sample_indx - 1]:batch_offsets[sample_indx], :].unsqueeze(dim=0)
-
-                sampled_index = pointnet2_utils.furthest_point_sample(
-                    coords_input[:, :, :3].contiguous(), self.pointnet_max_npoint).squeeze(dim=0).long()
-                sampled_indexes.append(sampled_index.unsqueeze(dim=0))
-
-                sampled_coords_input = coords_input[:, sampled_index, :]
-                sampled_rgb_input = rgb_input[:, sampled_index, :]
-
-                point_feat, _ = self.pointnet_encoder(
-                    sampled_coords_input,
-                    torch.cat((sampled_rgb_input, sampled_coords_input), dim=2).transpose(1, 2).contiguous()
-                )
-                point_feats.append(point_feat)
-
-            point_feats = torch.cat(point_feats, dim=0)
-            sampled_indexes = torch.cat(sampled_indexes, dim=0)
-
             voxel_feats = pointgroup_ops.voxelization(input['pt_feats'], input['v2p_map'], input['mode'])  # (M, C), float, cuda
 
             input_ = spconv.SparseConvTensor(
@@ -1170,6 +1138,40 @@ class PointGroup(nn.Module):
             point_semantic_preds = semantic_scores[0].max(1)[1]
             #### point offset prediction
             point_offset_preds.append(self.point_offset(output_feats))  # (N, 3), float32
+
+            point_feats = []
+            sampled_indexes = []
+            for sample_indx in range(1, len(batch_offsets)):
+                coords_input = coords[batch_offsets[sample_indx - 1]:batch_offsets[sample_indx], :].unsqueeze(dim=0)
+                rgb_input = rgb[batch_offsets[sample_indx - 1]:batch_offsets[sample_indx], :].unsqueeze(dim=0)
+                if not input['test'] and self.center_clustering['use_gt_semantic']:
+                    point_semantic_preds = input['semantic_labels']
+                point_semantic_pred = point_semantic_preds[batch_offsets[sample_indx - 1]:batch_offsets[sample_indx]]
+                for semantic_idx in point_semantic_pred.unique():
+                    if semantic_idx < 2:
+                        continue
+                    semantic_point_idx = (point_semantic_pred == semantic_idx).nonzero().squeeze(dim=1)
+
+                    sampled_index = pointnet2_utils.furthest_point_sample(
+                        coords_input[:, semantic_point_idx, :3].contiguous(), self.pointnet_max_npoint
+                    ).squeeze(dim=0).long()
+                    sampled_index = semantic_point_idx[sampled_index]
+                    sampled_indexes.append(torch.cat(
+                        (torch.LongTensor(sampled_index.shape[0], 1).fill_(sample_indx).cuda(),
+                         sampled_index.unsqueeze(dim=1)), dim=1)
+                    )
+
+                    sampled_coords_input = coords_input[:, sampled_index, :]
+                    sampled_rgb_input = rgb_input[:, sampled_index, :]
+
+                    point_feat, _ = self.pointnet_encoder(
+                        sampled_coords_input,
+                        torch.cat((sampled_rgb_input, sampled_coords_input), dim=2).transpose(1, 2).contiguous()
+                    )
+                    point_feats.append(point_feat)
+
+            point_feats = torch.cat(point_feats, dim=0)
+            sampled_indexes = torch.cat(sampled_indexes, dim=0)
 
             ### center prediction
             center_preds = self.center_pred(point_feats)

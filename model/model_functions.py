@@ -510,25 +510,27 @@ def model_fn_decorator(cfg, test=False):
                     instance_center = instance_centers[instance_centers[:, 0] == (batch_index - 1), 1:]
                     instance_size = instance_sizes[instance_centers[:, 0] == (batch_index - 1), 1:]
 
+                    sampled_index = sampled_indexes[sampled_indexes[:, 0] == batch_index, 1]
                     center_heatmap = generate_adaptive_heatmap(
-                        point_coord[sampled_indexes[batch_index - 1], :].double().cpu(), instance_center.cpu(),
+                        point_coord[sampled_index, :].double().cpu(), instance_center.cpu(),
                         instance_size.cpu(), min_IoU=cfg.min_IoU
                     )['heatmap']
 
-                    center_heatmaps.append(center_heatmap.unsqueeze(dim=0).cuda())
+                    center_heatmaps.append(center_heatmap.cuda())
 
                     '''center semantic loss'''
                     point_semantic_label = point_semantic_labels[batch_offsets[batch_index - 1]:batch_offsets[batch_index]]
-                    center_semantic_labels.append(point_semantic_label[sampled_indexes[batch_index - 1]].unsqueeze(dim=0))
+                    center_semantic_labels.append(point_semantic_label[sampled_index])
 
                     '''center offset loss'''
                     center_instance_info = point_instance_info[batch_offsets[batch_index - 1]:batch_offsets[batch_index]]
-                    center_instance_info = center_instance_info[sampled_indexes[batch_index - 1]]
+                    center_instance_info = center_instance_info[sampled_index]
                     center_coord = point_coords[batch_offsets[batch_index - 1]:batch_offsets[batch_index]]
-                    center_coord = center_coord[sampled_indexes[batch_index - 1]]
-                    center_offset_pred = center_offset_preds[batch_index - 1, :]
+                    center_coord = center_coord[sampled_index]
+                    center_offset_preds = center_offset_preds.view(-1, 3)
+                    center_offset_pred = center_offset_preds[sampled_indexes[:, 0] == batch_index, :]
                     instance_label = instance_labels[batch_offsets[batch_index - 1]:batch_offsets[batch_index]]
-                    instance_label = instance_label[sampled_indexes[batch_index - 1]]
+                    instance_label = instance_label[sampled_index]
 
                     gt_offsets = center_instance_info[:, 0:3] - center_coord  # (8196, 3)
                     center_diff = center_offset_pred - gt_offsets  # (N, 3)
@@ -543,15 +545,12 @@ def model_fn_decorator(cfg, test=False):
                     direction_diff = - (gt_offsets_ * center_offsets_).sum(-1)  # (N)
                     center_offset_dir_loss += torch.sum(direction_diff * valid) / (torch.sum(valid) + 1e-6)
 
-
-                center_heatmaps = torch.cat(center_heatmaps, dim=0).to(torch.float32).unsqueeze(dim=-1)
-                center_probs_loss = center_criterion(center_preds, center_heatmaps)
+                center_heatmaps = torch.cat(center_heatmaps, dim=0).to(torch.float32)
+                center_probs_loss = center_criterion(center_preds.view(-1), center_heatmaps)
 
                 center_semantic_labels = torch.cat(center_semantic_labels, dim=0)
-                batch_size = center_semantic_preds.shape[0]
                 center_semantic_loss = center_semantic_criterion(
-                    center_semantic_preds.view(batch_size * 8196, 20),
-                    center_semantic_labels.view(batch_size * 8196)
+                    center_semantic_preds.view(-1, 20), center_semantic_labels
                 )
                 center_offset_norm_loss = center_offset_norm_loss / cfg.batch_size
                 center_offset_dir_loss = center_offset_dir_loss / cfg.batch_size

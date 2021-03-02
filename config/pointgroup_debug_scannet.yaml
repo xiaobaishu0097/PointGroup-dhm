@@ -183,6 +183,10 @@ TRAIN:
     'epochs_per_instance': 10,
   }
 
+  center_clustering: {
+    'use_gt_semantic': True,
+  }
+
   fg_thresh: 0.75
   bg_thresh: 0.25
 
