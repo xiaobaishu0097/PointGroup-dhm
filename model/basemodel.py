@@ -1,9 +1,6 @@
-import time
-
 import torch
 import torch.nn as nn
 from torch_scatter import scatter_mean
-import numpy as np
 import spconv
 import functools
 import sys, os
@@ -12,17 +9,9 @@ sys.path.append('../')
 
 from lib.pointgroup_ops.functions import pointgroup_ops
 from util import utils
-
-from model.encoder import pointnet, pointnetpp
-from model.encoder.unet3d import UNet3D
-from model.decoder import decoder
 from model.common import coordinate2index, normalize_3d_coordinate
 
-from model.components import ResidualBlock, VGGBlock, UBlock
-from model.components import backbone_pointnet2, backbone_pointnet2_deeper
-
-from model.Pointnet2.pointnet2 import pointnet2_utils
-from model.components import ProposalTransformer, euclidean_dist
+from model.components import ResidualBlock, VGGBlock
 
 
 class BaseModel(nn.Module):
