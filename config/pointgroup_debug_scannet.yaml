@@ -192,7 +192,7 @@ TRAIN:
   }
 
   voxel_center_prediction: {
-    'activate': True,
+    'activate': False,
   }
 
   fg_thresh: 0.75
