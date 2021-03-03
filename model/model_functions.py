@@ -392,6 +392,19 @@ def model_fn_decorator(cfg, test=False):
 
             loss_inp['local_point_feature_discriminative_loss'] = (proposals_point_features, proposals_idx, instance_labels)
 
+        if ('voxel_center_preds' in ret.keys()) and (cfg.voxel_center_prediction['activate']):
+            voxel_center_preds = ret['voxel_center_preds']
+            voxel_center_offset_preds = ret['voxel_center_offset_preds']
+            voxel_center_semantic_preds = ret['voxel_center_semantic_preds']
+
+            voxel_center_probs_labels = batch['voxel_center_probs_labels'].cuda()
+            loss_inp['voxel_center_loss'] = (voxel_center_preds, voxel_center_probs_labels)
+            voxel_center_offset_labels = batch['voxel_center_offset_labels'].cuda()
+            voxel_center_instance_labels = batch['voxel_center_instance_labels'].cuda()
+            loss_inp['voxel_center_offset_loss'] = (voxel_center_offset_preds, voxel_center_offset_labels, voxel_center_instance_labels)
+            voxel_center_semantic_labels = batch['voxel_center_semantic_labels'].cuda()
+            loss_inp['voxel_center_semantic_loss'] = (voxel_center_semantic_preds, voxel_center_semantic_labels)
+
         loss, loss_out, infos = loss_fn(loss_inp, epoch)
 
         ##### accuracy / visual_dict / meter_dict
@@ -850,6 +863,31 @@ def model_fn_decorator(cfg, test=False):
             local_feature_distance_loss = local_feature_distance_loss / len(proposals_idx[:, 0].unique())
             local_feature_instance_regression_loss = local_feature_instance_regression_loss / len(proposals_idx[:, 0].unique())
 
+        if ('voxel_center_loss' in loss_inp.keys()) and (cfg.voxel_center_prediction['activate']):
+            voxel_center_preds, voxel_center_probs_labels = loss_inp['voxel_center_loss']
+            voxel_center_loss = center_criterion(voxel_center_preds.view(-1), voxel_center_probs_labels)
+            loss_out['voxel_center_loss'] = (voxel_center_loss, voxel_center_probs_labels.shape[0])
+
+            voxel_center_offset_preds, voxel_center_offset_labels, voxel_center_instance_labels = loss_inp['voxel_center_offset_loss']
+            voxel_diff = voxel_center_offset_preds - voxel_center_offset_labels  # (N, 3)
+            voxel_dist = torch.sum(torch.abs(voxel_diff), dim=-1)  # (N)
+            valid = (voxel_center_instance_labels != cfg.ignore_label).float()
+            voxel_center_offset_norm_loss = torch.sum(voxel_dist * valid) / (torch.sum(valid) + 1e-6)
+
+            voxel_gt_offsets_norm = torch.norm(voxel_center_offset_labels, p=2, dim=1)  # (N), float
+            voxel_gt_offsets_ = voxel_center_offset_labels / (voxel_gt_offsets_norm.unsqueeze(-1) + 1e-8)
+            voxel_offsets_norm = torch.norm(voxel_center_offset_preds, p=2, dim=1)
+            voxel_offsets_ = voxel_center_offset_preds / (voxel_offsets_norm.unsqueeze(-1) + 1e-8)
+            voxel_direction_diff = - (voxel_gt_offsets_ * voxel_offsets_).sum(-1)  # (N)
+            voxel_center_offset_dir_loss = torch.sum(voxel_direction_diff * valid) / (torch.sum(valid) + 1e-6)
+
+            loss_out['voxel_center_offset_norm_loss'] = (voxel_center_offset_norm_loss, valid.shape[0])
+            loss_out['voxel_center_offset_dir_loss'] = (voxel_center_offset_dir_loss, valid.shape[0])
+
+            voxel_center_semantic_preds, voxel_center_semantic_labels = loss_inp['voxel_center_semantic_loss']
+            voxel_center_semantic_loss = center_semantic_criterion(voxel_center_semantic_preds, voxel_center_semantic_labels)
+            loss_out['voxel_center_semantic_loss'] = (voxel_center_semantic_loss, voxel_center_semantic_labels.shape[0])
+
         ### ============================================================================================================
         '''total loss'''
         loss = cfg.loss_weights['point_semantic'] * semantic_loss + \
@@ -921,6 +959,12 @@ def model_fn_decorator(cfg, test=False):
             loss += cfg.loss_weights['local_feature_variance_loss'] * local_feature_variance_loss + \
                     cfg.loss_weights['local_feature_distance_loss'] * local_feature_distance_loss + \
                     cfg.loss_weights['local_feature_instance_regression_loss'] * local_feature_instance_regression_loss
+
+        if ('voxel_center_loss' in loss_inp.keys()) and (cfg.voxel_center_prediction['activate']):
+            loss += cfg.loss_weights['voxel_center_loss'] * voxel_center_loss + \
+                    cfg.loss_weights['voxel_center_offset_norm_loss'] * voxel_center_offset_norm_loss + \
+                    cfg.loss_weights['voxel_center_offset_dir_loss'] * voxel_center_offset_dir_loss + \
+                    cfg.loss_weights['voxel_center_semantic_loss'] * voxel_center_semantic_loss
 
         return loss, loss_out, infos
 

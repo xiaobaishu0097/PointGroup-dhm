@@ -54,6 +54,8 @@ class ScannetDatast:
         self.heatmap_sigma = cfg.heatmap_sigma
         self.min_IoU = cfg.min_IoU
 
+        self.voxel_center_prediction = cfg.voxel_center_prediction
+
     def trainLoader(self):
         self.train_file_names = sorted(glob.glob(os.path.join(self.data_root, self.dataset, 'train', '*' + self.filename_suffix)))
         if not self.cache:
@@ -493,6 +495,29 @@ class ScannetDatast:
             ret_dict['voxel_instance_labels'] = voxel_instance_labels
             ret_dict['voxel_occupancy_labels'] = voxel_occupancy_labels
 
+        if self.voxel_center_prediction['activate']:
+            voxel_coords = point_coords[v2p_map[:, 1].long(), :3]
+            voxel_center_probs = []
+            for batch_idx in range(self.batch_size):
+                voxel_batch_idx = (voxel_locs[:, 0] == batch_idx)
+                voxel_center_probability = generate_adaptive_heatmap(
+                    voxel_coords[voxel_batch_idx].double(), instance_centers[instance_centers[:, 0] == batch_idx, 1:],
+                    instance_sizes[instance_sizes[:, 0] == batch_idx, 1:], min_IoU=self.min_IoU,
+                )['heatmap']
+                voxel_center_probs.append(voxel_center_probability)
+            voxel_center_probs_labels = torch.cat(voxel_center_probs).to(torch.float32)
+
+            voxel_instance_info = point_instance_infos[v2p_map[:, 1].long(), :]
+            voxel_center_offset_labels = voxel_instance_info[:, :3] - voxel_coords
+
+            voxel_center_semantic_labels = point_semantic_labels[v2p_map[:, 1].long()]
+            voxel_center_instance_labels = point_instance_labels[v2p_map[:, 1].long()]
+
+            ret_dict['voxel_center_probs_labels'] = voxel_center_probs_labels
+            ret_dict['voxel_center_offset_labels'] = voxel_center_offset_labels
+            ret_dict['voxel_center_semantic_labels'] = voxel_center_semantic_labels
+            ret_dict['voxel_center_instance_labels'] = voxel_center_instance_labels
+
         # variables for point-wise predictions
         ret_dict['voxel_locs'] = voxel_locs  # (nVoxel, 4)
         ret_dict['p2v_map'] = p2v_map  # (N)
@@ -767,6 +792,29 @@ class ScannetDatast:
 
             ret_dict['voxel_instance_labels'] = voxel_instance_labels
             ret_dict['voxel_occupancy_labels'] = voxel_occupancy_labels
+
+        if self.voxel_center_prediction['activate']:
+            voxel_coords = point_coords[v2p_map[:, 1].long(), :3]
+            voxel_center_probs = []
+            for batch_idx in range(self.batch_size):
+                voxel_batch_idx = (voxel_locs[:, 0] == batch_idx)
+                voxel_center_probability = generate_adaptive_heatmap(
+                    voxel_coords[voxel_batch_idx].double(), instance_centers[instance_centers[:, 0] == batch_idx, 1:],
+                    instance_sizes[instance_sizes[:, 0] == batch_idx, 1:], min_IoU=self.min_IoU,
+                )['heatmap']
+                voxel_center_probs.append(voxel_center_probability)
+            voxel_center_probs_labels = torch.cat(voxel_center_probs).to(torch.float32)
+
+            voxel_instance_info = point_instance_infos[v2p_map[:, 1].long(), :]
+            voxel_center_offset_labels = voxel_instance_info[:, :3] - voxel_coords
+
+            voxel_center_semantic_labels = point_semantic_labels[v2p_map[:, 1].long()]
+            voxel_center_instance_labels = point_instance_labels[v2p_map[:, 1].long()]
+
+            ret_dict['voxel_center_probs_labels'] = voxel_center_probs_labels
+            ret_dict['voxel_center_offset_labels'] = voxel_center_offset_labels
+            ret_dict['voxel_center_semantic_labels'] = voxel_center_semantic_labels
+            ret_dict['voxel_center_instance_labels'] = voxel_center_instance_labels
 
         # variables for point-wise predictions
         ret_dict['voxel_locs'] = voxel_locs  # (nVoxel, 4)

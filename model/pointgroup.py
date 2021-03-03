@@ -70,6 +70,7 @@ class PointGroup(nn.Module):
         self.instance_triplet_loss = cfg.instance_triplet_loss
 
         self.instance_classifier = cfg.instance_classifier
+        self.voxel_center_prediction = cfg.voxel_center_prediction
 
         norm_fn = functools.partial(nn.BatchNorm1d, eps=1e-4, momentum=0.1)
 
@@ -327,15 +328,35 @@ class PointGroup(nn.Module):
                     nn.Linear(m, self.instance_classifier['instance_num'], bias=True),
                 )
 
+            if self.voxel_center_prediction['activate']:
+                self.voxel_center_pred = nn.Sequential(
+                    nn.Linear(m, m, bias=True),
+                    norm_fn(m),
+                    nn.ReLU(),
+                    nn.Linear(m, 1, bias=True),
+                )
+                self.voxel_center_offset = nn.Sequential(
+                    nn.Linear(m, m, bias=True),
+                    norm_fn(m),
+                    nn.ReLU(),
+                    nn.Linear(m, 3, bias=True),
+                )
+                self.voxel_center_semantic = nn.Sequential(
+                    nn.Linear(m, m, bias=True),
+                    norm_fn(m),
+                    nn.ReLU(),
+                    nn.Linear(m, classes, bias=True),
+                )
+
             self.apply(self.set_bn_init)
 
             module_map = {
-                'module.input_conv': self.input_conv,
-                'module.unet': self.unet,
-                'module.output_layer': self.output_layer,
-                'module.score_unet': self.score_unet,
-                'module.score_outputlayer': self.score_outputlayer,
-                'module.score_linear': self.score_linear
+                'input_conv': self.input_conv,
+                'unet': self.unet,
+                'output_layer': self.output_layer,
+                'score_unet': self.score_unet,
+                'score_outputlayer': self.score_outputlayer,
+                'score_linear': self.score_linear
             }
 
         elif self.model_mode == 'Fan_occupancy_PointGroup':
@@ -1335,6 +1356,15 @@ class PointGroup(nn.Module):
             point_offset_preds.append(point_offset_pred)  # (N, 3), float32
             # only used to evaluate based on ground truth
             # point_offset_preds.append(input['point_offset_preds'])  # (N, 3), float32
+
+            if self.voxel_center_prediction['activate']:
+                voxel_center_preds = self.voxel_center_pred(output.features)
+                voxel_center_offset_preds = self.voxel_center_offset(output.features)
+                voxel_center_semantic_preds = self.voxel_center_semantic(output.features)
+
+                ret['voxel_center_preds'] = voxel_center_preds
+                ret['voxel_center_offset_preds'] = voxel_center_offset_preds
+                ret['voxel_center_semantic_preds'] = voxel_center_semantic_preds
 
             if self.point_xyz_reconstruction_loss['activate']:
                 point_reconstructed_coords = self.point_reconstruction_coords(output_feats)
