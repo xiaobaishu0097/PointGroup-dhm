@@ -66,10 +66,6 @@ TRAIN:
     'num_sampled_points': 128,
   }
 
-  stuff_norm_loss: {
-    'activate': False,
-  }
-
   feature_semantic_regression_loss: {
     'activate': False,
   }
