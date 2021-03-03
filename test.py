@@ -14,6 +14,9 @@ import os, glob
 import util.utils as utils
 import util.eval as eval
 
+from util.class_finder import model_class
+from model.model_functions import model_fn_decorator
+
 def init():
     global cfg
     from util.config import get_parser
@@ -523,12 +526,7 @@ if __name__ == '__main__':
     logger.info('=> creating model ...')
     logger.info('Classes: {}'.format(cfg.classes))
 
-    if model_name == 'pointgroup':
-        from model.pointgroup import PointGroup as Network
-        from model.model_functions import model_fn_decorator
-    else:
-        print("Error: no model version " + model_name)
-        exit(0)
+    Network = model_class(cfg.model_name)
     model = Network(cfg)
 
     use_cuda = torch.cuda.is_available()

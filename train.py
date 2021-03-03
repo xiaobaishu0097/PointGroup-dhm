@@ -12,6 +12,9 @@ import numpy as np
 
 import util.utils as utils
 
+from util.class_finder import model_class
+from model.model_functions import model_fn_decorator
+
 def init():
     # config
     global cfg
@@ -157,13 +160,7 @@ if __name__ == '__main__':
     ##### model
     logger.info('=> creating model ...')
 
-    if model_name == 'pointgroup':
-        from model.pointgroup import PointGroup as Network
-        from model.model_functions import model_fn_decorator
-    else:
-        print("Error: no model - " + model_name)
-        exit(0)
-
+    Network = model_class(cfg.model_name)
     model = Network(cfg)
 
     use_cuda = torch.cuda.is_available()

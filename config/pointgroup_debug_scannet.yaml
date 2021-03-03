@@ -1,7 +1,7 @@
 GENERAL:
   task: train  # train, test
   manual_seed: 123
-  model_dir: model/pointgroup/pointgroup.py
+  model_dir: model/reproduced_methods/pointgroup.py
   dataset_dir: data/scannetv2_inst.py
   distributed: True
 
@@ -23,7 +23,7 @@ DATA:
   mode: 4 # 4=mean
 
 STRUCTURE:
-  model_name: pointgroup
+  model_name: PointGroup
   backbone: pointnet++_shi # pointnet, pointnet++_yanx, pointnet++_shi
   m: 32 # 16 or 32
   block_residual: True
