@@ -1,13 +1,9 @@
 import torch
 import torch.nn as nn
 import spconv
-import sys
-
-sys.path.append('../../')
 
 from lib.pointgroup_ops.functions import pointgroup_ops
 from util import utils
-
 from model.components import UBlock
 from model.basemodel import BaseModel
 
