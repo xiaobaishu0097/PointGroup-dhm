@@ -16,19 +16,12 @@ from model.loss_functions import compute_offset_norm_loss, compute_offset_dir_lo
 def model_fn_decorator(cfg, test=False):
     #### criterion
     semantic_criterion = nn.CrossEntropyLoss(ignore_index=cfg.ignore_label).cuda()
-    stuff_criterion = nn.CrossEntropyLoss(ignore_index=cfg.ignore_label).cuda()
-
-    semantic_center_criterion = CenterLoss(num_classes=cfg.classes, feat_dim=cfg.m, use_gpu=True)
-    instance_triplet_criterion = TripletLoss(margin=cfg.instance_triplet_loss['margin'])
 
     if cfg.offset_norm_criterion == 'l2':
         offset_norm_criterion = nn.MSELoss().cuda()
 
     center_criterion = WeightedFocalLoss(alpha=cfg.focal_loss['alpha'], gamma=cfg.focal_loss['gamma']).cuda()
     center_semantic_criterion = nn.CrossEntropyLoss(ignore_index=cfg.ignore_label).cuda()
-    center_offset_criterion = nn.L1Loss().cuda()
-
-    center_query_criterion = nn.BCEWithLogitsLoss().cuda()
 
     score_criterion = nn.BCELoss(reduction='none').cuda()
     confidence_criterion = nn.BCELoss(reduction='none').cuda()
@@ -60,10 +53,6 @@ def model_fn_decorator(cfg, test=False):
             ori_coords = coords_float[:, :3]
 
         coords_float = coords_float[:, :3]
-
-        # voxel_feats = pointgroup_ops.voxelization(feats, v2p_map, cfg.mode)  # (M, C), float, cuda
-        #
-        # input_ = spconv.SparseConvTensor(voxel_feats, voxel_coords.int(), spatial_shape, cfg.batch_size)
 
         ### only be used during debugging
         instance_info = batch['point_instance_infos'].squeeze(dim=0).cuda()  # (N, 9), float32, cuda, (meanxyz, minxyz, maxxyz)
