@@ -117,8 +117,6 @@ class CenterSemanticSampled(BaseModel):
         point_feats = []
         grid_feats = []
 
-        queries_feats = []
-
         for sample_indx in range(1, len(batch_offsets)):
             coords_input = coords[batch_offsets[sample_indx - 1]:batch_offsets[sample_indx], :].unsqueeze(dim=0)
             rgb_input = rgb[batch_offsets[sample_indx - 1]:batch_offsets[sample_indx], :].unsqueeze(dim=0)
@@ -135,16 +133,7 @@ class CenterSemanticSampled(BaseModel):
             )
             grid_feats.append(self.generate_grid_features(sampled_coords_input, point_feat))
 
-            if not input['test']:
-                decoder_input = {'grid': grid_feats[-1]}
-                center_queries_coords_input = input['center_queries_coords'][
-                                              input['center_queries_batch_offsets'][sample_indx - 1]:
-                                              input['center_queries_batch_offsets'][sample_indx], :].unsqueeze(dim=0)
-                queries_feats.append(self.decoder(center_queries_coords_input, decoder_input).squeeze(dim=0))
-
         grid_feats = torch.cat(grid_feats, dim=0).contiguous()
-        if not input['test']:
-            queries_feats = torch.cat(queries_feats, dim=0).contiguous()
 
         ### upper branch --> point-wise predictions
         voxel_feats = pointgroup_ops.voxelization(
@@ -175,21 +164,11 @@ class CenterSemanticSampled(BaseModel):
         center_semantic_preds = self.center_semantic(grid_feats)
         center_offset_preds = self.center_offset(grid_feats)
 
-        if not input['test']:
-            queries_preds = self.center_pred(queries_feats)
-            queries_semantic_preds = self.center_semantic(queries_feats)
-            queries_offset_preds = self.center_offset(queries_feats)
-
         ret['point_semantic_scores'] = semantic_scores
         ret['point_offset_preds'] = point_offset_preds
 
         ret['center_preds'] = center_preds
         ret['center_semantic_preds'] = center_semantic_preds
         ret['center_offset_preds'] = center_offset_preds
-
-        if not input['test']:
-            ret['queries_preds'] = queries_preds
-            ret['queries_semantic_preds'] = queries_semantic_preds
-            ret['queries_offset_preds'] = queries_offset_preds
 
         return ret

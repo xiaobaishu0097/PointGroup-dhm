@@ -88,10 +88,6 @@ TRAIN:
     'activate': False,
   }
 
-  point_rgb_reconstruction_loss: {
-    'activate': False,
-  }
-
   loss_weights: {
     'point_semantic': 1.0,
     'point_offset_norm': 1.0,
@@ -102,14 +98,12 @@ TRAIN:
     'center_offset': 1.0,
     # other loss
     'score': 1.0,
-    'stuff_feats_norm': 1.0,
-    'point_semantic_center': 1.0,
-    'point_instance_triplet': 1.0,
     # three losses from OccuSeg
     'feature_variance_loss': 1.0,
     'feature_distance_loss': 1.0,
     'feature_instance_regression_loss': 0.001,
     'voxel_occupancy_loss': 1.0,
+    'proposal_confidence_loss': 1.0,
     'local_point_semantic_loss': 1.0,
     'local_point_offset_norm': 1.0,
     'local_point_offset_dir': 1.0,
@@ -117,8 +111,6 @@ TRAIN:
     'center_offset_dir_loss': 1.0,
     # two point-wise reconstruction loss
     'point_xyz_reconstruction_loss': 1.0,
-    'point_rgb_reconstruction_loss': 1.0,
-    'feature_semantic_regression_loss': 1.0,
     'point_instance_id_loss': 1.0,
     # three local feature discriminative losses
     'local_feature_variance_loss': 1.0,
@@ -158,7 +150,7 @@ TRAIN:
 
   local_proposal: {
     'topk': 3,
-    'dist_th': 0.5,
+    'dist_th': 1.5,
     'scatter_mean_target': False, # feature or prediction
     'local_proposal_scale': 50,
     'local_proposal_full_scale': 128,

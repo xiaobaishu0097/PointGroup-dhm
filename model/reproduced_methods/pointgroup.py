@@ -57,14 +57,6 @@ class PointGroup(BaseModel):
                 nn.Linear(self.m, 3, bias=True),
             )
 
-        if self.point_rgb_reconstruction_loss['activate']:
-            self.point_reconstruction_colors = nn.Sequential(
-                nn.Linear(self.m, self.m, bias=True),
-                self.norm_fn(self.m),
-                nn.ReLU(),
-                nn.Linear(self.m, 3, bias=True),
-            )
-
         if self.instance_classifier['activate']:
             self.point_instance_classifier = nn.Sequential(
                 nn.Linear(self.m, self.m, bias=True),
@@ -172,11 +164,6 @@ class PointGroup(BaseModel):
             point_reconstructed_coords = self.point_reconstruction_coords(output_feats)
 
             ret['point_reconstructed_coords'] = point_reconstructed_coords
-
-        if self.point_rgb_reconstruction_loss['activate']:
-            point_reconstructed_colors = self.point_reconstruction_colors(output_feats)
-
-            ret['point_reconstructed_colors'] = point_reconstructed_colors
 
         if self.instance_classifier['activate']:
             instance_id_preds = self.point_instance_classifier(output_feats)

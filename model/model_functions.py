@@ -365,11 +365,6 @@ def model_fn_decorator(cfg, test=False):
 
             loss_inp['point_reconstructed_coords'] = (point_reconstructed_coords, coords_float)
 
-        if ('point_reconstructed_colors' in ret.keys()) and (cfg.point_rgb_reconstruction_loss['activate']):
-            point_reconstructed_colors = ret['point_reconstructed_colors']
-
-            loss_inp['point_reconstructed_colors'] = (point_reconstructed_colors, rgb)
-
         if ('instance_id_preds' in ret.keys()) and (cfg.instance_classifier['activate']):
             instance_id_preds = ret['instance_id_preds']
 
@@ -421,7 +416,7 @@ def model_fn_decorator(cfg, test=False):
         return loss, preds, visual_dict, meter_dict
 
     def loss_fn(loss_inp, epoch):
-
+        loss = torch.zeros(0).cuda()
         loss_out = {}
         infos = {}
 
@@ -435,6 +430,8 @@ def model_fn_decorator(cfg, test=False):
             semantic_loss += semantic_criterion(semantic_score, semantic_labels.to(semantic_score.device))
 
         loss_out['semantic_loss'] = (semantic_loss, semantic_scores[0].shape[0])
+
+        loss += cfg.loss_weights['point_semantic'] * semantic_loss
 
         '''point offset loss'''
         pt_offsets, coords, instance_info, instance_center, instance_labels = loss_inp['pt_offsets']
@@ -463,9 +460,8 @@ def model_fn_decorator(cfg, test=False):
         loss_out['offset_norm_loss'] = (offset_norm_loss, (instance_labels != cfg.ignore_label).sum())
         loss_out['offset_dir_loss'] = (offset_dir_loss, (instance_labels != cfg.ignore_label).sum())
 
-        loss = cfg.loss_weights['point_semantic'] * semantic_loss + \
-               cfg.loss_weights['point_offset_norm'] * offset_norm_loss + \
-               cfg.loss_weights['point_offset_dir'] * offset_dir_loss
+        loss += cfg.loss_weights['point_offset_norm'] * offset_norm_loss + \
+                cfg.loss_weights['point_offset_dir'] * offset_dir_loss
 
         '''center related loss'''
         if 'center_preds' in loss_inp.keys():
@@ -557,6 +553,8 @@ def model_fn_decorator(cfg, test=False):
 
             loss_out['score_loss'] = (score_loss, gt_ious.shape[0])
 
+            loss += cfg.loss_weights['score'] * score_loss
+
         if 'proposal_confidences' in loss_inp.keys():
             proposals_confidence_preds, proposals_idx_shifts, proposals_offset_shifts, instance_pointnum = loss_inp['proposal_confidences']
             # scores: (nProposal, 1), float32
@@ -564,7 +562,7 @@ def model_fn_decorator(cfg, test=False):
             # proposals_offset: (nProposal + 1), int, cpu
             # instance_pointnum: (total_nInst), int
 
-            confidence_loss = torch.zeros(1).cuda()
+            proposal_confidence_loss = torch.zeros(1).cuda()
 
             for proposal_index in range(len(proposals_confidence_preds)):
                 ious = pointgroup_ops.get_iou(
@@ -574,61 +572,13 @@ def model_fn_decorator(cfg, test=False):
                 gt_ious, gt_instance_idxs = ious.max(1)  # (nProposal) float, long
                 gt_scores = get_segmented_scores(gt_ious, cfg.fg_thresh, cfg.bg_thresh)
 
-                conf_loss = confidence_criterion(torch.sigmoid(proposals_confidence_preds[proposal_index].view(-1)),
-                                                 gt_scores)
-                confidence_loss += conf_loss.mean()
+                conf_loss = confidence_criterion(
+                    torch.sigmoid(proposals_confidence_preds[proposal_index].view(-1)), gt_scores)
+                proposal_confidence_loss += conf_loss.mean()
 
-            loss_out['score_loss'] = (confidence_loss, gt_ious.shape[0])
+            loss_out['proposal_confidence_loss'] = (proposal_confidence_loss, gt_ious.shape[0])
 
-        if 'stuff_preds' in loss_inp.keys():
-            stuff_prediction, semantic_labels = loss_inp['stuff_preds']
-            stuff_labels = torch.zeros(stuff_prediction.shape[0]).long().cuda()
-            stuff_labels[semantic_labels > 1] = 1
-            stuff_loss = stuff_criterion(stuff_prediction, stuff_labels)
-            stuff_loss = (cfg.focal_loss['alpha'] * (1 - torch.exp(-stuff_loss)) ** cfg.focal_loss['gamma'] * stuff_loss).mean()  # mean over the batch
-            loss_out['stuff_loss'] = (stuff_loss, stuff_prediction.shape[0])
-
-        if 'points_semantic_center_loss_feature' in loss_inp.keys():
-            points_semantic_center_loss_features, labels, batch_offsets = loss_inp['points_semantic_center_loss_feature']
-
-            semantic_center_loss = torch.zeros(1).cuda()
-            for points_semantic_center_loss_feature in points_semantic_center_loss_features:
-                semantic_cent_loss = torch.zeros(1).cuda()
-                for batch_id in range(1, len(batch_offsets)):
-                    points_semantic_feat = points_semantic_center_loss_feature[
-                                           batch_offsets[batch_id - 1]:batch_offsets[batch_id]]
-                    label = labels[batch_offsets[batch_id - 1]:batch_offsets[batch_id]]
-                    semantic_cent_loss += semantic_center_criterion(points_semantic_feat, label)
-                semantic_center_loss += semantic_cent_loss / (len(batch_offsets) - 1)
-
-            loss_out['center_offset_loss'] = (semantic_center_loss, labels.shape[0])
-
-        if cfg.instance_triplet_loss['activate'] and 'point_offset_feats' in loss_inp.keys():
-            point_offset_feats, instance_labels, batch_offsets = loss_inp['point_offset_feats']
-
-            instance_triplet_loss = torch.zeros(1).cuda()
-            for batch_id in range(1, len(batch_offsets)):
-                point_offset_feat = point_offset_feats[batch_offsets[batch_id - 1]:batch_offsets[batch_id]]
-                instance_label = instance_labels[batch_offsets[batch_id - 1]:batch_offsets[batch_id]]
-                valid_instance_index = (instance_label != cfg.ignore_label)
-                point_offset_feat = point_offset_feat[valid_instance_index]
-                instance_label = instance_label[valid_instance_index]
-
-                triplet_index = []
-                for inst_id in instance_label.unique():
-                    triplet_index.append(
-                        torch.cat(random.sample(list((instance_label == inst_id).nonzero()),
-                                                min((instance_label == inst_id).sum().item(),
-                                                    cfg.instance_triplet_loss['num_sampled_points']))))
-
-                triplet_index = torch.cat(triplet_index)
-
-                instance_triplet_loss += instance_triplet_criterion(
-                    point_offset_feat[triplet_index], instance_label[triplet_index])[0]
-
-            instance_triplet_loss = instance_triplet_loss / (len(batch_offsets) - 1)
-
-            loss_out['center_offset_loss'] = (instance_triplet_loss, instance_labels.shape[0])
+            loss += cfg.loss_weights['proposal_confidence_loss'] * proposal_confidence_loss
 
         ### three different feature term losses mentioned in OccuSeg
         if cfg.feature_variance_loss['activate'] and ('feature_variance_loss' in loss_inp.keys()):
@@ -649,6 +599,8 @@ def model_fn_decorator(cfg, test=False):
 
             loss_out['feature_variance_loss'] = (feature_variance_loss, instance_labels.shape[0])
 
+            loss += cfg.loss_weights['feature_variance_loss'] * feature_variance_loss
+
         if cfg.feature_distance_loss['activate'] and ('feature_distance_loss' in loss_inp.keys()):
             point_features, instance_labels = loss_inp['feature_distance_loss']
 
@@ -666,6 +618,8 @@ def model_fn_decorator(cfg, test=False):
 
             loss_out['feature_distance_loss'] = (feature_distance_loss, instance_labels.shape[0])
 
+            loss += cfg.loss_weights['feature_distance_loss'] * feature_distance_loss
+
         if cfg.feature_instance_regression_loss['activate'] and ('feature_instance_regression_loss' in loss_inp.keys()):
             point_features, instance_labels = loss_inp['feature_instance_regression_loss']
 
@@ -677,17 +631,7 @@ def model_fn_decorator(cfg, test=False):
 
             loss_out['feature_instance_regression_loss'] = (feature_instance_regression_loss, instance_labels.shape[0])
 
-        if cfg.feature_semantic_regression_loss['activate'] and ('feature_semantic_regression_loss' in loss_inp.keys()):
-            point_features, semantic_labels = loss_inp['feature_semantic_regression_loss']
-
-            valid_semantic_index = (semantic_labels != cfg.ignore_label)
-            semantic_features = scatter_mean(
-                point_features[valid_semantic_index], semantic_labels[valid_semantic_index], dim=0
-            )
-            feature_semantic_regression_loss = torch.norm(torch.sum(semantic_features, dim=0), p=2) / \
-                                               semantic_features.shape[0]
-
-            loss_out['feature_semantic_regression_loss'] = (feature_semantic_regression_loss, semantic_labels.shape[0])
+            loss += cfg.loss_weights['feature_instance_regression_loss'] * feature_instance_regression_loss
 
         ### occupancy loss to predict the voxel number for each voxel
         if ('occupancy' in cfg.model_mode.split('_')) and ('voxel_occupancy_loss' in loss_inp.keys()):
@@ -705,7 +649,10 @@ def model_fn_decorator(cfg, test=False):
                 ).mean()
 
             voxel_occupancy_loss = voxel_occupancy_loss / len(point_occupancy_preds)
+
             loss_out['voxel_occupancy_loss'] = (voxel_occupancy_loss, point_occupancy_preds[0].shape[0])
+
+            loss += cfg.loss_weights['voxel_occupancy_loss'] * voxel_occupancy_loss
 
         if ('local_point_semantic' in loss_inp.keys()) and (cfg.local_proposal['scatter_mean_target'] == False):
             # local proposal point semantic loss calculate
@@ -714,8 +661,6 @@ def model_fn_decorator(cfg, test=False):
             local_point_semantic_loss = torch.zeros(1).cuda()
             for local_point_semantic_score in local_point_semantic_scores:
                 local_point_semantic_loss += semantic_criterion(local_point_semantic_score, labels[local_proposals_idx[:, 1].long()])
-
-            loss_out['local_point_semantic_loss'] = (local_point_semantic_loss, local_proposals_idx.shape[0])
 
             # local proposal point offset losses
             local_point_offset_preds, local_proposals_idx, coords, instance_info, instance_labels = loss_inp['local_point_offset']
@@ -737,8 +682,13 @@ def model_fn_decorator(cfg, test=False):
                 direction_diff = - (gt_offsets_ * local_point_offsets_).sum(-1)  # (N)
                 local_point_offset_dir_loss += torch.sum(direction_diff * valid) / (torch.sum(valid) + 1e-6)
 
+            loss_out['local_point_semantic_loss'] = (local_point_semantic_loss, local_proposals_idx.shape[0])
             loss_out['local_point_offset_norm_loss'] = (local_point_offset_norm_loss, valid.sum())
             loss_out['local_point_offset_dir_loss'] = (local_point_offset_dir_loss, valid.sum())
+
+            loss += cfg.loss_weights['local_point_semantic_loss'] * local_point_semantic_loss + \
+                    cfg.loss_weights['local_point_offset_norm'] * local_point_offset_norm_loss + \
+                    cfg.loss_weights['local_point_offset_dir'] * local_point_offset_dir_loss
 
         if ('point_reconstructed_coords' in loss_inp.keys()) and (cfg.point_xyz_reconstruction_loss['activate']):
             point_reconstructed_coords, coords_float = loss_inp['point_reconstructed_coords']
@@ -747,12 +697,7 @@ def model_fn_decorator(cfg, test=False):
 
             loss_out['point_xyz_reconstruction_loss'] = (point_xyz_reconstruction_loss, coords_float.shape[0])
 
-        if ('point_reconstructed_colors' in loss_inp.keys()) and (cfg.point_rgb_reconstruction_loss['activate']):
-            point_reconstructed_colors, rgb = loss_inp['point_reconstructed_colors']
-
-            point_rgb_reconstruction_loss = point_reconstruction_criterion(point_reconstructed_colors, rgb)
-
-            loss_out['point_rgb_reconstruction_loss'] = (point_rgb_reconstruction_loss, rgb.shape[0])
+            loss += cfg.loss_weights['point_xyz_reconstruction_loss'] * point_xyz_reconstruction_loss
 
         if ('instance_id_preds' in loss_inp.keys()) and (cfg.instance_classifier['activate']):
             instance_id_preds, instance_labels = loss_inp['instance_id_preds']
@@ -760,6 +705,8 @@ def model_fn_decorator(cfg, test=False):
             point_instance_id_loss = point_instance_id_criterion(instance_id_preds, instance_labels)
 
             loss_out['point_instance_id_loss'] = (point_instance_id_loss, instance_labels.shape[0])
+
+            loss += cfg.loss_weights['point_instance_id_loss'] * point_instance_id_loss
 
         if ('local_point_feature_discriminative_loss' in loss_inp.keys()) and (cfg.local_proposal['local_point_feature_discriminative_loss']):
             proposals_point_features, proposals_idx, instance_labels = loss_inp['local_point_feature_discriminative_loss']
@@ -807,6 +754,14 @@ def model_fn_decorator(cfg, test=False):
             local_feature_distance_loss = local_feature_distance_loss / len(proposals_idx[:, 0].unique())
             local_feature_instance_regression_loss = local_feature_instance_regression_loss / len(proposals_idx[:, 0].unique())
 
+            loss_out['local_feature_variance_loss'] = (local_feature_variance_loss, len(proposals_idx))
+            loss_out['local_feature_distance_loss'] = (local_feature_distance_loss, len(proposals_idx))
+            loss_out['local_feature_instance_regression_loss'] = (local_feature_instance_regression_loss, len(proposals_idx))
+
+            loss += cfg.loss_weights['local_feature_variance_loss'] * local_feature_variance_loss + \
+                    cfg.loss_weights['local_feature_distance_loss'] * local_feature_distance_loss + \
+                    cfg.loss_weights['local_feature_instance_regression_loss'] * local_feature_instance_regression_loss
+
         if ('voxel_center_loss' in loss_inp.keys()) and (cfg.voxel_center_prediction['activate']):
             voxel_center_preds, voxel_center_probs_labels = loss_inp['voxel_center_loss']
             voxel_center_loss = center_criterion(voxel_center_preds.view(-1), voxel_center_probs_labels)
@@ -832,59 +787,6 @@ def model_fn_decorator(cfg, test=False):
             voxel_center_semantic_loss = center_semantic_criterion(voxel_center_semantic_preds, voxel_center_semantic_labels)
             loss_out['voxel_center_semantic_loss'] = (voxel_center_semantic_loss, voxel_center_semantic_labels.shape[0])
 
-        if (epoch > cfg.prepare_epochs) and ('proposal_scores' in loss_inp.keys()):
-            loss += cfg.loss_weights['score'] * score_loss
-
-        if ('proposal_confidences' in loss_inp.keys()):
-            loss += confidence_loss
-
-        if ('stuff_preds' in loss_inp.keys()):
-            loss += stuff_loss
-
-        if ('queries_preds' in loss_inp.keys()):
-            loss = loss + center_queries_loss + center_queries_semantic_loss + center_queries_offset_loss
-
-        if ('points_semantic_center_loss_feature' in loss_inp.keys()):
-            loss += cfg.loss_weights['point_semantic_center'] * semantic_center_loss
-
-        if cfg.instance_triplet_loss['activate'] and ('point_offset_feats' in loss_inp.keys()):
-            loss += cfg.loss_weights['point_instance_triplet'] * instance_triplet_loss
-
-        if cfg.feature_instance_regression_loss['activate'] and ('feature_variance_loss' in loss_inp.keys()):
-            loss += cfg.loss_weights['feature_variance_loss'] * feature_variance_loss
-
-        if cfg.feature_instance_regression_loss['activate'] and ('feature_distance_loss' in loss_inp.keys()):
-            loss += cfg.loss_weights['feature_distance_loss'] * feature_distance_loss
-
-        if cfg.feature_instance_regression_loss['activate'] and ('feature_instance_regression_loss' in loss_inp.keys()):
-            loss += cfg.loss_weights['feature_instance_regression_loss'] * feature_instance_regression_loss
-
-        if cfg.feature_semantic_regression_loss['activate'] and ('feature_semantic_regression_loss' in loss_inp.keys()):
-            loss += cfg.loss_weights['feature_semantic_regression_loss'] * feature_semantic_regression_loss
-
-        if ('occupancy' in cfg.model_mode.split('_')) and ('voxel_occupancy_loss' in loss_inp.keys()):
-            loss += cfg.loss_weights['voxel_occupancy_loss'] * voxel_occupancy_loss
-
-        if ('local_point_semantic' in loss_inp.keys()) and (cfg.local_proposal['scatter_mean_target'] == False):
-            loss += cfg.loss_weights['local_point_semantic_loss'] * local_point_semantic_loss + \
-                    cfg.loss_weights['local_point_offset_norm'] * local_point_offset_norm_loss + \
-                    cfg.loss_weights['local_point_offset_dir'] * local_point_offset_dir_loss
-
-        if ('point_reconstructed_coords' in loss_inp.keys()) and (cfg.point_xyz_reconstruction_loss['activate']):
-            loss += cfg.loss_weights['point_xyz_reconstruction_loss'] * point_xyz_reconstruction_loss
-
-        if ('point_reconstructed_colors' in loss_inp.keys()) and (cfg.point_rgb_reconstruction_loss['activate']):
-            loss += cfg.loss_weights['point_rgb_reconstruction_loss'] * point_rgb_reconstruction_loss
-
-        if ('instance_id_preds' in loss_inp.keys()) and (cfg.instance_classifier['activate']):
-            loss += cfg.loss_weights['point_instance_id_loss'] * point_instance_id_loss
-
-        if ('local_point_feature_discriminative_loss' in loss_inp.keys()) and (cfg.local_proposal['local_point_feature_discriminative_loss']):
-            loss += cfg.loss_weights['local_feature_variance_loss'] * local_feature_variance_loss + \
-                    cfg.loss_weights['local_feature_distance_loss'] * local_feature_distance_loss + \
-                    cfg.loss_weights['local_feature_instance_regression_loss'] * local_feature_instance_regression_loss
-
-        if ('voxel_center_loss' in loss_inp.keys()) and (cfg.voxel_center_prediction['activate']):
             loss += cfg.loss_weights['voxel_center_loss'] * voxel_center_loss + \
                     cfg.loss_weights['voxel_center_offset_norm_loss'] * voxel_center_offset_norm_loss + \
                     cfg.loss_weights['voxel_center_offset_dir_loss'] * voxel_center_offset_dir_loss + \

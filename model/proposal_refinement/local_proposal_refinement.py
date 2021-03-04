@@ -169,7 +169,7 @@ class LocalProposalRefinement(BaseModel):
                 local_proposals_offset.append(local_proposals_offset[-1] + local_proposals_idx[-1].shape[0])
 
             local_proposals_idx = torch.cat(local_proposals_idx, dim=0)
-            local_proposals_offset = torch.cat(local_proposals_offset, dim=0)
+            local_proposals_offset = torch.tensor(local_proposals_offset).int()
 
             #### proposals voxelization again
             input_feats, inp_map = self.clusters_voxelization(

@@ -46,7 +46,6 @@ class BaseModel(nn.Module):
         self.pointnet_include_rgb = cfg.pointnet_include_rgb
         self.proposal_refinement = cfg.proposal_refinement
         self.point_xyz_reconstruction_loss = cfg.point_xyz_reconstruction_loss
-        self.point_rgb_reconstruction_loss = cfg.point_rgb_reconstruction_loss
 
         self.pointnet_max_npoint = 8196
 
