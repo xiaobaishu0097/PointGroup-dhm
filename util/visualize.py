@@ -11,6 +11,7 @@ from operator import itemgetter
 from math import exp
 
 from model.common import generate_adaptive_heatmap
+from model.Pointnet2.pointnet2 import pointnet2_utils
 
 COLOR20 = np.array(
         [[230, 25, 75], [60, 180, 75], [255, 225, 25], [0, 130, 200], [245, 130, 48],
@@ -379,6 +380,19 @@ def get_coords_color(opt):
                 'color': (0, 1, 0),
                 'scale': semantic_label_scale,
             })
+
+    elif opt.task == 'fps_sampled_points':
+        sampled_index = pointnet2_utils.furthest_point_sample(
+            torch.from_numpy(xyz).unsqueeze(dim=0).cuda().contiguous(), 8196
+        ).squeeze(dim=0).long()
+
+        # xyz = xyz[sampled_index.cpu().numpy()]
+        # rgb = rgb[sampled_index.cpu().numpy()]
+
+        rgb = np.ones_like(rgb) * 255
+        rgb[sampled_index.cpu().numpy(), 0] = 220
+        rgb[sampled_index.cpu().numpy(), 1] = 0
+        rgb[sampled_index.cpu().numpy(), 2] = 0
 
     elif opt.task == 'instance_error':
         assert opt.room_split != 'train'
