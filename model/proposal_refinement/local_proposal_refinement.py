@@ -15,6 +15,7 @@ class LocalProposalRefinement(BaseModel):
 
         self.local_proposal = cfg.local_proposal
 
+        '''backbone network'''
         self.input_conv = spconv.SparseSequential(
             spconv.SubMConv3d(self.input_c, self.m, kernel_size=3, padding=1, bias=False, indice_key='subm1')
         )
@@ -29,6 +30,7 @@ class LocalProposalRefinement(BaseModel):
             nn.ReLU()
         )
 
+        '''point-wise prediction networks'''
         self.point_offset = nn.Sequential(
             nn.Linear(self.m, self.m, bias=True),
             self.norm_fn(self.m),
@@ -51,10 +53,11 @@ class LocalProposalRefinement(BaseModel):
             'point_semantic': self.point_semantic,
         }
 
+        '''local proposal refinement network'''
         if not self.local_proposal['reuse_backbone_unet']:
             self.proposal_unet = UBlock(
                 [self.m, 2 * self.m, 3 * self.m, 4 * self.m, 5 * self.m, 6 * self.m, 7 * self.m],
-                self.norm_fn, 2, self.block, indice_key_id=1, backbone=False
+                self.norm_fn, self.block_reps, self.block, indice_key_id=1, backbone=False
             )
             
             self.proposal_outputlayer = spconv.SparseSequential(
@@ -76,42 +79,38 @@ class LocalProposalRefinement(BaseModel):
         '''
         ret = {}
 
-        batch_idxs = batch_idxs.squeeze()
-
-        point_offset_preds = []
         point_semantic_scores = []
-
+        point_offset_preds = []
         local_point_semantic_scores = []
         local_point_offset_preds = []
 
-        voxel_feats = pointgroup_ops.voxelization(input['pt_feats'], input['v2p_map'],
-                                                  input['mode'])  # (M, C), float, cuda
-
+        '''point feature extraction'''
+        # voxelize point cloud, and those voxels are passed to a sparse 3D U-Net
+        # the output of sparse 3D U-Net is then remapped back to points
+        voxel_feats = pointgroup_ops.voxelization(
+            input['pt_feats'], input['v2p_map'], input['mode']
+        )  # (M, C), float, cuda
         input_ = spconv.SparseConvTensor(
-            voxel_feats, input['voxel_coords'],
-            input['spatial_shape'], input['batch_size']
+            voxel_feats, input['voxel_coords'], input['spatial_shape'], input['batch_size']
         )
         output = self.input_conv(input_)
         output = self.unet(output)
         output = self.output_layer(output)
         output_feats = output.features[input_map.long()]
-        output_feats = output_feats.squeeze(dim=0)
 
-        ### point prediction
-        #### point semantic label prediction
+        '''point-wise predictions'''
         point_semantic_scores.append(self.point_semantic(output_feats))  # (N, nClass), float
-        # point_semantic_preds = semantic_scores
         point_semantic_preds = point_semantic_scores[-1].max(1)[1]
 
-        #### point offset prediction
         point_offset_preds.append(self.point_offset(output_feats))  # (N, 3), float32
 
+        # cluster proposals with the stable output of the backbone network
         if (epoch > self.prepare_epochs):
-            #### get prooposal clusters
             if not input['test'] and self.local_proposal['use_gt_semantic']:
                 point_semantic_preds = input['semantic_labels']
-            object_idxs = torch.nonzero(point_semantic_preds > 1).view(-1)
 
+            '''clustering algorithm'''
+            object_idxs = torch.nonzero(point_semantic_preds > 1).view(-1)
             batch_idxs_ = batch_idxs[object_idxs]
             batch_offsets_ = utils.get_batch_offsets(batch_idxs_, input['batch_size'])
             coords_ = coords[object_idxs]
@@ -119,33 +118,31 @@ class LocalProposalRefinement(BaseModel):
 
             semantic_preds_cpu = point_semantic_preds[object_idxs].int().cpu()
 
-            idx_shift, start_len_shift = pointgroup_ops.ballquery_batch_p(coords_ + pt_offsets_, batch_idxs_,
-                                                                          batch_offsets_, self.cluster_radius,
-                                                                          self.cluster_shift_meanActive)
-            proposals_idx_shift, proposals_offset_shift = pointgroup_ops.bfs_cluster(semantic_preds_cpu,
-                                                                                     idx_shift.cpu(),
-                                                                                     start_len_shift.cpu(),
-                                                                                     self.cluster_npoint_thre)
+            idx_shift, start_len_shift = pointgroup_ops.ballquery_batch_p(
+                coords_ + pt_offsets_, batch_idxs_, batch_offsets_, self.cluster_radius, self.cluster_shift_meanActive
+            )
+            proposals_idx_shift, proposals_offset_shift = pointgroup_ops.bfs_cluster(
+                semantic_preds_cpu, idx_shift.cpu(), start_len_shift.cpu(), self.cluster_npoint_thre
+            )
             proposals_idx_shift[:, 1] = object_idxs[proposals_idx_shift[:, 1].long()].int()
             # proposals_idx_shift: (sumNPoint, 2), int, dim 0 for cluster_id, dim 1 for corresponding point idxs in N
             # proposals_offset_shift: (nProposal + 1), int
 
-            ### local proposal represents that include those proposals around each proposal
-            # init all proposal related variables
+            '''local proposal refinement'''
             local_proposals_idx = []
-            local_proposals_offset = []
-            local_proposals_offset.append(torch.zeros(1).int())
+            local_proposals_offset = [0]
 
+            # compute proposal centers
             proposal_center_coords = []
-            for proposal_offset_index in range(1, len(proposals_offset_shift)):
-                points_cluster_index = proposals_idx_shift[
-                                 proposals_offset_shift[proposal_offset_index - 1]:
-                                 proposals_offset_shift[proposal_offset_index], 1]
-                proposal_center_coords.append(coords[points_cluster_index.long(), :].mean(dim=0, keepdim=True))
+            for proposal_index in range(1, len(proposals_offset_shift)):
+                proposal_point_index = proposals_idx_shift[
+                                 proposals_offset_shift[proposal_index - 1]: proposals_offset_shift[proposal_index], 1]
+                proposal_center_coords.append(coords[proposal_point_index.long(), :].mean(dim=0, keepdim=True))
             proposal_center_coords = torch.cat(proposal_center_coords, dim=0)
 
+            # select the topk closest proposals for each proposal
             proposal_dist_mat = euclidean_dist(proposal_center_coords, proposal_center_coords)
-            proposal_dist_mat[range(len(proposal_dist_mat)), range(len(proposal_dist_mat))] = 10
+            proposal_dist_mat[range(len(proposal_dist_mat)), range(len(proposal_dist_mat))] = 100
             closest_proposals_dist, closest_proposals_index = proposal_dist_mat.topk(
                 k=min(self.local_proposal['topk'], proposal_dist_mat.shape[1]), dim=1, largest=False
             )
@@ -231,29 +228,28 @@ class LocalProposalRefinement(BaseModel):
                 ret['local_point_semantic_scores'] = (local_point_semantic_scores, local_proposals_idx)
                 ret['local_point_offset_preds'] = (local_point_offset_preds, local_proposals_idx)
 
-        if (epoch == self.test_epoch) and input['test']:
-            if self.local_proposal['scatter_mean_target'] == False:
-                local_point_semantic_score = self.point_semantic(proposals_point_features)
-                local_point_offset_pred = self.point_offset(proposals_point_features)
+            if input['test']:
+                if self.local_proposal['scatter_mean_target'] == False:
+                    local_point_semantic_score = self.point_semantic(proposals_point_features)
+                    local_point_offset_pred = self.point_offset(proposals_point_features)
 
-                local_point_semantic_score = scatter_mean(
-                    local_point_semantic_score, local_proposals_idx[:, 1].cuda().long(), dim=0)
+                    local_point_semantic_score = scatter_mean(
+                        local_point_semantic_score, local_proposals_idx[:, 1].cuda().long(), dim=0)
 
-                point_semantic_score = point_semantic_scores[-1]
-                point_semantic_score[:local_point_semantic_score.shape[0], :] += local_point_semantic_score
-                point_semantic_preds = point_semantic_score.max(1)[1]
+                    point_semantic_score = point_semantic_scores[-1]
+                    point_semantic_score[:local_point_semantic_score.shape[0], :] += local_point_semantic_score
+                    point_semantic_preds = point_semantic_score.max(1)[1]
 
-                point_offset_pred = point_offset_preds[-1]
-                local_point_offset_pred = scatter_mean(
-                    local_point_offset_pred, local_proposals_idx[:, 1].cuda().long(), dim=0)
-                point_offset_pred[:local_point_offset_pred.shape[0], :] = local_point_offset_pred
+                    point_offset_pred = point_offset_preds[-1]
+                    local_point_offset_pred = scatter_mean(
+                        local_point_offset_pred, local_proposals_idx[:, 1].cuda().long(), dim=0)
+                    point_offset_pred[:local_point_offset_pred.shape[0], :] = local_point_offset_pred
 
-            self.cluster_sets = 'Q'
-            scores, proposals_idx, proposals_offset = self.pointgroup_cluster_algorithm(
-                coords, point_offset_pred, point_semantic_preds,
-                batch_idxs, input['batch_size']
-            )
-            ret['proposal_scores'] = (scores, proposals_idx, proposals_offset)
+                self.cluster_sets = 'Q'
+                scores, proposals_idx, proposals_offset = self.pointgroup_cluster_algorithm(
+                    coords, point_offset_pred, point_semantic_preds, batch_idxs, input['batch_size']
+                )
+                ret['proposal_scores'] = (scores, proposals_idx, proposals_offset)
 
         ret['point_semantic_scores'] = point_semantic_scores
         ret['point_offset_preds'] = point_offset_preds

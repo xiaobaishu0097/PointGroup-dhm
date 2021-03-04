@@ -3,9 +3,7 @@ import torch.nn as nn
 from torch_scatter import scatter_mean
 import spconv
 import functools
-import sys, os
-
-sys.path.append('../')
+import os
 
 from lib.pointgroup_ops.functions import pointgroup_ops
 from util import utils

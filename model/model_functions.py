@@ -320,15 +320,6 @@ def model_fn_decorator(cfg, test=False):
             stuff_preds = ret['stuff_preds']
             loss_inp['stuff_preds'] = (stuff_preds, labels)
 
-        if 'queries_preds' in ret.keys():
-            queries_preds = ret['queries_preds']
-            queries_semantic_preds = ret['queries_semantic_preds']
-            queries_offset_preds = ret['queries_offset_preds']
-
-            loss_inp['queries_preds'] = (queries_preds.squeeze(dim=-1), center_queries_probs)
-            loss_inp['queries_semantic_preds'] = (queries_semantic_preds, center_queries_semantic_labels)
-            loss_inp['queries_offset_preds'] = (queries_offset_preds, center_queries_offsets)
-
         if 'points_semantic_center_loss_feature' in ret.keys():
             points_semantic_center_loss_feature = ret['points_semantic_center_loss_feature']
 

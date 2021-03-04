@@ -12,6 +12,7 @@ class PointGroup(BaseModel):
     def __init__(self, cfg):
         super().__init__(cfg)
 
+        '''backbone network'''
         self.input_conv = spconv.SparseSequential(
             spconv.SubMConv3d(self.input_c, self.m, kernel_size=3, padding=1, bias=False, indice_key='subm1')
         )

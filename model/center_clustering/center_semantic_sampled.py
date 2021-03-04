@@ -95,7 +95,7 @@ class CenterSemanticSampled(BaseModel):
             hidden_size=32,
         )
 
-        module_map = {}
+        self.module_map = {}
 
         self.local_pretrained_model_parameter()
 
