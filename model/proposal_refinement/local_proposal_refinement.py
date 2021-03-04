@@ -54,6 +54,20 @@ class LocalProposalRefinement(BaseModel):
             'point_semantic': self.point_semantic,
         }
 
+        if not self.local_proposal['reuse_backbone_unet']:
+            self.proposal_unet = UBlock(
+                [self.m, 2 * self.m, 3 * self.m, 4 * self.m, 5 * self.m, 6 * self.m, 7 * self.m],
+                self.norm_fn, 2, self.block, indice_key_id=1, backbone=False
+            )
+            
+            self.proposal_outputlayer = spconv.SparseSequential(
+                self.norm_fn(self.m),
+                nn.ReLU()
+            )
+
+            self.module_map['proposal_unet'] = self.proposal_unet
+            self.module_map['proposal_outputlayer'] = self.proposal_outputlayer
+
         self.local_pretrained_model_parameter()
 
     def forward(self, input, input_map, coords, rgb, ori_coords, batch_idxs, batch_offsets, epoch):
@@ -228,11 +242,11 @@ class LocalProposalRefinement(BaseModel):
                 local_point_semantic_score = scatter_mean(
                     local_point_semantic_score, local_proposals_idx[:, 1].cuda().long(), dim=0)
 
-                point_semantic_score = self.point_semantic(output_feats)
+                point_semantic_score = point_semantic_scores[-1]
                 point_semantic_score[:local_point_semantic_score.shape[0], :] += local_point_semantic_score
                 point_semantic_preds = point_semantic_score.max(1)[1]
 
-                point_offset_pred = self.point_offset(output_feats)
+                point_offset_pred = point_offset_preds[-1]
                 local_point_offset_pred = scatter_mean(
                     local_point_offset_pred, local_proposals_idx[:, 1].cuda().long(), dim=0)
                 point_offset_pred[:local_point_offset_pred.shape[0], :] = local_point_offset_pred

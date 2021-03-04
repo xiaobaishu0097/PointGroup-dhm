@@ -320,10 +320,6 @@ def model_fn_decorator(cfg, test=False):
             stuff_preds = ret['stuff_preds']
             loss_inp['stuff_preds'] = (stuff_preds, labels)
 
-        if cfg.stuff_norm_loss['activate'] and 'output_feats' in ret.keys():
-            stuff_output_feats = ret['output_feats']
-            loss_inp['output_feats'] = (stuff_output_feats, labels)
-
         if 'queries_preds' in ret.keys():
             queries_preds = ret['queries_preds']
             queries_semantic_preds = ret['queries_semantic_preds']
@@ -853,9 +849,6 @@ def model_fn_decorator(cfg, test=False):
 
         if ('stuff_preds' in loss_inp.keys()):
             loss += stuff_loss
-
-        if cfg.stuff_norm_loss['activate'] and ('output_feats' in loss_inp.keys()):
-            loss += cfg.loss_weights['stuff_feats_norm'] * stuff_feats_norm_loss
 
         if ('queries_preds' in loss_inp.keys()):
             loss = loss + center_queries_loss + center_queries_semantic_loss + center_queries_offset_loss

@@ -54,7 +54,6 @@ class BaseModel(nn.Module):
 
         self.full_scale = cfg.full_scale
         self.batch_size = cfg.batch_size
-        self.stuff_norm_loss = cfg.stuff_norm_loss
         self.instance_triplet_loss = cfg.instance_triplet_loss
 
         self.instance_classifier = cfg.instance_classifier
