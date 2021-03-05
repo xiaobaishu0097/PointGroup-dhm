@@ -211,8 +211,9 @@ class PointGroup(BaseModel):
             proposals_offset = torch.cat((proposals_offset, proposals_offset_shift[1:]))
 
             #### proposals voxelization again
-            input_feats, inp_map = self.clusters_voxelization(proposals_idx, proposals_offset, output_feats, coords,
-                                                              self.score_fullscale, self.score_scale, self.mode)
+            input_feats, inp_map = self.clusters_voxelization(
+                proposals_idx, proposals_offset, output_feats, coords, self.score_fullscale, self.score_scale, self.mode
+            )
 
             #### score
             score = self.score_unet(input_feats)

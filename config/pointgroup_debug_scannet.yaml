@@ -70,12 +70,12 @@ TRAIN:
     'activate': False,
   }
 
-  feature_variance_loss: {
+  feature_instance_variance_loss: {
     'activate': False,
     'variance_threshold': 0.1,
   }
 
-  feature_distance_loss: {
+  feature_instance_distance_loss: {
     'activate': False,
     'distance_threshold': 1.5,
   }
@@ -93,29 +93,28 @@ TRAIN:
     'point_offset_norm': 1.0,
     'point_offset_dir': 1.0,
     # center related loss
-    'center_prob': 1.0,
-    'center_semantic': 1.0,
-    'center_offset': 1.0,
+    'center_prob_loss': 1.0,
+    'center_semantic_loss': 1.0,
+    'center_offset_norm_loss': 1.0,
+    'center_offset_dir_loss': 1.0,
     # other loss
     'score': 1.0,
     # three losses from OccuSeg
-    'feature_variance_loss': 1.0,
-    'feature_distance_loss': 1.0,
+    'feature_instance_variance_loss': 1.0,
+    'feature_instance_distance_loss': 1.0,
     'feature_instance_regression_loss': 0.001,
     'voxel_occupancy_loss': 1.0,
     'proposal_confidence_loss': 1.0,
     'local_point_semantic_loss': 1.0,
     'local_point_offset_norm': 1.0,
     'local_point_offset_dir': 1.0,
-    'center_offset_norm_loss': 1.0,
-    'center_offset_dir_loss': 1.0,
     # two point-wise reconstruction loss
     'point_xyz_reconstruction_loss': 1.0,
     'point_instance_id_loss': 1.0,
     # three local feature discriminative losses
     'local_feature_variance_loss': 1.0,
     'local_feature_distance_loss': 1.0,
-    'local_feature_instance_regression_loss': 0.001,
+    'local_feature_instance_regression_loss': 0,
     'voxel_center_loss': 1.0,
     'voxel_center_offset_norm_loss': 1.0,
     'voxel_center_offset_dir_loss': 1.0,
