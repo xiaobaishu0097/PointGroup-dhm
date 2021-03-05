@@ -205,34 +205,6 @@ def model_fn_decorator(cfg, test=False):
             'semantic_labels': labels,
         }
 
-        if 'Center' in cfg.model_mode.split('_'):
-            instance_heatmap = batch['grid_center_heatmap'].cuda()
-            grid_center_gt = batch['grid_center_indicator'].cuda()
-            center_offset_labels = batch['grid_center_offset_labels'].cuda()
-            center_semantic_labels = batch['grid_center_semantic_labels'].cuda()
-
-            center_queries_coords = batch['center_queries_coords'].cuda()
-            center_queries_probs = batch['center_queries_probs'].cuda()
-            center_queries_semantic_labels = batch['center_queries_semantic_labels'].cuda()
-            center_queries_offsets = batch['center_queries_offsets'].cuda()
-            center_queries_batch_offsets = batch['center_queries_batch_offsets'].cuda()
-
-            input_['center_queries_coords'] = center_queries_coords
-            input_['center_queries_batch_offsets'] = center_queries_batch_offsets
-
-        if 'stuff' in cfg.model_mode.split('_'):
-            nonstuff_feats = feats[labels > 1]
-            nonstuff_spatial_shape = batch['nonstuff_spatial_shape']
-            nonstuff_voxel_locs = batch['nonstuff_voxel_locs'].cuda()
-            nonstuff_p2v_map = batch['nonstuff_p2v_map'].cuda()
-            nonstuff_v2p_map = batch['nonstuff_v2p_map'].cuda()
-
-            input_['nonstuff_feats'] = nonstuff_feats
-            input_['nonstuff_spatial_shape'] = nonstuff_spatial_shape
-            input_['nonstuff_voxel_locs'] = nonstuff_voxel_locs.int()
-            input_['nonstuff_p2v_map'] = nonstuff_p2v_map
-            input_['nonstuff_v2p_map'] = nonstuff_v2p_map
-
         if ('occupancy' in cfg.model_mode.split('_')):
             voxel_instance_labels = batch['voxel_instance_labels'].cuda()
             voxel_occupancy_labels = batch['voxel_occupancy_labels'].cuda()
@@ -242,54 +214,29 @@ def model_fn_decorator(cfg, test=False):
             coords[:, 0].int(), batch_offsets, epoch
         )
 
-        point_offset_preds = ret['point_offset_preds']
-        point_semantic_scores = ret['point_semantic_scores']
-
         loss_inp = {}
 
-        if point_offset_preds[0].shape[0] == coords_float.shape[0]:
+        if ('point_offset_preds' in ret.keys()):
+            point_offset_preds = ret['point_offset_preds']
+            point_semantic_scores = ret['point_semantic_scores']
+
             loss_inp['pt_offsets'] = (
                 point_offset_preds, coords_float, instance_info, instance_centers, instance_labels
             )
             loss_inp['semantic_scores'] = (point_semantic_scores, labels)
 
-        elif point_offset_preds[0].shape[0] == nonstuff_feats.shape[0]:
-            loss_inp['pt_offsets'] = (
-                point_offset_preds, coords_float[labels > 1], instance_info[labels > 1],
-                instance_centers, instance_labels[labels > 1]
-            )
-            loss_inp['semantic_scores'] = (point_semantic_scores, labels[labels > 1])
-
         if 'center_preds' in ret.keys():
-            if not isinstance(ret['center_preds'], tuple):
-                center_preds = ret['center_preds'] # (B, 32**3)
-                center_preds = center_preds.squeeze(dim=-1)
+            center_preds, sampled_indexes = ret['center_preds'] # (B, 8196, 1)
+            center_semantic_preds, _ = ret['center_semantic_preds'] # (B, 8196, 20)
+            center_offset_preds, _ = ret['center_offset_preds'] # (B, 8196, 3)
 
-                center_semantic_preds = ret['center_semantic_preds']
-
-                center_offset_preds = []
-                center_offset_pred = ret['center_offset_preds'] # (B, 32**3, 3)
-                for sample_indx in range(len(batch_offsets) - 1):
-                    center_offset_preds.append(
-                        center_offset_pred[sample_indx, grid_center_gt[grid_center_gt[:, 0] == sample_indx, :][:, 1]]
-                    )
-                center_offset_preds = torch.cat(center_offset_preds, 0) # (nInst, 3)
-
-                loss_inp['center_preds'] = (center_preds, instance_heatmap)
-                loss_inp['center_semantic_preds'] = (center_semantic_preds, center_semantic_labels)
-                loss_inp['center_offset_preds'] = (center_offset_preds, center_offset_labels[:, 1:])
-            else:
-                center_preds, sampled_indexes = ret['center_preds'] # (B, 8196, 1)
-                center_semantic_preds, _ = ret['center_semantic_preds'] # (B, 8196, 20)
-                center_offset_preds, _ = ret['center_offset_preds'] # (B, 8196, 3)
-
-                loss_inp['center_preds'] = (
-                    center_preds, coords_float, sampled_indexes, instance_centers, instance_sizes, batch_offsets
-                )
-                loss_inp['center_semantic_preds'] = (center_semantic_preds, sampled_indexes, labels)
-                loss_inp['center_offset_preds'] = (
-                    center_offset_preds, sampled_indexes, coords_float, instance_info, instance_labels
-                )
+            loss_inp['center_preds'] = (
+                center_preds, coords_float, sampled_indexes, instance_centers, instance_sizes, batch_offsets
+            )
+            loss_inp['center_semantic_preds'] = (center_semantic_preds, sampled_indexes, labels)
+            loss_inp['center_offset_preds'] = (
+                center_offset_preds, sampled_indexes, coords_float, instance_info, instance_labels
+            )
 
         if (epoch > cfg.prepare_epochs) and ('proposal_scores' in ret.keys()):
             scores, proposals_idx, proposals_offset = ret['proposal_scores']
@@ -405,52 +352,54 @@ def model_fn_decorator(cfg, test=False):
         return loss, preds, visual_dict, meter_dict
 
     def loss_fn(loss_inp, epoch):
-        loss = torch.zeros(0).cuda()
+        loss = torch.zeros(1).cuda()
         loss_out = {}
         infos = {}
 
         '''point semantic loss'''
-        semantic_scores, semantic_labels = loss_inp['semantic_scores']
-        # semantic_scores: (N, nClass), float32, cuda
-        # semantic_labels: (N), long, cuda
+        if ('semantic_scores' in loss_inp.keys()):
+            semantic_scores, semantic_labels = loss_inp['semantic_scores']
+            # semantic_scores: (N, nClass), float32, cuda
+            # semantic_labels: (N), long, cuda
 
-        semantic_loss = torch.zeros(1).cuda(semantic_scores[0].device)
-        for semantic_score in semantic_scores:
-            semantic_loss += semantic_criterion(semantic_score, semantic_labels.to(semantic_score.device))
+            semantic_loss = torch.zeros(1).cuda(semantic_scores[0].device)
+            for semantic_score in semantic_scores:
+                semantic_loss += semantic_criterion(semantic_score, semantic_labels.to(semantic_score.device))
 
-        loss_out['semantic_loss'] = (semantic_loss, semantic_scores[0].shape[0])
+            loss_out['semantic_loss'] = (semantic_loss, semantic_scores[0].shape[0])
 
-        loss += cfg.loss_weights['point_semantic'] * semantic_loss
+            loss += cfg.loss_weights['point_semantic'] * semantic_loss
 
         '''point offset loss'''
-        pt_offsets, coords, instance_info, instance_center, instance_labels = loss_inp['pt_offsets']
-        # pt_offsets: (N, 3), float, cuda
-        # coords: (N, 3), float32
-        # instance_info: (N, 9), float32 tensor (meanxyz, minxyz, maxxyz)
-        # instance_labels: (N), long
+        if ('pt_offsets' in loss_inp.keys()):
+            pt_offsets, coords, instance_info, instance_center, instance_labels = loss_inp['pt_offsets']
+            # pt_offsets: (N, 3), float, cuda
+            # coords: (N, 3), float32
+            # instance_info: (N, 9), float32 tensor (meanxyz, minxyz, maxxyz)
+            # instance_labels: (N), long
 
-        offset_norm_loss = torch.zeros(1).cuda()
-        offset_dir_loss = torch.zeros(1).cuda()
-        for pt_offset in pt_offsets:
-            gt_offset = instance_info[:, 0:3] - coords  # (N, 3)
+            offset_norm_loss = torch.zeros(1).cuda()
+            offset_dir_loss = torch.zeros(1).cuda()
+            for pt_offset in pt_offsets:
+                gt_offset = instance_info[:, 0:3] - coords  # (N, 3)
 
-            '''point offset norm loss'''
-            if cfg.offset_norm_criterion == 'l1':
-                offset_norm_loss += compute_offset_norm_loss(
+                '''point offset norm loss'''
+                if cfg.offset_norm_criterion == 'l1':
+                    offset_norm_loss += compute_offset_norm_loss(
+                        pt_offset, gt_offset, instance_labels, ignore_label=cfg.ignore_label)
+                if cfg.offset_norm_criterion == 'l2':
+                    pt_valid_index = instance_labels != cfg.ignore_label
+                    offset_norm_loss += offset_norm_criterion(pt_offset[pt_valid_index], gt_offset[pt_valid_index])
+
+                '''point offset dir loss'''
+                offset_dir_loss += compute_offset_dir_loss(
                     pt_offset, gt_offset, instance_labels, ignore_label=cfg.ignore_label)
-            if cfg.offset_norm_criterion == 'l2':
-                pt_valid_index = instance_labels != cfg.ignore_label
-                offset_norm_loss += offset_norm_criterion(pt_offset[pt_valid_index], gt_offset[pt_valid_index])
 
-            '''point offset dir loss'''
-            offset_dir_loss += compute_offset_dir_loss(
-                pt_offset, gt_offset, instance_labels, ignore_label=cfg.ignore_label)
+            loss_out['offset_norm_loss'] = (offset_norm_loss, (instance_labels != cfg.ignore_label).sum())
+            loss_out['offset_dir_loss'] = (offset_dir_loss, (instance_labels != cfg.ignore_label).sum())
 
-        loss_out['offset_norm_loss'] = (offset_norm_loss, (instance_labels != cfg.ignore_label).sum())
-        loss_out['offset_dir_loss'] = (offset_dir_loss, (instance_labels != cfg.ignore_label).sum())
-
-        loss += cfg.loss_weights['point_offset_norm'] * offset_norm_loss + \
-                cfg.loss_weights['point_offset_dir'] * offset_dir_loss
+            loss += cfg.loss_weights['point_offset_norm'] * offset_norm_loss + \
+                    cfg.loss_weights['point_offset_dir'] * offset_dir_loss
 
         '''center related loss'''
         if 'center_preds' in loss_inp.keys():
@@ -515,10 +464,10 @@ def model_fn_decorator(cfg, test=False):
             center_offset_norm_loss = center_offset_norm_loss / cfg.batch_size
             center_offset_dir_loss = center_offset_dir_loss / cfg.batch_size
 
-            loss_out['center_probs_loss'] = (center_loss, sampled_indexes.shape[0] * 8196)
-            loss_out['center_semantic_loss'] = (center_semantic_loss, sampled_indexes.shape[0] * 8196)
-            loss_out['center_offset_norm_loss'] = (center_offset_norm_loss, sampled_indexes.shape[0] * 8196)
-            loss_out['center_offset_dir_loss'] = (center_offset_dir_loss, sampled_indexes.shape[0] * 8196)
+            loss_out['center_probs_loss'] = (center_loss, sampled_indexes.shape[0])
+            loss_out['center_semantic_loss'] = (center_semantic_loss, sampled_indexes.shape[0])
+            loss_out['center_offset_norm_loss'] = (center_offset_norm_loss, sampled_indexes.shape[0])
+            loss_out['center_offset_dir_loss'] = (center_offset_dir_loss, sampled_indexes.shape[0])
 
             loss += cfg.loss_weights['center_prob'] * center_loss + \
                     cfg.loss_weights['center_semantic'] * center_semantic_loss + \

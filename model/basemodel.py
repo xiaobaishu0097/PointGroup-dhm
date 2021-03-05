@@ -37,7 +37,7 @@ class BaseModel(nn.Module):
         self.pretrain_module = cfg.pretrain_module
         self.fix_module = cfg.fix_module
 
-        self.backbone = cfg.backbone
+        self.point_based_backbone = cfg.point_based_backbone
         self.model_mode = cfg.model_mode
         self.reso_grid = 32
         self.cluster_sets = cfg.cluster_sets
@@ -186,7 +186,7 @@ class BaseModel(nn.Module):
         point_feats = []
         grid_feats = []
 
-        if self.backbone == 'pointnet':
+        if self.point_based_backbone == 'pointnet':
             for sample_indx in range(1, len(batch_offsets)):
                 coords_input = coords[batch_offsets[sample_indx - 1]:batch_offsets[sample_indx], :].unsqueeze(dim=0)
                 rgb_input = rgb[batch_offsets[sample_indx - 1]:batch_offsets[sample_indx], :].unsqueeze(dim=0)
@@ -204,7 +204,7 @@ class BaseModel(nn.Module):
                 if self.unet3d is not None:
                     grid_feats.append(self.generate_grid_features(coords_input, encoded_feats['point']))
 
-        elif self.backbone == 'pointnet++_yanx':
+        elif self.point_based_backbone == 'pointnet++_yanx':
             for sample_indx in range(1, len(batch_offsets)):
                 coords_input = coords[batch_offsets[sample_indx - 1]:batch_offsets[sample_indx], :].unsqueeze(dim=0)
                 rgb_input = rgb[batch_offsets[sample_indx - 1]:batch_offsets[sample_indx], :].unsqueeze(dim=0)
@@ -219,7 +219,7 @@ class BaseModel(nn.Module):
                 if self.unet3d is not None:
                     grid_feats.append(self.generate_grid_features(coords_input, point_feat))
 
-        elif self.backbone == 'pointnet++_shi':
+        elif self.point_based_backbone == 'pointnet++_shi':
             for sample_indx in range(1, len(batch_offsets)):
                 coords_input = coords[batch_offsets[sample_indx - 1]:batch_offsets[sample_indx], :].unsqueeze(dim=0)
                 rgb_input = rgb[batch_offsets[sample_indx - 1]:batch_offsets[sample_indx], :].unsqueeze(dim=0)

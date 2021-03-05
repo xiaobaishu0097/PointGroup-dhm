@@ -14,33 +14,10 @@ from model.basemodel import BaseModel
 class CenterSemanticSampled(BaseModel):
     def __init__(self, cfg):
         super().__init__(cfg)
-        if self.backbone == 'pointnet':
-            #### PointNet backbone encoder
-            self.pointnet_encoder = pointnet.LocalPoolPointnet(
-                c_dim=self.m, dim=6, hidden_dim=self.m, scatter_type=cfg.scatter_type, grid_resolution=32,
-                plane_type='grid', padding=0.1, n_blocks=5
-            )
 
-        elif self.backbone == 'pointnet++_yanx':
-            self.pointnet_encoder = pointnetpp.PointNetPlusPlus(
-                c_dim=self.m, include_rgb=self.pointnet_include_rgb
-            )
+        self.center_clustering = cfg.center_clustering
 
-        elif self.backbone == 'pointnet++_shi':
-            self.pointnet_encoder = backbone_pointnet2(output_dim=self.m)
-
-        self.unet3d = UNet3D(
-            num_levels=cfg.unet3d_num_levels, f_maps=self.m, in_channels=self.m, out_channels=self.m
-        )
-
-        self.decoder = decoder.LocalDecoder(
-            dim=3,
-            c_dim=32,
-            hidden_size=32,
-        )
-
-        ### point prediction branch
-        ### sparse 3D U-Net
+        '''point-wise prediction networks'''
         self.input_conv = spconv.SparseSequential(
             spconv.SubMConv3d(self.input_c, self.m, kernel_size=3, padding=1, bias=False, indice_key='subm1')
         )
@@ -69,6 +46,9 @@ class CenterSemanticSampled(BaseModel):
             nn.Linear(self.m, self.classes, bias=True),
         )
 
+        '''center prediction network'''
+        self.pointnet_encoder = backbone_pointnet2(output_dim=self.m)
+
         self.center_pred = nn.Sequential(
             nn.Linear(self.m, self.m),
             nn.ReLU(),
@@ -95,7 +75,17 @@ class CenterSemanticSampled(BaseModel):
             hidden_size=32,
         )
 
-        self.module_map = {}
+        self.module_map = {
+            'input_conv': self.input_conv,
+            'unet': self.unet,
+            'output_layer': self.output_layer,
+            'point_offset': self.point_offset,
+            'point_semantic': self.point_semantic,
+            'pointnet_encoder': self.pointnet_encoder,
+            'center_pred': self.center_pred,
+            'center_semantic': self.center_semantic,
+            'center_offset': self.center_offset,
+        }
 
         self.local_pretrained_model_parameter()
 
@@ -108,40 +98,14 @@ class CenterSemanticSampled(BaseModel):
         '''
         ret = {}
 
-        batch_idxs = batch_idxs.squeeze()
-
         semantic_scores = []
         point_offset_preds = []
 
-        ### lower branch --> grid-wise predictions
-        point_feats = []
-        grid_feats = []
-
-        for sample_indx in range(1, len(batch_offsets)):
-            coords_input = coords[batch_offsets[sample_indx - 1]:batch_offsets[sample_indx], :].unsqueeze(dim=0)
-            rgb_input = rgb[batch_offsets[sample_indx - 1]:batch_offsets[sample_indx], :].unsqueeze(dim=0)
-
-            sampled_index = pointnet2_utils.furthest_point_sample(
-                coords_input[:, :, :3].contiguous(), self.pointnet_max_npoint).squeeze(dim=0).long()
-
-            sampled_coords_input = coords_input[:, sampled_index, :]
-            sampled_rgb_input = rgb_input[:, sampled_index, :]
-
-            point_feat, _ = self.pointnet_encoder(
-                sampled_coords_input,
-                torch.cat((sampled_rgb_input, sampled_coords_input), dim=2).transpose(1, 2).contiguous()
-            )
-            grid_feats.append(self.generate_grid_features(sampled_coords_input, point_feat))
-
-        grid_feats = torch.cat(grid_feats, dim=0).contiguous()
-
-        ### upper branch --> point-wise predictions
         voxel_feats = pointgroup_ops.voxelization(
             input['pt_feats'], input['v2p_map'], input['mode'])  # (M, C), float, cuda
 
         input_ = spconv.SparseConvTensor(
-            voxel_feats, input['voxel_coords'],
-            input['spatial_shape'], input['batch_size']
+            voxel_feats, input['voxel_coords'], input['spatial_shape'], input['batch_size']
         )
         output = self.input_conv(input_)
         output = self.unet(output)
@@ -152,23 +116,57 @@ class CenterSemanticSampled(BaseModel):
         ### point prediction
         #### point semantic label prediction
         semantic_scores.append(self.point_semantic(output_feats))  # (N, nClass), float
-
+        # point_semantic_preds = semantic_scores
+        point_semantic_preds = semantic_scores[0].max(1)[1]
         #### point offset prediction
         point_offset_preds.append(self.point_offset(output_feats))  # (N, 3), float32
 
-        ### center prediction
-        bs, c_dim, grid_size = grid_feats.shape[0], grid_feats.shape[1], grid_feats.shape[2]
-        grid_feats = grid_feats.reshape(bs, c_dim, -1).permute(0, 2, 1)
+        point_feats = []
+        sampled_indexes = []
+        for sample_indx in range(1, len(batch_offsets)):
+            coords_input = coords[batch_offsets[sample_indx - 1]:batch_offsets[sample_indx], :].unsqueeze(dim=0)
+            rgb_input = rgb[batch_offsets[sample_indx - 1]:batch_offsets[sample_indx], :].unsqueeze(dim=0)
+            if not input['test'] and self.center_clustering['use_gt_semantic']:
+                point_semantic_preds = input['semantic_labels']
+            point_semantic_pred = point_semantic_preds[batch_offsets[sample_indx - 1]:batch_offsets[sample_indx]]
+            for semantic_idx in point_semantic_pred.unique():
+                if semantic_idx < 2:
+                    continue
+                semantic_point_idx = (point_semantic_pred == semantic_idx).nonzero().squeeze(dim=1)
 
-        center_preds = self.center_pred(grid_feats)
-        center_semantic_preds = self.center_semantic(grid_feats)
-        center_offset_preds = self.center_offset(grid_feats)
+                sampled_index = pointnet2_utils.furthest_point_sample(
+                    coords_input[:, semantic_point_idx, :3].contiguous(), self.pointnet_max_npoint
+                ).squeeze(dim=0).long()
+                sampled_index = semantic_point_idx[sampled_index]
+                sampled_indexes.append(torch.cat(
+                    (torch.LongTensor(sampled_index.shape[0], 1).fill_(sample_indx).cuda(),
+                     sampled_index.unsqueeze(dim=1)), dim=1)
+                )
+
+                sampled_coords_input = coords_input[:, sampled_index, :]
+                sampled_rgb_input = rgb_input[:, sampled_index, :]
+
+                point_feat, _ = self.pointnet_encoder(
+                    sampled_coords_input,
+                    torch.cat((sampled_rgb_input, sampled_coords_input), dim=2).transpose(1, 2).contiguous()
+                )
+                point_feats.append(point_feat)
+
+        point_feats = torch.cat(point_feats, dim=0)
+        sampled_indexes = torch.cat(sampled_indexes, dim=0)
+
+        ### center prediction
+        center_preds = self.center_pred(point_feats)
+        center_semantic_preds = self.center_semantic(point_feats)
+        center_offset_preds = self.center_offset(point_feats)
 
         ret['point_semantic_scores'] = semantic_scores
         ret['point_offset_preds'] = point_offset_preds
 
-        ret['center_preds'] = center_preds
-        ret['center_semantic_preds'] = center_semantic_preds
-        ret['center_offset_preds'] = center_offset_preds
+        ret['center_preds'] = (center_preds, sampled_indexes)
+        ret['center_semantic_preds'] = (center_semantic_preds, sampled_indexes)
+        ret['center_offset_preds'] = (center_offset_preds, sampled_indexes)
+
+        ret['point_features'] = output_feats
 
         return ret
